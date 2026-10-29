@@ -8,17 +8,26 @@ and cheats. Next to that it holds the Thor's controls: power profiles, fan curve
 grid. It is a native Qt app that runs full screen in the bottom Plasma session, never draws over your game, and the AYN button
 always brings it to the front.
 
+## The goal
+
+On AYN's Android version of the Thor the bottom screen is a dual-screen assistant: it shows the game that is running, and next to it
+a panel of quick settings, FPS, temperature and power controls. On Armada OS there was nothing like it, so the second screen sat
+unused. **ArmadaLive brings that dual-screen experience to Armada OS**: the running game on the bottom screen (with its logo and
+background, from ES-DE or Steam) and the quick settings beside it.
+
+It is an independent re-creation that follows the idea and the look of the Android app. It uses none of its code or assets.
+
 | ES-DE: a game | ES-DE: a system | Steam: highlighted in Big Picture |
 |---|---|---|
-| ![Donkey Kong Country](docs/screenshots/game-dkc.png) | ![Super Nintendo](docs/screenshots/game-snes.png) | ![Ori and the Blind Forest](docs/screenshots/steam-ori.png) |
+| ![Donkey Kong Country](docs/images/game-dkc.png) | ![Super Nintendo](docs/images/game-snes.png) | ![Ori and the Blind Forest](docs/images/steam-ori.png) |
 
 | System | Mode | Apps |
 |---|---|---|
-| ![System](docs/screenshots/system.png) | ![Mode](docs/screenshots/mode.png) | ![Apps](docs/screenshots/apps.png) |
+| ![System](docs/images/system.png) | ![Mode](docs/images/mode.png) | ![Apps](docs/images/apps.png) |
 
 | Cheats | Settings | Tuning |
 |---|---|---|
-| ![Cheats](docs/screenshots/cheats.png) | ![Settings](docs/screenshots/settings.png) | ![Tuning](docs/screenshots/tuning.png) |
+| ![Cheats](docs/images/cheats.png) | ![Settings](docs/images/settings.png) | ![Tuning](docs/images/tuning.png) |
 
 Screenshots were taken on the author's own Thor. The game artwork in them comes from his ES-DE collection and Steam library and
 belongs to its owners; ArmadaLive does not ship any of it.
