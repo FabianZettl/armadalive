@@ -69,6 +69,13 @@ Flickable {
                 current: page.look.animate === false ? "off" : "on"
                 onPicked: key => ui.setAnimate(key === "on")
             }
+            Label { text: Tr.t("Dim after 10 s") }
+            Chips {
+                width: parent.width
+                model: [{ key: "on", label: Tr.t("On") }, { key: "off", label: Tr.t("Off") }]
+                current: page.look.dim === false ? "off" : "on"
+                onPicked: key => ui.setDim(key === "on")
+            }
             Label { text: Tr.t("Appearance") }
             Chips {
                 width: parent.width

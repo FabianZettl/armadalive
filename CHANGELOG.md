@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Five new themes: **SteamOS**, **SNES**, **Game Boy**, **PS2** and **Famicom**, all dark so the white system logos stay readable.
+- The screen dims a little after 10 seconds without a touch; a touch, or a new game or logo, brightens it again. Can be switched off in Settings.
+- On the Game page the bar and status line hide again after 3 seconds (was 5).
 
 ## 0.1.0
 

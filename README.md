@@ -117,7 +117,8 @@ nothing else, and greys out once it is done. The terminal commands below do the 
 | | |
 |---|---|
 | Swipe left or right | next or previous page (not while you drag a slider, the fan curve or the quick-setting pages) |
-| Swipe up on *Game* | show the status line and the bar for five seconds |
+| Swipe up on *Game* | show the status line and the bar for three seconds |
+| Leave it alone for 10 s | the screen dims a little; a touch, or a new game or logo, brightens it (can be switched off in Settings) |
 | AYN button | bring ArmadaLive to the front, always |
 | Press and hold an app tile | choose another app for that slot |
 | Tap the *120 FPS MODE* pill | switch the frame limit between 60 and 120 |

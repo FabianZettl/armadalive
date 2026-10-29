@@ -11,9 +11,9 @@ class UiSettings(QObject):
     def __init__(self):
         super().__init__()
         try:
-            self._s = dict(theme="stock", accent="", lang="en", animate=True, **json.load(open(CONFIG)))
+            self._s = dict(theme="stock", accent="", lang="en", animate=True, dim=True, **json.load(open(CONFIG)))
         except (OSError, ValueError, TypeError):
-            self._s = dict(theme="stock", accent="", lang="en", animate=True)
+            self._s = dict(theme="stock", accent="", lang="en", animate=True, dim=True)
 
     @Property("QVariant", notify=changed)
     def state(self):
@@ -28,6 +28,11 @@ class UiSettings(QObject):
     def setTheme(self, key):
         self._s["theme"] = key
         self._s["accent"] = ""  # a new theme starts with its own accent
+        self._save()
+
+    @Slot(bool)
+    def setDim(self, on):
+        self._s["dim"] = bool(on)
         self._save()
 
     @Slot(bool)

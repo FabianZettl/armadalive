@@ -31,6 +31,21 @@ Window {
     property bool peek: false
     readonly property bool chrome: !home || peek
 
+    // the screen dims a little after 10 s without a touch; the next touch wakes it (and does nothing else)
+    property bool dimmed: false
+    readonly property bool dimEnabled: ui.state.dim !== false     // Settings > Dim after 10 s
+    function wake() { dimmed = false; idle.restart() }
+    onDimEnabledChanged: { if (dimEnabled) idle.restart(); else { idle.stop(); dimmed = false } }
+    Timer {
+        id: idle
+        interval: 10000
+        onTriggered: { if (Auth.ask === "") win.dimmed = true; else idle.restart() }   // not while the password prompt is open
+    }
+    PointHandler { target: null; onActiveChanged: if (active) win.wake() }  // sees every touch, takes none
+    // a new game, logo or background (scrolling in ES-DE or Steam, a game starting) brightens it too
+    readonly property string shown: [now.kind, now.title, now.logo, now.fanart].join("|")
+    onShownChanged: wake()
+
     // always full screen: Plasma's own panels only come back with its swipe-up gesture
     function applyVisibility() { visibility = Window.FullScreen }
     function go(id) { page = id; if (home) hideChrome.restart() }
@@ -40,7 +55,7 @@ Window {
     }
     onCurrentChanged: if (current.id !== page) page = current.id
     onHomeChanged: if (home) { peek = true; hideChrome.restart() }
-    Component.onCompleted: { applyVisibility(); Theme.apply(ui.state.theme, ui.state.accent); Tr.lang = ui.state.lang }
+    Component.onCompleted: { idle.start(); applyVisibility(); Theme.apply(ui.state.theme, ui.state.accent); Tr.lang = ui.state.lang }
     Connections {
         target: ui
         function onChanged() { Theme.apply(ui.state.theme, ui.state.accent); Tr.lang = ui.state.lang }
@@ -57,6 +72,7 @@ Window {
     Connections {
         target: ayn
         function onPressed() {
+            win.wake()
             win.show()
             win.applyVisibility()
             win.raise()
@@ -70,7 +86,7 @@ Window {
         interval: 900
         onTriggered: console.info("AYN: window visible=" + win.visible + " active=" + win.active)
     }
-    Timer { id: hideChrome; interval: 5000; onTriggered: win.peek = false }
+    Timer { id: hideChrome; interval: 3000; onTriggered: win.peek = false }
 
     Item {
         id: body
@@ -174,5 +190,15 @@ Window {
         action: Auth.ask
         onCancelled: Auth.ask = ""
         onAccepted: password => { admin.run(Auth.ask, password); Auth.ask = "" }
+    }
+
+    // dimming: a black veil; its own touch handler swallows the wake-up tap
+    Rectangle {
+        anchors.fill: parent
+        color: "#000000"
+        opacity: win.dimmed ? 0.6 : 0
+        visible: opacity > 0.01
+        Behavior on opacity { NumberAnimation { duration: 500 } }
+        MouseArea { anchors.fill: parent; enabled: win.dimmed; onPressed: win.wake() }
     }
 }

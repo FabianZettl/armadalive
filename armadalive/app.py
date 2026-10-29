@@ -1,8 +1,9 @@
 import json, os, signal, sys
-from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtCore import QPoint, QTimer, QUrl, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow
+from PySide6.QtTest import QTest
 
 from . import __version__
 from .admin import Admin
@@ -57,5 +58,12 @@ def main():
         if "--lang" in sys.argv:  # for screenshots: not written to the settings file
             backends["ui"]._s["lang"] = sys.argv[sys.argv.index("--lang") + 1]
             backends["ui"].changed.emit()
-        QTimer.singleShot(3000, lambda: (QQuickWindow.grabWindow(window).save(out), app.quit()))
+        if "--click" in sys.argv:  # x,y,ms: tap the window ms milliseconds in, to test touch behaviour
+            x, y, ms = (int(v) for v in sys.argv[sys.argv.index("--click") + 1].split(","))
+            QTimer.singleShot(ms, lambda: QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(x, y)))
+        if "--demo-later" in sys.argv:  # ms:json, switch to another pinned game that many milliseconds in
+            ms, later = sys.argv[sys.argv.index("--demo-later") + 1].split(":", 1)
+            QTimer.singleShot(int(ms), lambda: backends["nowPlaying"].pin(json.loads(later).get("event"), json.loads(later).get("ui")))
+        delay = int(sys.argv[sys.argv.index("--delay") + 1]) if "--delay" in sys.argv else 3000
+        QTimer.singleShot(delay, lambda: (print("dimmed:", window.property("dimmed")), QQuickWindow.grabWindow(window).save(out), app.quit()))
     return app.exec()

@@ -22,7 +22,7 @@ QtObject {
         "Fan curve (drag the points, releasing saves)": "Lüfterkurve (Punkte ziehen, Loslassen speichert)",
         "Stick LED colour": "Farbe der Stick-LEDs",
         "Changing this needs the root helper. Install it under Settings > Setup.": "Zum Ändern wird der Root-Helfer benötigt. Installation unter Einstellungen > Einrichtung.",
-        "Language": "Sprache", "Logo animation": "Logo-Animation", "Appearance": "Darstellung", "Updates": "Updates", "Version": "Version",
+        "Language": "Sprache", "Logo animation": "Logo-Animation", "Dim after 10 s": "Nach 10 s abdunkeln", "Appearance": "Darstellung", "Updates": "Updates", "Version": "Version",
         "Check for updates": "Nach Updates suchen", "Checking…": "Suche …", "Up to date": "Aktuell",
         "Update available": "Update verfügbar", "Install update": "Update installieren", "Installing…": "Installiere …",
         "Installed. The app restarts in a moment.": "Installiert. Die App startet gleich neu.",
