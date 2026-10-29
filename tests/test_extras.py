@@ -116,6 +116,17 @@ class Closer(unittest.TestCase):
         table = {10: 1, 11: 10, 12: 11, 13: 10, 20: 1}
         self.assertEqual(sorted(closer.tree(10, table)), [10, 11, 12, 13])
 
+    def test_target_covers_emulators_es_de_and_steam_games_but_not_steam_itself(self):
+        c = closer.Closer(mock.Mock(), mock.Mock(), mock.Mock(), mock.Mock())
+        c._np.state = {"title": "Some Game"}
+        with mock.patch.object(closer, "running_game", return_value=None), mock.patch.object(closer, "steam_pids", return_value=[9]), \
+                mock.patch.object(closer, "esde_running", return_value=True):
+            for focus, want in (("3202277837", ([9], "ES-DE")), ("12345", ([9], "Some Game")), ("769", None), ("", None)):
+                c._gs.state = {"focus": focus}
+                self.assertEqual(c.target(), want, focus)
+        with mock.patch.object(closer, "running_game", return_value=dict(pid=4, name="x")):
+            self.assertEqual(c.target(), ([4], "Some Game"))
+
     def make(self, target):
         pad = mock.Mock()
         c = closer.Closer(pad, mock.Mock(), mock.Mock(), mock.Mock(state={"close": True}))

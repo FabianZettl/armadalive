@@ -3,7 +3,7 @@
 ## Unreleased
 
 - **Manual** and **Cheats** left the bar: tap the Game page to show them as buttons.
-- **Close game**: hold Start + Select for two seconds to close the game or emulator in front, with a countdown on the bottom screen. Setting to turn it off.
+- **Close game**: hold Start + Select for two seconds to close the program in front (emulator, ES-DE or a Steam game, never Steam itself), with a countdown on the bottom screen. Setting to turn it off.
 - **Follow game** theme: the palette is taken from the artwork of the game in front.
 - **Media bar** for whatever plays on the main screen (MPRIS): title, previous, play/pause, next.
 - **Battery**: low-battery warning (15/20/30 %, and 10 %), optional charge limit 80/90 % through the root helper.

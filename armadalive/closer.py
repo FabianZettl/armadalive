@@ -1,7 +1,7 @@
-"""Start + Select held for two seconds closes the game or emulator in front, with a countdown on the bottom screen."""
+"""Start + Select held for two seconds closes the program in front (emulator, ES-DE, Steam game; never Steam itself), with a countdown on the bottom screen."""
 import os, signal, time
 from PySide6.QtCore import Property, QObject, QTimer, Signal
-from .nowplaying import running_game
+from .nowplaying import esde_running, running_game
 
 HOLD = 2.0
 
@@ -75,16 +75,18 @@ class Closer(QObject):
         return self._s
 
     def target(self):
-        """(pids, title) of what is in front: a running emulator, else a Steam game. ES-DE and Steam's own UI are never a target."""
+        """(pids, title) of what is in front: a running emulator, else whatever Steam started (a game, or ES-DE as a shortcut).
+        Steam's own UI (focus 769) is never a target."""
         title = self._np.state.get("title", "")
         game = running_game()
         if game:
             return [game["pid"]], title or game["name"]
         app = self._gs.state.get("focus", "")
-        if app.isdigit() and 0 < int(app) < 2**31:
+        if app.isdigit() and int(app) > 0 and app != "769":
             pids = steam_pids(app)
             if pids:
-                return pids, title
+                shortcut = int(app) >= 2**31   # a non-Steam shortcut: ES-DE, whose own title is just the game it shows
+                return pids, "ES-DE" if shortcut and esde_running() else title
         return None
 
     def _set(self, **kw):

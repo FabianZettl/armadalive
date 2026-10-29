@@ -64,8 +64,8 @@ belongs to its owners; ArmadaLive does not ship any of it.
   config when you select the game in ES-DE, and put back for games without a setting.
 - **Media bar** – when something plays on the main screen (music, video, a browser: anything that speaks MPRIS) a bar with title,
   previous, play/pause and next shows above the page bar.
-- **Close game** – hold **Start + Select for two seconds** to close the game or emulator in front (ES-DE and Steam's own screen are
-  never closed). ArmadaLive comes to the front with a countdown; let go early and nothing happens. It asks the program to quit
+- **Close game** – hold **Start + Select for two seconds** to close the program in front: an emulator, ES-DE or a Steam game (never
+  Steam itself). ArmadaLive comes to the front with a countdown; let go early and nothing happens. It asks the program to quit
   and kills it after three seconds if it does not. Can be switched off in Settings.
 - **Tuning** – reached from the *Tuning* tile on System: CPU governor, underclock, GPU limits and a draggable fan-curve
   editor for each power profile. Needs the root helper.
@@ -134,7 +134,7 @@ nothing else, and greys out once it is done. The terminal commands below do the 
 | AYN button | bring ArmadaLive to the front, always |
 | Press and hold an app tile | choose another app for that slot |
 | Hold a tile on *System* | move tiles: tap a second tile to swap the two (also across the two pages), *Done* to finish, *Reset* for the original order; the order is saved |
-| Hold Start + Select for 2 s | close the game or emulator in front, with a countdown |
+| Hold Start + Select for 2 s | close the program in front (emulator, ES-DE, Steam game; not Steam itself), with a countdown |
 | Hold the AYN button | screen off (black, touches ignored); press the button again, or hold a finger on the screen, to wake it |
 | Tap the *120 FPS MODE* pill | switch the frame limit between 60 and 120 |
 | *Settings → Setup* | install the root helper and route the AYN button, no terminal needed |
