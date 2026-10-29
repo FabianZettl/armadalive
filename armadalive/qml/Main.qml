@@ -58,10 +58,16 @@ Window {
     }
     onCurrentChanged: if (current.id !== page) page = current.id
     onHomeChanged: if (home) { peek = true; hideChrome.restart() }
-    Component.onCompleted: { idle.start(); applyVisibility(); Theme.apply(ui.state.theme, ui.state.accent); Tr.lang = ui.state.lang }
+    // "Follow game" takes its colour from the artwork the top screen is showing; without artwork it falls back to its plain palette
+    readonly property string followColor: ui.state.theme === "follow" ? artwork.dominant(now.fanart || now.logo || "") : ""
+    function applyTheme() {
+        Theme.apply(ui.state.theme, ui.state.theme === "follow" ? followColor : ui.state.accent)
+    }
+    onFollowColorChanged: applyTheme()
+    Component.onCompleted: { idle.start(); applyVisibility(); applyTheme(); Tr.lang = ui.state.lang }
     Connections {
         target: ui
-        function onChanged() { Theme.apply(ui.state.theme, ui.state.accent); Tr.lang = ui.state.lang }
+        function onChanged() { win.applyTheme(); Tr.lang = ui.state.lang }
     }
     Connections {
         target: nowPlaying
@@ -81,15 +87,27 @@ Window {
         function onLongPressed() { if (!win.pressWasBlanked) win.blanked = true }   // hold the AYN button: screen off
         function onPressed() {
             win.pressWasBlanked = win.blanked
-            win.blanked = false
-            win.wake()
-            win.show()
-            win.applyVisibility()
-            win.raise()
-            win.requestActivate()
-            shell.activate()
+            win.bringUp()
             check.restart()
         }
+    }
+    function bringUp() {
+        blanked = false
+        wake()
+        show()
+        applyVisibility()
+        raise()
+        requestActivate()
+        shell.activate()
+    }
+    // holding Start + Select starts a countdown; the window comes up so it can be seen
+    Connections {
+        target: closer
+        function onBegun() { win.bringUp() }
+    }
+    Connections {
+        target: battery
+        function onAlert(percent) { win.bringUp(); lowBattery.text = Tr.t("Battery low") + ": " + percent + " %"; lowBattery.show() }
     }
     Timer {
         id: check
@@ -100,7 +118,7 @@ Window {
 
     Item {
         id: body
-        anchors { left: parent.left; right: parent.right; top: win.home ? parent.top : status.bottom; bottom: win.home ? parent.bottom : nav.top }
+        anchors { left: parent.left; right: parent.right; top: win.home ? parent.top : status.bottom; bottom: win.home ? parent.bottom : (mediaBar.visible ? mediaBar.top : nav.top) }
         clip: true
         Loader { anchors.fill: parent; source: win.current.file }
         // swipe sideways between pages; the PDF view keeps its own panning
@@ -197,6 +215,73 @@ Window {
                     onClicked: win.go(modelData.id)
                 }
             }
+        }
+    }
+
+    // what plays on the main screen (music, video): shown with the other bars, on the game page over the artwork
+    Rectangle {
+        id: mediaBar
+        x: 10 * win.u
+        width: parent.width - 20 * win.u
+        height: 46 * win.u
+        y: nav.y - height - 6 * win.u
+        visible: media.state.active === true && win.chrome
+        radius: Theme.radius * win.u
+        color: Theme.card
+        Column {
+            anchors { left: parent.left; leftMargin: 14 * win.u; right: buttons.left; rightMargin: 10 * win.u; verticalCenter: parent.verticalCenter }
+            Text { width: parent.width; elide: Text.ElideRight; color: Theme.text; font.pixelSize: 14 * win.u; text: media.state.title || "" }
+            Text { width: parent.width; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: 11 * win.u; visible: text !== ""; text: media.state.artist || "" }
+        }
+        Row {
+            id: buttons
+            anchors { right: parent.right; rightMargin: 8 * win.u; verticalCenter: parent.verticalCenter }
+            spacing: 6 * win.u
+            PillButton { label: "◀◀"; onClicked: media.previous() }
+            PillButton { primary: true; label: media.state.status === "Playing" ? "❚❚" : "▶"; onClicked: media.playPause() }
+            PillButton { label: "▶▶"; onClicked: media.next() }
+        }
+    }
+
+    Rectangle {
+        id: lowBattery
+        property string text
+        function show() { opacity = 1; hideLow.restart() }
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: 10 * win.u
+        width: lowText.width + 40 * win.u
+        height: 40 * win.u
+        radius: height / 2
+        color: Theme.hot
+        opacity: 0
+        visible: opacity > 0.01
+        Behavior on opacity { NumberAnimation { duration: 250 } }
+        Text { id: lowText; anchors.centerIn: parent; color: "#ffffff"; font.pixelSize: 16 * win.u; text: lowBattery.text }
+        Timer { id: hideLow; interval: 6000; onTriggered: lowBattery.opacity = 0 }
+    }
+
+    // Start + Select held: countdown until the game in front is closed
+    Rectangle {
+        anchors.fill: parent
+        color: Qt.rgba(0, 0, 0, 0.78)
+        opacity: closer.state.phase !== "" ? 1 : 0
+        visible: opacity > 0.01
+        Behavior on opacity { NumberAnimation { duration: 150 } }
+        MouseArea { anchors.fill: parent }
+        Column {
+            anchors.centerIn: parent
+            width: parent.width - 60 * win.u
+            spacing: 14 * win.u
+            Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; color: closer.state.phase === "closed" ? Theme.accent : Theme.muted; font.pixelSize: 16 * win.u
+                   text: closer.state.phase === "closed" ? Tr.t("Closed") : Tr.t("Keep holding Start + Select to close") }
+            Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight; color: Theme.text; font.pixelSize: 26 * win.u; text: closer.state.title || "" }
+            Rectangle {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: Math.min(parent.width, 360 * win.u); height: 12 * win.u; radius: height / 2; color: Theme.circle
+                Rectangle { width: parent.width * closer.state.progress; height: parent.height; radius: height / 2; color: closer.state.phase === "closed" ? Theme.accent : Theme.hot }
+            }
+            Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; color: Theme.text; font.pixelSize: 40 * win.u; font.weight: Font.Medium
+                   visible: closer.state.phase === "holding"; text: Math.max(0, 2 - closer.state.progress * 2).toFixed(1) + " s" }
         }
     }
 

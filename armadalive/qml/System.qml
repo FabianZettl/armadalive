@@ -25,6 +25,7 @@ Item {
         { id: "led", icon: "led", label: Tr.t("Stick LEDs"), on: rgb.enabled === true,
           act: () => { if (cfg.helper) settings.setRgb(!rgb.enabled, rgb.color || "FFFFFF", rgb.brightness === undefined ? 25 : rgb.brightness) } },
         { id: "wifi", icon: "wifi", label: Tr.t("Wi-Fi"), on: cc.wifi === true, act: () => controls.toggleWifi() },
+        { id: "wifips", icon: "wifi", label: Tr.t("Wi-Fi saver"), on: cc.wifips === true, act: () => controls.toggleWifiSaver() },
         { id: "bluetooth", icon: "bluetooth", label: "Bluetooth", on: cc.bluetooth === true, act: () => controls.toggleBluetooth() },
         { id: "plane", icon: "plane", label: Tr.t("Airplane"), on: cc.airplane === true, act: () => controls.toggleAirplane() },
         { id: "sound", icon: cc.muted ? "mute" : "sound", label: cc.muted ? Tr.t("Muted") : Tr.t("Sound"), on: cc.muted !== true, act: () => controls.toggleMute() },
@@ -34,6 +35,8 @@ Item {
         { id: "screenoff", icon: "power", label: Tr.t("Screen off"), on: false, act: () => { Nav.go = "blank" } },
         { id: "gamerule", icon: "star", label: Tr.t("Game rule"), on: rl.gameKey !== "" && rl.rules.some(r => r.key === rl.gameKey), act: () => rules.toggle("game") },
         { id: "systemrule", icon: "star", label: Tr.t("System rule"), on: rl.systemKey !== "" && rl.rules.some(r => r.key === rl.systemKey), act: () => rules.toggle("system") },
+        { id: "res", icon: "gauge", label: rl.resOk ? ((rl.rules.find(r => r.key === rl.gameKey) || {}).res ? (rl.rules.find(r => r.key === rl.gameKey)).res + "× " + Tr.t("render") : Tr.t("Resolution")) : Tr.t("Resolution"),
+          on: rl.resOk && (rl.rules.find(r => r.key === rl.gameKey) || {}).res > 0, act: () => rules.cycleRes() },
         { id: "gpu", icon: "gauge", label: st.gpuLevel === "auto" ? Tr.t("Auto") : st.gpuManual + " MHz", on: st.gpuLevel !== "auto",
           act: () => st.gpuLevel === "auto" ? system.setGpuManual(st.gpuManual) : system.setGpuAuto() }
     ]

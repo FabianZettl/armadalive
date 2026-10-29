@@ -58,10 +58,19 @@ belongs to its owners; ArmadaLive does not ship any of it.
   airplane mode, sound, screenshot, GPU clock, screen off), temperature, fan, and gauges for CPU, GPU, power and RAM. The status line
   shows the battery time left. Two tiles open **Graphs** (FPS, CPU, temperature, power and battery over the last two minutes) and
   **Tuning**. Two more, *Game rule* and *System rule*, remember the current power profile and FPS limit for the game in front, or for
-  its whole system, and apply them the next time that game starts.
+  its whole system, and apply them the next time that game starts. *Wi-Fi saver* switches Wi-Fi power saving off or on (it is on by
+  default; off gives steadier streaming and online play at a little more battery use). For PPSSPP, Dolphin (GameCube, Wii) and
+  ARMSX2 (PS2) a *Resolution* tile steps the game's render resolution through off, 1×…5×; it is written to the emulator's
+  config when you select the game in ES-DE, and put back for games without a setting.
+- **Media bar** – when something plays on the main screen (music, video, a browser: anything that speaks MPRIS) a bar with title,
+  previous, play/pause and next shows above the page bar.
+- **Close game** – hold **Start + Select for two seconds** to close the game or emulator in front (ES-DE and Steam's own screen are
+  never closed). ArmadaLive comes to the front with a countdown; let go early and nothing happens. It asks the program to quit
+  and kills it after three seconds if it does not. Can be switched off in Settings.
 - **Tuning** – reached from the *Tuning* tile on System: CPU governor, underclock, GPU limits and a draggable fan-curve
   editor for each power profile. Needs the root helper.
-- **Settings** – a health check (what is missing so that ArmadaLive can see your games, with a hint for each), English or German, ten themes (SteamOS, SNES, Game Boy, PS2, Famicom and more) with accent colours, logo animation on or off, in-app updates, and **Setup**: install the
+- **Settings** – a health check (what is missing so that ArmadaLive can see your games, with a hint for each), English or German, eleven themes (SteamOS, SNES, Game Boy, PS2, Famicom and more) with accent colours, one of them **Follow game** whose whole palette takes its colour from the artwork of the game in front,
+  a low-battery warning and an optional charge limit (80 or 90 %), a one-file **backup** of settings, game rules and tile order, logo animation on or off, in-app updates, and **Setup**: install the
   root helper and route the AYN button with one tap each (password prompt, greyed out once done). About and AI disclosure.
 
 ## Requirements
@@ -125,11 +134,13 @@ nothing else, and greys out once it is done. The terminal commands below do the 
 | AYN button | bring ArmadaLive to the front, always |
 | Press and hold an app tile | choose another app for that slot |
 | Hold a tile on *System* | move tiles: tap a second tile to swap the two (also across the two pages), *Done* to finish, *Reset* for the original order; the order is saved |
+| Hold Start + Select for 2 s | close the game or emulator in front, with a countdown |
 | Hold the AYN button | screen off (black, touches ignored); press the button again, or hold a finger on the screen, to wake it |
 | Tap the *120 FPS MODE* pill | switch the frame limit between 60 and 120 |
 | *Settings → Setup* | install the root helper and route the AYN button, no terminal needed |
 
-Settings are stored in `~/.config/armadalive/` (`ui.json`, `apps.json`).
+Settings are stored in `~/.config/armadalive/` (`ui.json`, `apps.json`, `game_rules.json`, `tiles.json`, `battery.json`); Settings → Backup
+saves them as one file, `~/ArmadaLive-backup.json`.
 
 ## How it works
 
@@ -152,7 +163,13 @@ Honest list of what has *not* been verified or does not work yet:
 - **Steam Big Picture selection** depends on Steam's internals and can break with a Steam update.
 - A window that you close is only hidden; the AYN button brings it back. This path has not been tried on hardware.
 - No screen-mode switching (dual, top only, bottom only, swap): not needed here and not implemented.
-- There are no automated tests yet.
+- **Close game** reads the controller directly, and only works while ArmadaLive is running. It was not tried against every
+  emulator: ones that ignore the polite quit are killed after three seconds, unsaved progress is lost.
+- The **Wi-Fi saver** setting is dropped by the kernel when Wi-Fi reconnects. The **charge limit** and **Wi-Fi saver** need the
+  root helper to be updated (Settings → Setup).
+- The **resolution tile** edits the emulators' own config files; Azahar is not supported (its config repeats every key).
+  Start the game from ES-DE so the file is written before the emulator reads it.
+- **Follow game** uses the game's artwork, not the theme of the top screen (ES-DE themes cannot be read as colours).
 
 ## Development
 

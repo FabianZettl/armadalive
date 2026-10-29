@@ -37,6 +37,10 @@ class Helper(unittest.TestCase):
         self.assertEqual(self.run_helper("profile", "eco", "cpu_max=0.1").returncode, 2)
         self.assertEqual(self.run_helper("profile", "eco", "cpu_governor=evil").returncode, 2)
 
+    def test_charge_limit_and_wifi_saver_values_are_checked(self):
+        for args in (("charge-limit", "49"), ("charge-limit", "101"), ("charge-limit", "x"), ("wifi-powersave", "maybe"), ("wifi-powersave",)):
+            self.assertEqual(self.run_helper(*args).returncode, 2, args)
+
     def test_rgb_values_are_checked(self):
         for args in (("true", "FF00FF;rm", "20", "100", "false", "50"), ("true", "00FF88", "150", "100", "false", "50"), ("maybe", "00FF88", "20", "100", "false", "50")):
             self.assertEqual(self.run_helper("rgb", *args).returncode, 2, args)

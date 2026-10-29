@@ -7,6 +7,8 @@
     fan key=value ...
     reset
     drop-caches
+    wifi-powersave <on|off>
+    charge-limit <50..100>
 
 Edits /etc/armada/power-profiles.conf (the override armada-powerd layers over the factory file) and asks the daemon
 to reload it. ARMADALIVE_ETC and ARMADALIVE_NO_RELOAD exist for tests.
@@ -162,7 +164,26 @@ def op_drop_caches(args):
         f.write("3")
 
 
-OPS = {"drop-caches": op_drop_caches, "rgb": op_rgb, "profile": op_profile, "fan-curve": op_fan_curve, "fan": op_fan, "reset": op_reset}
+def op_wifi_powersave(args):
+    if len(args) != 1 or args[0] not in ("on", "off"):
+        die("wifi-powersave on|off")
+    ifaces = [d for d in os.listdir("/sys/class/net") if os.path.isdir(f"/sys/class/net/{d}/phy80211")]
+    for dev in ifaces:
+        subprocess.run(["iw", "dev", dev, "set", "power_save", args[0]], check=False)  # lasts until Wi-Fi reconnects
+
+
+def op_charge_limit(args):
+    if len(args) != 1:
+        die("charge-limit <50..100>")
+    limit = number(args[0], 50, 100)
+    path = "/sys/class/power_supply/battery/charge_control_end_threshold"
+    if not os.path.exists(path):
+        die("this battery has no charge limit")
+    with open(path, "w") as f:
+        f.write(str(limit))
+
+
+OPS = {"wifi-powersave": op_wifi_powersave, "charge-limit": op_charge_limit, "drop-caches": op_drop_caches, "rgb": op_rgb, "profile": op_profile, "fan-curve": op_fan_curve, "fan": op_fan, "reset": op_reset}
 
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] not in OPS:

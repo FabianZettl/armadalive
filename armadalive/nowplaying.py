@@ -92,7 +92,7 @@ def running_game():
     if not best:
         return None
     _, system, game = best
-    return dict(event="game-start", system=system, path=f"{rom_dir}/{system}/{game}", name=os.path.splitext(game)[0])
+    return dict(event="game-start", system=system, path=f"{rom_dir}/{system}/{game}", name=os.path.splitext(game)[0], pid=best[0])
 
 
 def esde_running():

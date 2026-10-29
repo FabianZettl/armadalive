@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Close game**: hold Start + Select for two seconds to close the game or emulator in front, with a countdown on the bottom screen. Setting to turn it off.
+- **Follow game** theme: the palette is taken from the artwork of the game in front.
+- **Media bar** for whatever plays on the main screen (MPRIS): title, previous, play/pause, next.
+- **Battery**: low-battery warning (15/20/30 %, and 10 %), optional charge limit 80/90 % through the root helper.
+- **Wi-Fi saver** tile (Wi-Fi power saving on or off) and a **Resolution** tile for PPSSPP, Dolphin and ARMSX2, stored as part of a game rule.
+- **Backup** of settings, game rules and tile order as one file (Settings).
+- The root helper learned `wifi-powersave` and `charge-limit`; Setup shows *Needs update* until it is updated.
 - Dashboard tiles can be rearranged: hold one, tap another to swap; the order is saved.
 - **Fixed:** theme, accent, language, logo animation and dimming were forgotten at every restart (the settings file was read wrongly and the defaults won).
 - **Graphs** (FPS, CPU, temperature, power, battery) and the battery time left in the status line.

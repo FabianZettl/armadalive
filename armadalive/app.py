@@ -9,6 +9,12 @@ from . import __version__
 from .admin import Admin
 from .apps import Apps
 from .ayn import AynButton
+from .backup import Backup
+from .battery import Battery
+from .closer import Closer
+from .gamepad import Pad
+from .media import Media
+from .palette import Palette
 from .gamerules import GameRules
 from .controls import Controls
 from .gamescope import Gamescope
@@ -35,7 +41,10 @@ def main():
     gamescope, steamui = Gamescope(), SteamUi()
     now, monitor = NowPlaying(gamescope, steamui), SystemMonitor(fps=lambda: gamescope.state["fps"])
     backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=Apps(), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
-                    health=Health(steamui), rules=GameRules(now, gamescope, monitor), tileStore=Tiles())
+                    health=Health(steamui), rules=GameRules(now, gamescope, monitor), tileStore=Tiles(),
+                    battery=Battery(), media=Media(), backup=Backup(), artwork=Palette())
+    pad = backends["pad"] = Pad()   # must stay referenced, like the rest
+    backends["closer"] = Closer(pad, gamescope, now, backends["ui"])
     for name, obj in backends.items():
         engine.rootContext().setContextProperty(name, obj)
     # closing the window only hides it: the app keeps listening for the AYN button and can bring itself back
@@ -78,6 +87,12 @@ def main():
         if "--demo-later" in sys.argv:  # ms:json, switch to another pinned game that many milliseconds in
             ms, later = sys.argv[sys.argv.index("--demo-later") + 1].split(":", 1)
             QTimer.singleShot(int(ms), lambda: backends["nowPlaying"].pin(json.loads(later).get("event"), json.loads(later).get("ui")))
+        if "--close-demo" in sys.argv:  # ms: hold Start + Select that many milliseconds in, with a pretend game in front
+            closer = backends["closer"]
+            closer.target = lambda: ([], "Demo Game")
+            from .gamepad import BTN_SELECT, BTN_START, EVENT
+            press = b"".join(EVENT.pack(0, 0, 1, code, 1) for code in (BTN_SELECT, BTN_START))
+            QTimer.singleShot(int(sys.argv[sys.argv.index("--close-demo") + 1]), lambda: backends["pad"].feed("demo", press))
         delay = int(sys.argv[sys.argv.index("--delay") + 1]) if "--delay" in sys.argv else 3000
         QTimer.singleShot(delay, lambda: (print("dimmed:", window.property("dimmed")), QQuickWindow.grabWindow(window).save(out), app.quit()))
     return app.exec()

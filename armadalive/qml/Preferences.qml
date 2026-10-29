@@ -7,6 +7,8 @@ Flickable {
     readonly property var up: updater.state
     readonly property var adm: admin.state
     readonly property var rl: rules.state
+    readonly property var bat: battery.state
+    readonly property var bk: backup.state
     readonly property var accents: ["A97BE0", "68E1FB", "2EE59D", "D4AF37", "FF9F0A", "FF453A", "FF3DF2", "1A9FFF"]
     readonly property real m: 10
     contentHeight: col.height + 2 * m
@@ -76,6 +78,13 @@ Flickable {
                 model: [{ key: "on", label: Tr.t("On") }, { key: "off", label: Tr.t("Off") }]
                 current: page.look.dim === false ? "off" : "on"
                 onPicked: key => ui.setDim(key === "on")
+            }
+            Label { text: Tr.t("Close game: hold Start + Select for 2 s") }
+            Chips {
+                width: parent.width
+                model: [{ key: "on", label: Tr.t("On") }, { key: "off", label: Tr.t("Off") }]
+                current: page.look.close === false ? "off" : "on"
+                onPicked: key => ui.setClose(key === "on")
             }
             Label { text: Tr.t("Appearance") }
             Chips {
@@ -200,11 +209,43 @@ Flickable {
                         elide: Text.ElideRight
                         color: Theme.text
                         font.pixelSize: 14
-                        text: (modelData.key.indexOf("system:") === 0 ? Tr.t("System") + " " : "") + modelData.key.replace(/^(game|system):/, "") + "  ·  " + modelData.profile + (modelData.fps ? ", " + modelData.fps + " FPS" : "")
+                        text: (modelData.key.indexOf("system:") === 0 ? Tr.t("System") + " " : "") + modelData.key.replace(/^(game|system):/, "") + "  ·  " + (modelData.profile || "–") + (modelData.fps ? ", " + modelData.fps + " FPS" : "") + (modelData.res ? ", " + modelData.res + "×" : "")
                     }
                     PillButton { id: del; anchors { right: parent.right; verticalCenter: parent.verticalCenter } label: "✕"; onClicked: rules.remove(modelData.key) }
                 }
             }
+        }
+
+        Card {
+            Label { text: Tr.t("Battery") }
+            Label { text: Tr.t("Warn when the battery drops to") }
+            Chips {
+                width: parent.width
+                model: [{ key: "0", label: Tr.t("Off") }, { key: "15", label: "15 %" }, { key: "20", label: "20 %" }, { key: "30", label: "30 %" }]
+                current: String(page.bat.warn)
+                onPicked: key => battery.setWarn(parseInt(key))
+            }
+            Label { visible: page.bat.supported; text: Tr.t("Charge only up to (needs the root helper)") }
+            Chips {
+                visible: page.bat.supported
+                width: parent.width
+                model: [{ key: "100", label: "100 %" }, { key: "90", label: "90 %" }, { key: "80", label: "80 %" }]
+                current: String(page.bat.limit)
+                onPicked: key => battery.setLimit(parseInt(key))
+            }
+            Body { visible: page.bat.error !== ""; color: Theme.hot; font.pixelSize: 13; text: page.bat.error }
+        }
+
+        Card {
+            Label { text: Tr.t("Backup") }
+            Body { color: Theme.muted; font.pixelSize: 13; text: Tr.t("Settings, game rules and tile order in one file:") + " " + page.bk.path }
+            Row {
+                spacing: 10
+                PillButton { label: Tr.t("Save backup"); onClicked: backup.save() }
+                PillButton { label: Tr.t("Restore"); enabled: page.bk.exists; onClicked: backup.restore() }
+            }
+            Body { visible: page.bk.message !== ""; color: Theme.muted; font.pixelSize: 13
+                   text: page.bk.message === "saved" ? Tr.t("Saved.") : (page.bk.message === "restored" ? Tr.t("Restored. The app restarts.") : page.bk.message) }
         }
 
         Card {

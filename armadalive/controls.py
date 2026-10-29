@@ -1,5 +1,6 @@
 """Quick settings: radios, volume and the brightness of both screens."""
 import os, re, subprocess
+from . import privileged
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 
 # DSI-1 (1080x1240) is the bottom panel, DSI-2 (1080x1920) the top one; the backlight names follow the DSI order
@@ -51,10 +52,22 @@ class Controls(QObject):
             base = f"/sys/class/backlight/{dev}"
             top = _read(base + "/max_brightness", 1)
             bright[name] = round(100 * _read(base + "/brightness") / top)
-        self._s = dict(wifi=wifi, bluetooth=bluetooth, airplane=not wifi and not bluetooth,
+        saver = "power save: on" in _out("iw", "dev", self._wlan(), "get", "power_save").lower() if wifi else False
+        self._s = dict(wifi=wifi, wifips=saver, bluetooth=bluetooth, airplane=not wifi and not bluetooth,
                        volume=min(1.0, float(vol.group(1))) if vol else 0.0, muted="[MUTED]" in _out("wpctl", "get-volume", SINK),
                        brightness=bright)
         self.changed.emit()
+
+    @staticmethod
+    def _wlan():
+        return next((d for d in os.listdir("/sys/class/net") if os.path.isdir(f"/sys/class/net/{d}/phy80211")), "wlan0")
+
+    @Slot()
+    def toggleWifiSaver(self):
+        # shortcut: the kernel drops this setting when Wi-Fi reconnects, so it is a per-session switch
+        if privileged.available():
+            privileged.run("wifi-powersave", "off" if self._s.get("wifips") else "on")
+            self._tick()
 
     @Slot()
     def toggleWifi(self):

@@ -5,7 +5,7 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 CONFIG = os.path.expanduser("~/.config/armadalive/ui.json")
 
 
-DEFAULTS = dict(theme="stock", accent="", lang="en", animate=True, dim=True)
+DEFAULTS = dict(theme="stock", accent="", lang="en", animate=True, dim=True, close=True)
 
 
 class UiSettings(QObject):
@@ -40,6 +40,11 @@ class UiSettings(QObject):
     @Slot(bool)
     def setDim(self, on):
         self._s["dim"] = bool(on)
+        self._save()
+
+    @Slot(bool)
+    def setClose(self, on):
+        self._s["close"] = bool(on)
         self._save()
 
     @Slot(bool)
