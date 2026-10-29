@@ -16,7 +16,11 @@ class Qml(unittest.TestCase):
         for f in sorted(glob.glob(QML + "/*.qml")):
             c = QQmlComponent(engine, QUrl.fromLocalFile(f))
             if c.status() != QQmlComponent.Status.Ready:
-                bad[os.path.basename(f)] = [e.toString().split("qml/")[-1] for e in c.errors()]
+                errors = [e.toString().split("qml/")[-1] for e in c.errors()]
+                # Qt's PDF module is optional (a pip-installed PySide6 has none): Manual.qml falls back to ManualImages.qml
+                if os.path.basename(f) == "ManualPdf.qml" and all("Pdf" in e for e in errors):
+                    continue
+                bad[os.path.basename(f)] = errors
         self.assertEqual(bad, {})
 
     def test_no_property_group_followed_by_a_semicolon(self):  # a recurring QML syntax trap in this project

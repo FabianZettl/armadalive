@@ -83,8 +83,12 @@ belongs to its owners; ArmadaLive does not ship any of it.
 ## Requirements
 
 - An AYN Thor running Armada OS. Developed and tested on build `20261010`.
-- Nothing to install from a package manager: Qt for Python (PySide6), `armada-power`, `armada-rgb`, `nmcli`, `rfkill`,
-  `wpctl` and `spectacle` are part of Armada OS.
+- Nothing to install from a package manager: `armada-power`, `armada-rgb`, `nmcli`, `rfkill`, `wpctl` and `spectacle` are part
+  of Armada OS.
+- Qt for Python (PySide6) comes with some Armada images but not all (a system update once removed it). `install.sh` checks, and if it is
+  missing it creates a private Python environment in `~/.local/share/armadalive/venv` and installs PySide6 and PyMuPDF there
+  (several hundred MB, needs internet, once). After a system update that changes Python's version, run `./install.sh` again.
+  Without Qt's PDF module, manuals are drawn page by page with PyMuPDF.
 - Optional: [ES-DE](https://es-de.org) with scraped media, for logos and backgrounds of emulated games.
 
 ## Install

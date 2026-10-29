@@ -17,13 +17,27 @@ if [ "${1:-}" = "--uninstall" ]; then
 fi
 
 mkdir -p "$share" "$(dirname "$unit")" "$(dirname "$desktop")"
+
+# PySide6 normally comes with the OS image, but a system update once dropped it. Then ArmadaLive uses a private copy in its own folder.
+need="import PySide6.QtQuick, PySide6.QtWebSockets, PySide6.QtDBus, PySide6.QtTest"
+py=/usr/bin/python3
+if ! "$py" -c "$need" 2>/dev/null; then
+    py="$share/venv/bin/python"
+    if ! "$py" -c "$need" 2>/dev/null; then
+        echo "PySide6 is not installed on this system: fetching a private copy (several hundred MB, needs internet)..."
+        rm -rf "$share/venv"
+        /usr/bin/python3 -m venv "$share/venv"
+        "$share/venv/bin/pip" install --quiet PySide6-Essentials PySide6-Addons pymupdf
+        "$py" -c "$need" || { echo "PySide6 could not be installed" >&2; exit 1; }
+    fi
+fi
 rm -rf "$share/armadalive"
 cp -r "$here/armadalive" "$share/"
 find "$share" -name __pycache__ -prune -exec rm -rf {} +
 rm -rf "$share/scripts"
 cp -r "$here/scripts" "$share/scripts"
 install -m 755 "$here/scripts/esde-event.py" "$share/esde-event.py"
-cp "$here/data/armadalive.service" "$unit"
+sed "s#^ExecStart=/usr/bin/python3#ExecStart=$py#" "$here/data/armadalive.service" >"$unit"
 cp "$here/data/armadalive.desktop" "$desktop"
 for e in $events; do
     mkdir -p "$HOME/ES-DE/scripts/$e"
