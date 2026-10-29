@@ -46,9 +46,10 @@ def main():
         out = sys.argv[sys.argv.index("--snapshot") + 1]
         page = int(sys.argv[sys.argv.index("--page") + 1]) if "--page" in sys.argv else 0
         window = engine.rootObjects()[0]
-        if "--demo" in sys.argv:  # pin a game state: {"event": {...}} like ES-DE sends, or {"ui": [appid, "name"]} for Steam's UI
-            demo = json.loads(sys.argv[sys.argv.index("--demo") + 1])
-            backends["nowPlaying"].pin(demo.get("event"), demo.get("ui"))
+        # a snapshot always shows a fixed game state, otherwise whatever ES-DE or Steam is doing at that moment throws the page
+        # back to "Game": {"event": {...}} like ES-DE sends, or {"ui": [appid, "name"]} for Steam's UI; none means idle
+        demo = json.loads(sys.argv[sys.argv.index("--demo") + 1]) if "--demo" in sys.argv else {}
+        backends["nowPlaying"].pin(demo.get("event"), demo.get("ui"))
         window.setProperty("page", ["now", "apps", "mode", "system", "prefs", "tuning", "cheats", "manual"][page] if page < 8 else "now")
         if "--lang" in sys.argv:  # for screenshots: not written to the settings file
             backends["ui"]._s["lang"] = sys.argv[sys.argv.index("--lang") + 1]

@@ -49,7 +49,8 @@ belongs to its owners; ArmadaLive does not ship any of it.
   airplane mode, sound, screenshot, GPU clock), temperature, fan, and gauges for CPU, GPU, power and RAM.
 - **Tuning** – reached from the *Tuning* tile on System: CPU governor, underclock, GPU limits and a draggable fan-curve
   editor for each power profile. Needs the root helper.
-- **Settings** – English or German, five themes with accent colours, logo animation on or off, in-app updates, about.
+- **Settings** – English or German, five themes with accent colours, logo animation on or off, in-app updates, and **Setup**: install the
+  root helper and route the AYN button with one tap each (password prompt, greyed out once done). About and AI disclosure.
 
 ## Requirements
 
@@ -71,10 +72,13 @@ cd armadalive
 That installs ArmadaLive for your user only, no root needed, and starts it. It runs as a user service, starts at login and
 adds an **ArmadaLive** entry to the app menu.
 
+**Then open ArmadaLive → Settings → Setup.** The *root helper* (fan curves, profile tuning, stick LEDs, *Clear RAM*) and the *AYN button*
+are installed and activated right there: tap *Install* or *Set up*, type your password, done. You do not need a terminal for this.
+
 ### Optional steps
 
-Open ArmadaLive, go to **Settings → Setup** and tap the buttons there. Each asks for your password, passes it to `sudo` and
-nothing else, and greys out once it is done. The same steps work from a terminal if you prefer.
+Steps 2 and 3 are the two buttons under **Settings → Setup** in the app. Each asks for your password, passes it to `sudo` and
+nothing else, and greys out once it is done. The terminal commands below do the same thing and are listed for SSH users.
 
 1. **ES-DE events.** In ES-DE press START, open *Other Settings* and turn on **Custom Event Scripts** and **Browsing Custom
    Event Scripts**, then leave the menu so ES-DE saves. `install.sh` has already put its hooks in `~/ES-DE/scripts`.
@@ -108,6 +112,7 @@ nothing else, and greys out once it is done. The same steps work from a terminal
 | AYN button | bring ArmadaLive to the front, always |
 | Press and hold an app tile | choose another app for that slot |
 | Tap the *120 FPS MODE* pill | switch the frame limit between 60 and 120 |
+| *Settings → Setup* | install the root helper and route the AYN button, no terminal needed |
 
 Settings are stored in `~/.config/armadalive/` (`ui.json`, `apps.json`).
 
