@@ -1,0 +1,17 @@
+singleton Theme Theme.qml
+Empty 1.0 Empty.qml
+Ring 1.0 Ring.qml
+Tile 1.0 Tile.qml
+Chips 1.0 Chips.qml
+CurveEditor 1.0 CurveEditor.qml
+AppGrid 1.0 AppGrid.qml
+AppPicker 1.0 AppPicker.qml
+Icon 1.0 Icon.qml
+CircleButton 1.0 CircleButton.qml
+BarSlider 1.0 BarSlider.qml
+singleton Gesture Gesture.qml
+singleton Tr Tr.qml
+singleton Nav Nav.qml
+PillButton 1.0 PillButton.qml
+singleton Auth Auth.qml
+PasswordDialog 1.0 PasswordDialog.qml

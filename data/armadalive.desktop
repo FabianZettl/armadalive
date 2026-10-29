@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ArmadaLive
+Comment=Companion for the AYN Thor bottom screen
+Exec=sh -c 'systemctl --user start armadalive && systemctl --user kill -s USR1 armadalive'
+Icon=input-gaming
+Terminal=false
+Categories=Game;

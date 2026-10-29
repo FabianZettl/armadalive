@@ -1,0 +1,170 @@
+#!/usr/bin/python3
+"""Root helper for ArmadaLive: the few privileged writes the app needs, with every input validated.
+
+    rgb  <enabled> <color> <brightness> <saturation> <link-brightness> <max-brightness>
+    profile <eco|balanced|performance> key=value ...
+    fan-curve <name> <temp:pwm,...> [label]
+    fan key=value ...
+    reset
+    drop-caches
+
+Edits /etc/armada/power-profiles.conf (the override armada-powerd layers over the factory file) and asks the daemon
+to reload it. ARMADALIVE_ETC and ARMADALIVE_NO_RELOAD exist for tests.
+"""
+import configparser, glob, os, re, subprocess, sys, tempfile
+
+ETC = os.environ.get("ARMADALIVE_ETC", "/etc/armada")
+CONFIG = f"{ETC}/power-profiles.conf"
+FACTORY = "/usr/share/armada/power-profiles.conf"
+PROFILES = ("eco", "balanced", "performance")
+UNDERCLOCK = ("none", "small", "medium", "large")
+FAN_KEYS = {"ramp_up": (1, 255, int), "ramp_down": (1, 255, int), "smoothing": (0.0, 0.99, float),
+            "min_pwm": (0, 255, int), "charging_pwm": (0, 255, int)}
+
+
+def die(msg):
+    print(f"armadalive-helper: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
+def read(path):
+    try:
+        return open(path).read().split()
+    except OSError:
+        return []
+
+
+def number(text, lo, hi, kind=int):
+    try:
+        value = kind(text)
+    except ValueError:
+        die(f"not a number: {text!r}")
+    if not lo <= value <= hi:
+        die(f"{text} outside {lo}..{hi}")
+    return value
+
+
+def load():
+    parser = configparser.ConfigParser()
+    parser.optionxform = str
+    if os.path.exists(CONFIG):
+        parser.read(CONFIG)
+    return parser
+
+
+def merged():
+    parser = configparser.ConfigParser()
+    parser.optionxform = str
+    parser.read([p for p in (FACTORY, CONFIG) if os.path.exists(p)])
+    return parser
+
+
+def save(parser):
+    os.makedirs(ETC, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=ETC, prefix=".power-profiles.")
+    with os.fdopen(fd, "w") as f:
+        parser.write(f)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, CONFIG)
+    if not os.environ.get("ARMADALIVE_NO_RELOAD"):
+        subprocess.run(["armada-power", "reload"], check=False)
+
+
+def put(parser, section, key, value):
+    if not parser.has_section(section):
+        parser.add_section(section)
+    parser.set(section, key, str(value))
+
+
+def op_rgb(args):
+    if len(args) != 6:
+        die("rgb needs 6 arguments")
+    enabled, color, brightness, saturation, link, maxb = args
+    if enabled not in ("true", "false") or link not in ("true", "false"):
+        die("enabled/link must be true or false")
+    if not re.fullmatch(r"[0-9A-Fa-f]{6}", color):
+        die("color must be RRGGBB")
+    cmd = ["armada-rgb", "set", "--enabled", enabled, "--color", color.upper(), "--link-brightness", link,
+           "--brightness", str(number(brightness, 0, 100)), "--saturation", str(number(saturation, 0, 100)),
+           "--max-brightness", str(number(maxb, 0, 100))]
+    sys.exit(subprocess.run(cmd).returncode)
+
+
+def op_profile(args):
+    if not args or args[0] not in PROFILES:
+        die("profile name must be eco, balanced or performance")
+    name, section, parser = args[0], f"profile.{args[0]}", load()
+    gpu = {int(f) // 1000000 for f in read("/sys/class/devfreq/3d00000.gpu/available_frequencies")}
+    for item in args[1:]:
+        key, _, value = item.partition("=")
+        if key == "cpu_governor":
+            if value not in read("/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors"):
+                die(f"unknown governor {value!r}")
+        elif key == "cpu_underclock":
+            if value not in UNDERCLOCK:
+                die(f"cpu_underclock must be one of {UNDERCLOCK}")
+            for stale in [o for o in parser.options(section) if o.startswith("cpu_max_policy")] if parser.has_section(section) else []:
+                parser.remove_option(section, stale)  # presets and custom caps do not mix
+        elif key == "fan_curve":
+            if not merged().has_section(f"fan_curve.{value}"):
+                die(f"unknown fan curve {value!r}")
+        elif key in ("gpu_max_mhz", "gpu_min_mhz"):
+            if int(number(value, 1, 5000)) not in gpu:
+                die(f"{value} MHz is not a GPU step {sorted(gpu)}")
+            parser.has_section(section) and parser.remove_option(section, key.replace("_mhz", ""))
+        else:
+            die(f"key not allowed: {key!r}")
+        put(parser, section, key, value)
+    save(parser)
+
+
+def op_fan_curve(args):
+    if len(args) not in (2, 3) or not re.fullmatch(r"[a-z][a-z0-9_]{0,31}", args[0]):
+        die("fan-curve <name> <points> [label]")
+    points = []
+    for p in args[1].split(","):
+        if not re.fullmatch(r"-?\d{1,3}:\d{1,3}", p):
+            die(f"bad point {p!r}")
+        temp, pwm = (int(x) for x in p.split(":"))
+        points.append((number(temp, -40, 150), number(pwm, 0, 255)))
+    if not points:
+        die("no points")
+    parser, section = load(), f"fan_curve.{args[0]}"
+    put(parser, section, "curve", ",".join(f"{t}:{p}" for t, p in sorted(points, reverse=True)))
+    if len(args) == 3:
+        if not re.fullmatch(r"[A-Za-z0-9 _-]{1,24}", args[2]):
+            die("bad label")
+        put(parser, section, "label", args[2])
+    save(parser)
+
+
+def op_fan(args):
+    parser = load()
+    for item in args:
+        key, _, value = item.partition("=")
+        if key not in FAN_KEYS:
+            die(f"key not allowed: {key!r}")
+        lo, hi, kind = FAN_KEYS[key]
+        put(parser, "fan", key, number(value, lo, hi, kind))
+    save(parser)
+
+
+def op_reset(args):
+    if os.path.exists(CONFIG):
+        os.replace(CONFIG, CONFIG + ".armadalive-bak")
+    if not os.environ.get("ARMADALIVE_NO_RELOAD"):
+        subprocess.run(["armada-power", "reload"], check=False)
+
+
+def op_drop_caches(args):
+    os.sync()
+    with open("/proc/sys/vm/drop_caches", "w") as f:  # frees clean page cache only, no data is lost
+        f.write("3")
+
+
+OPS = {"drop-caches": op_drop_caches, "rgb": op_rgb, "profile": op_profile, "fan-curve": op_fan_curve, "fan": op_fan, "reset": op_reset}
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2 or sys.argv[1] not in OPS:
+        die("usage: " + " | ".join(OPS))
+    OPS[sys.argv[1]](sys.argv[2:])
