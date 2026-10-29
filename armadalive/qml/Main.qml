@@ -111,7 +111,7 @@ Window {
     }
     Connections {
         target: battery
-        function onAlert(percent) { win.bringUp(); lowBattery.text = Tr.t("Battery low") + ": " + percent + " %"; lowBattery.show() }
+        function onAlert(percent) { win.bringUp(); toast.show(Tr.t("Battery low") + ": " + percent + " %", true) }
     }
     Timer {
         id: check
@@ -250,21 +250,40 @@ Window {
         }
     }
 
+    // short messages from the app: something was done (accent colour) or went wrong (red)
+    Connections {
+        target: steamShortcuts
+        function onNotice(code, title) {
+            const text = ({ created: Tr.t("Shortcut created"), exists: Tr.t("Already in Steam"), unknown: Tr.t("Launch the game from ES-DE once first"),
+                            unreachable: Tr.t("Steam is not reachable") })[code]
+            toast.show(title && code !== "unknown" ? text + ": " + title : text, code !== "created")
+        }
+    }
     Rectangle {
-        id: lowBattery
+        id: toast
         property string text
-        function show() { opacity = 1; hideLow.restart() }
+        property bool bad: false
+        function show(message, isBad) { text = message; bad = isBad; opacity = 1; hideToast.restart() }
         anchors.horizontalCenter: parent.horizontalCenter
         y: 10 * win.u
-        width: lowText.width + 40 * win.u
+        width: Math.min(toastText.implicitWidth + 40 * win.u, parent.width - 40 * win.u)
         height: 40 * win.u
         radius: height / 2
-        color: Theme.hot
+        color: bad ? Theme.hot : Theme.accent
         opacity: 0
         visible: opacity > 0.01
         Behavior on opacity { NumberAnimation { duration: 250 } }
-        Text { id: lowText; anchors.centerIn: parent; color: "#ffffff"; font.pixelSize: 16 * win.u; text: lowBattery.text }
-        Timer { id: hideLow; interval: 6000; onTriggered: lowBattery.opacity = 0 }
+        Text {
+            id: toastText
+            anchors.centerIn: parent
+            width: parent.width - 24 * win.u
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
+            color: toast.bad ? "#ffffff" : Theme.bg
+            font.pixelSize: 16 * win.u
+            text: toast.text
+        }
+        Timer { id: hideToast; interval: 4000; onTriggered: toast.opacity = 0 }
     }
 
     // Start + Select held: countdown until the game in front is closed

@@ -62,6 +62,10 @@ belongs to its owners; ArmadaLive does not ship any of it.
   default; off gives steadier streaming and online play at a little more battery use). For PPSSPP, Dolphin (GameCube, Wii) and
   ARMSX2 (PS2) a *Resolution* tile steps the game's render resolution through off, 1×…5×; it is written to the emulator's
   config when you select the game in ES-DE, and put back for games without a setting.
+- **Add to Steam** – a tile on System that adds the game in front to Steam's library as a shortcut with its ES-DE artwork. It copies the
+  launch command ES-DE wrote to its log when it started the game, so the game must have been started from ES-DE once. If the same
+  command is already a shortcut the tile shows *In Steam* and a tap only says so. Each action ends in a short popup. Needs the Steam
+  debug port like the Big Picture selection (see optional step 4); shortcuts are not removed again by ArmadaLive.
 - **Media bar** – when something plays on the main screen (music, video, a browser: anything that speaks MPRIS) a bar with title,
   previous, play/pause and next shows above the page bar.
 - **Close game** – hold **Start + Select for two seconds** to close the program in front: an emulator, ES-DE or a Steam game (never

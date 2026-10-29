@@ -22,6 +22,7 @@ from .health import Health
 from .nowplaying import NowPlaying
 from .settings import Settings
 from .shell import Shell
+from .steamshortcuts import SteamShortcuts
 from .steamui import SteamUi
 from .tiles import Tiles
 from .ui import UiSettings
@@ -42,7 +43,7 @@ def main():
     now, monitor = NowPlaying(gamescope, steamui), SystemMonitor(fps=lambda: gamescope.state["fps"])
     backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=Apps(), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
                     health=Health(steamui), rules=GameRules(now, gamescope, monitor), tileStore=Tiles(),
-                    battery=Battery(), media=Media(), backup=Backup(), artwork=Palette())
+                    battery=Battery(), media=Media(), backup=Backup(), artwork=Palette(), steamShortcuts=SteamShortcuts(now))
     pad = backends["pad"] = Pad()   # must stay referenced, like the rest
     backends["closer"] = Closer(pad, gamescope, now, backends["ui"])
     for name, obj in backends.items():
@@ -87,6 +88,9 @@ def main():
         if "--demo-later" in sys.argv:  # ms:json, switch to another pinned game that many milliseconds in
             ms, later = sys.argv[sys.argv.index("--demo-later") + 1].split(":", 1)
             QTimer.singleShot(int(ms), lambda: backends["nowPlaying"].pin(json.loads(later).get("event"), json.loads(later).get("ui")))
+        if "--notice" in sys.argv:  # code:title, show that popup message 600 ms in
+            code, _, title = sys.argv[sys.argv.index("--notice") + 1].partition(":")
+            QTimer.singleShot(600, lambda: backends["steamShortcuts"].notice.emit(code, title))
         if "--close-demo" in sys.argv:  # ms: hold Start + Select that many milliseconds in, with a pretend game in front
             closer = backends["closer"]
             closer.target = lambda: ([], "Demo Game")

@@ -22,16 +22,54 @@ FOCUS_JS = """(() => {
 })()"""
 
 
-def _target():
-    """The Big Picture window, whatever language Steam runs in ("Big-Picture-Modus", "Big Picture Mode", ...)."""
+def _target(shared=False):
+    """The Big Picture window, whatever language Steam runs in ("Big-Picture-Modus", "Big Picture Mode", ...); with shared=True
+    Steam's SharedJSContext, the page that has the whole SteamClient API (the Big Picture page lacks e.g. AddShortcut)."""
     try:
         for t in json.load(urllib.request.urlopen(LIST_URL, timeout=0.6)):
             title = t.get("title", "").lower()
-            if t.get("type") == "page" and title.startswith("big") and "picture" in title:
+            if t.get("type") == "page" and (title == "sharedjscontext" if shared else title.startswith("big") and "picture" in title):
                 return t.get("webSocketDebuggerUrl")
     except (OSError, ValueError):
         pass
     return None
+
+
+_live = set()   # sockets that wait for an answer must stay referenced
+
+
+def eval_js(expression, done, timeout=30000):
+    """Run a script in Steam's SharedJSContext; done(value) gets its (awaited) result, or None if Steam cannot be reached or it failed."""
+    url = _target(shared=True)
+    if not url:
+        done(None)
+        return
+    ws, finished = QWebSocket(), []
+
+    def finish(value):
+        if finished:
+            return
+        finished.append(1)
+        _live.discard(ws)
+        ws.close()
+        done(value)
+
+    def reply(text):
+        try:
+            answer = json.loads(text)
+        except ValueError:
+            return
+        if answer.get("id") == 7:
+            result = answer.get("result", {})
+            finish(None if "exceptionDetails" in result else result.get("result", {}).get("value"))
+
+    ws.connected.connect(lambda: ws.sendTextMessage(json.dumps(
+        {"id": 7, "method": "Runtime.evaluate", "params": {"expression": expression, "awaitPromise": True, "returnByValue": True}})))
+    ws.textMessageReceived.connect(reply)
+    ws.errorOccurred.connect(lambda *_: finish(None))
+    _live.add(ws)
+    ws.open(QUrl(url))
+    QTimer.singleShot(timeout, lambda: finish(None))
 
 
 class SteamUi(QObject):

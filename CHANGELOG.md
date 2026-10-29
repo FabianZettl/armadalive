@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Add to Steam** tile: puts the game in front into Steam's library as a shortcut, with cover, background and logo from ES-DE's media. It uses the launch command ES-DE logged when it started the game (so start the game from ES-DE once first), knows when the shortcut exists already, and answers with a popup.
+
 ## 0.2.0
 
 - **Mode** page redone: bigger cards and thick bars, the stick LEDs get on/off, brightness, a rainbow bar and colour swatches.

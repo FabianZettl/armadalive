@@ -92,6 +92,10 @@ Canvas {
         case "star":
             for (let i = 0; i < 10; i++) { const r = i % 2 ? 4.2 : 9.5, a = -Math.PI / 2 + i * Math.PI / 5; (i ? c.lineTo : c.moveTo).call(c, 12 + r * Math.cos(a), 12.5 + r * Math.sin(a)) }
             c.closePath(); break
+        case "add":
+            ci(c, 12, 12, 9); ln(c, 12, 7.5, 12, 16.5); ln(c, 7.5, 12, 16.5, 12); break
+        case "done":
+            ci(c, 12, 12, 9); c.moveTo(7.5, 12.5); c.lineTo(10.7, 15.7); c.lineTo(16.8, 8.8); break
         case "info":
             ci(c, 12, 12, 9); ln(c, 12, 11, 12, 17); ci(c, 12, 7.6, 0.5); break
         default:

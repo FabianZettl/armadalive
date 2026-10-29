@@ -133,7 +133,7 @@ def describe_steam(appid):
 def describe(event):
     """Reduce an ES-DE event to what the UI shows."""
     ev, system, path = event.get("event", "idle"), event.get("system", ""), event.get("path", "")
-    out = dict(kind="idle", title="ArmadaLive", logo="", fanart="", manual="", hasCheats=False, playing=False, key="", system="")
+    out = dict(kind="idle", title="ArmadaLive", logo="", fanart="", manual="", hasCheats=False, playing=False, key="", system="", path="")
     if ev == "system-select" and re.fullmatch(r"[\w.-]+", system):
         fan = sorted(glob.glob(glob.escape(f"{MEDIA}/{system}/fanart") + "/*"))
         out.update(kind="system", system=system, title=event.get("systemName") or system, logo=_url(_system_logo(system)),
@@ -144,7 +144,7 @@ def describe(event):
         out.update(kind="game", title=_game_title(system, path) or event.get("name", ""), logo=_url(media("marquees")),
                    fanart=_url(media("fanart") or media("screenshots")), manual=_url(media("manuals")),
                    hasCheats=bool(_cheat_file(path)), playing=ev == "game-start",
-                   key=f"{system}/{os.path.splitext(os.path.basename(path))[0]}", system=system)
+                   key=f"{system}/{os.path.splitext(os.path.basename(path))[0]}", system=system, path=path)
     return out
 
 
