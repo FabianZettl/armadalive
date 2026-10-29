@@ -124,7 +124,10 @@ Window {
         id: body
         anchors { left: parent.left; right: parent.right; top: win.home ? parent.top : status.bottom; bottom: win.home ? parent.bottom : (mediaBar.visible ? mediaBar.top : nav.top) }
         clip: true
-        Loader { anchors.fill: parent; source: win.current.file }
+        Loader {
+            anchors { fill: parent; leftMargin: win.home ? 0 : 12 * win.u; rightMargin: win.home ? 0 : 12 * win.u; topMargin: win.home ? 0 : 6 * win.u; bottomMargin: win.home ? 0 : 6 * win.u }
+            source: win.current.file
+        }
         // swipe sideways between pages; the PDF view keeps its own panning
         DragHandler {
             target: null
@@ -161,7 +164,7 @@ Window {
         color: win.home ? Qt.rgba(Theme.bg.r, Theme.bg.g, Theme.bg.b, 0.7) : "transparent"
         Text {
             id: clock
-            x: 16 * win.u
+            x: 24 * win.u
             anchors.verticalCenter: parent.verticalCenter
             color: Theme.text
             font.pixelSize: 15 * win.u
@@ -169,7 +172,7 @@ Window {
             Timer { interval: 10000; running: true; repeat: true; onTriggered: clock.text = Qt.formatTime(new Date(), "hh:mm") }
         }
         Row {
-            anchors { right: parent.right; rightMargin: 16 * win.u; verticalCenter: parent.verticalCenter }
+            anchors { right: parent.right; rightMargin: 24 * win.u; verticalCenter: parent.verticalCenter }
             spacing: 12 * win.u
             Icon { width: 18 * win.u; height: width; anchors.verticalCenter: parent.verticalCenter; name: "wifi"; color: controls.state.wifi ? Theme.text : Theme.circle }
             Icon { width: 18 * win.u; height: width; anchors.verticalCenter: parent.verticalCenter; name: "bluetooth"; color: controls.state.bluetooth ? Theme.text : Theme.circle }
@@ -198,10 +201,10 @@ Window {
 
     Rectangle {
         id: nav
-        x: 10 * win.u
-        width: parent.width - 20 * win.u
+        x: 18 * win.u
+        width: parent.width - 36 * win.u
         height: 92 * win.u
-        y: win.chrome ? parent.height - height - 10 * win.u : parent.height + 4
+        y: win.chrome ? parent.height - height - 16 * win.u : parent.height + 4
         Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         radius: Theme.radius * win.u
         color: Theme.card
@@ -225,8 +228,8 @@ Window {
     // what plays on the main screen (music, video): shown with the other bars, on the game page over the artwork
     Rectangle {
         id: mediaBar
-        x: 10 * win.u
-        width: parent.width - 20 * win.u
+        x: 18 * win.u
+        width: parent.width - 36 * win.u
         height: 46 * win.u
         y: nav.y - height - 6 * win.u
         visible: media.state.active === true && win.chrome

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Mode** page redone: bigger cards and thick bars, the stick LEDs get on/off, brightness, a rainbow bar and colour swatches.
+- **Settings** page tidied: one button per option that flips it, grouped into *General* and *Appearance*. More room to the screen edge on every page.
+- The FPS reader can no longer die silently on a bad line, and shows 0 when gamescope restarts.
 - **Manual** and **Cheats** left the bar: tap the Game page to show them as buttons.
 - **Close game**: hold Start + Select for two seconds to close the program in front (emulator, ES-DE or a Steam game, never Steam itself), with a countdown on the bottom screen. Setting to turn it off.
 - **Follow game** theme: the palette is taken from the artwork of the game in front.

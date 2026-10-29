@@ -10,17 +10,52 @@ Flickable {
     readonly property var bat: battery.state
     readonly property var bk: backup.state
     readonly property var accents: ["A97BE0", "68E1FB", "2EE59D", "D4AF37", "FF9F0A", "FF453A", "FF3DF2", "1A9FFF"]
-    readonly property real m: 10
+    readonly property real m: 16
     contentHeight: col.height + 2 * m
     clip: true
 
     component Card: Rectangle {
         default property alias content: inner.data
         width: parent.width
-        height: inner.height + 28
-        radius: Theme.radius
+        height: inner.height + 36
+        radius: Theme.radius + 4
         color: Theme.card
-        Column { id: inner; x: 14; y: 14; width: parent.width - 28; spacing: 10 }
+        Column { id: inner; x: 18; y: 18; width: parent.width - 36; spacing: 12 }
+    }
+    component Title: Text { color: Theme.muted; font.pixelSize: 15; font.letterSpacing: 0.6; font.capitalization: Font.AllUppercase; width: parent.width }
+    // one row per setting: its name on the left, a single button on the right that flips it (like the tiles on the System page)
+    component Setting: Item {
+        id: st
+        property string title
+        property string hint
+        property string label
+        property bool on: false
+        property bool last: false
+        signal toggled()
+        width: parent.width
+        height: 62
+        Column {
+            anchors { left: parent.left; right: btn.left; rightMargin: 12; verticalCenter: parent.verticalCenter }
+            Text { width: parent.width; elide: Text.ElideRight; color: Theme.text; font.pixelSize: 17; text: st.title }
+            Text { visible: st.hint !== ""; width: parent.width; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: 12; text: st.hint }
+        }
+        Rectangle {
+            id: btn
+            anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+            width: Math.max(96, txt.width + 36); height: 44; radius: 22
+            color: st.on ? Theme.accentSoft : Theme.circle
+            border.width: 1.5
+            border.color: st.on ? Theme.accent : Theme.border
+            scale: tap.pressed ? 0.95 : 1
+            Text { id: txt; anchors.centerIn: parent; color: st.on ? Theme.accent : Theme.muted; font.pixelSize: 16; font.weight: Font.Medium; text: st.label }
+            MouseArea { id: tap; anchors.fill: parent; onClicked: st.toggled() }
+        }
+        Rectangle {
+            visible: !st.last
+            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+            height: 1
+            color: Theme.border
+        }
     }
     component Label: Text { color: Theme.muted; font.pixelSize: 14; width: parent.width; wrapMode: Text.WordWrap }
     component Setup: Item {
@@ -58,35 +93,40 @@ Flickable {
         spacing: page.m
 
         Card {
-            Label { text: Tr.t("Language") }
-            Chips {
+            Title { text: Tr.t("General") }
+            Column {
                 width: parent.width
-                model: [{ key: "en", label: "English" }, { key: "de", label: "Deutsch" }]
-                current: page.look.lang
-                onPicked: key => ui.setLang(key)
+                Setting {
+                    title: Tr.t("Language")
+                    label: page.look.lang === "de" ? "Deutsch" : "English"
+                    on: true
+                    onToggled: ui.setLang(page.look.lang === "de" ? "en" : "de")
+                }
+                Setting {
+                    title: Tr.t("Logo animation")
+                    label: page.look.animate === false ? Tr.t("Off") : Tr.t("On")
+                    on: page.look.animate !== false
+                    onToggled: ui.setAnimate(page.look.animate === false)
+                }
+                Setting {
+                    title: Tr.t("Dim after 10 s")
+                    label: page.look.dim === false ? Tr.t("Off") : Tr.t("On")
+                    on: page.look.dim !== false
+                    onToggled: ui.setDim(page.look.dim === false)
+                }
+                Setting {
+                    title: Tr.t("Close game")
+                    hint: Tr.t("Hold Start + Select for 2 s")
+                    label: page.look.close === false ? Tr.t("Off") : Tr.t("On")
+                    on: page.look.close !== false
+                    last: true
+                    onToggled: ui.setClose(page.look.close === false)
+                }
             }
-            Label { text: Tr.t("Logo animation") }
-            Chips {
-                width: parent.width
-                model: [{ key: "on", label: Tr.t("On") }, { key: "off", label: Tr.t("Off") }]
-                current: page.look.animate === false ? "off" : "on"
-                onPicked: key => ui.setAnimate(key === "on")
-            }
-            Label { text: Tr.t("Dim after 10 s") }
-            Chips {
-                width: parent.width
-                model: [{ key: "on", label: Tr.t("On") }, { key: "off", label: Tr.t("Off") }]
-                current: page.look.dim === false ? "off" : "on"
-                onPicked: key => ui.setDim(key === "on")
-            }
-            Label { text: Tr.t("Close game: hold Start + Select for 2 s") }
-            Chips {
-                width: parent.width
-                model: [{ key: "on", label: Tr.t("On") }, { key: "off", label: Tr.t("Off") }]
-                current: page.look.close === false ? "off" : "on"
-                onPicked: key => ui.setClose(key === "on")
-            }
-            Label { text: Tr.t("Appearance") }
+        }
+
+        Card {
+            Title { text: Tr.t("Appearance") }
             Chips {
                 width: parent.width
                 model: Object.keys(Theme.themes).map(k => ({ key: k, label: Theme.themes[k].name }))
@@ -94,11 +134,11 @@ Flickable {
                 onPicked: key => ui.setTheme(key)
             }
             Row {
-                spacing: 10
+                spacing: 12
                 Repeater {
                     model: page.accents
                     delegate: Rectangle {
-                        width: 38; height: 38; radius: 19
+                        width: 42; height: 42; radius: 21
                         color: "#" + modelData
                         border.width: Theme.accent.toString().toUpperCase() === ("#" + modelData) ? 3 : 1
                         border.color: Theme.accent.toString().toUpperCase() === ("#" + modelData) ? Theme.text : Theme.border

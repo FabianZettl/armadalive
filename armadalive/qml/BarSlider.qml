@@ -7,33 +7,34 @@ Item {
     property string label
     property real value: 0          // 0..1
     property real minimum: 0
+    property real bar: 32           // thickness of the bar
     signal committed(real value)
 
-    implicitHeight: 46
+    implicitHeight: bar + 14
     property real shown: value
     onValueChanged: if (!area.pressed) shown = value
 
     Text {
         id: cap
-        width: 74
+        width: Math.max(74, bar * 2.6)
         anchors.verticalCenter: parent.verticalCenter
         color: Theme.muted
-        font.pixelSize: 13
+        font.pixelSize: bar > 36 ? 16 : 13
         wrapMode: Text.WordWrap
         maximumLineCount: 2
         text: s.label
     }
     Rectangle {
         id: track
-        anchors { left: cap.right; right: parent.right; rightMargin: 26; verticalCenter: parent.verticalCenter }   // short of the edge, so 100 % is easy to reach
-        height: 32
-        radius: 16
+        anchors { left: cap.right; right: parent.right; rightMargin: bar * 0.8; verticalCenter: parent.verticalCenter }   // short of the edge, so 100 % is easy to reach
+        height: s.bar
+        radius: s.bar / 2
         color: Theme.circle
         clip: true
-        Rectangle { width: Math.max(parent.height, parent.width * s.shown); height: parent.height; radius: 16; color: Theme.muted }
+        Rectangle { width: Math.max(parent.height, parent.width * s.shown); height: parent.height; radius: s.bar / 2; color: Theme.muted }
         Icon {
-            x: 8; anchors.verticalCenter: parent.verticalCenter
-            width: 18; height: 18
+            x: s.bar * 0.25; anchors.verticalCenter: parent.verticalCenter
+            width: s.bar * 0.56; height: width
             name: s.icon
             color: Theme.bg
         }

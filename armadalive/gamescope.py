@@ -44,9 +44,10 @@ class Gamescope(QObject):
                                 self._fps, self._seen = float(value), time.monotonic()
                             except ValueError:
                                 pass
-            except OSError:
+                self._seen = 0.0    # the writer closed the pipe (gamescope restarted): show 0 until it is back
+            except Exception:   # a bad line or a vanished pipe must never end this thread: the FPS display would stay dead
                 pass
-            time.sleep(2)
+            time.sleep(1)
 
     def _tick(self):
         if time.monotonic() - self._seen > 3:
