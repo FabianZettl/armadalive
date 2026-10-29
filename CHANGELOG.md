@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Five new themes: **SteamOS**, **SNES**, **Game Boy**, **PS2** and **Famicom**, all dark so the white system logos stay readable.
+
 ## 0.1.0
 
 First public release.

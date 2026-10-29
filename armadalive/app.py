@@ -51,6 +51,9 @@ def main():
         demo = json.loads(sys.argv[sys.argv.index("--demo") + 1]) if "--demo" in sys.argv else {}
         backends["nowPlaying"].pin(demo.get("event"), demo.get("ui"))
         window.setProperty("page", ["now", "apps", "mode", "system", "prefs", "tuning", "cheats", "manual"][page] if page < 8 else "now")
+        if "--theme" in sys.argv:  # for screenshots too: not written to the settings file
+            backends["ui"]._s["theme"], backends["ui"]._s["accent"] = sys.argv[sys.argv.index("--theme") + 1], ""
+            backends["ui"].changed.emit()
         if "--lang" in sys.argv:  # for screenshots: not written to the settings file
             backends["ui"]._s["lang"] = sys.argv[sys.argv.index("--lang") + 1]
             backends["ui"].changed.emit()

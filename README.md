@@ -58,7 +58,7 @@ belongs to its owners; ArmadaLive does not ship any of it.
   airplane mode, sound, screenshot, GPU clock), temperature, fan, and gauges for CPU, GPU, power and RAM.
 - **Tuning** – reached from the *Tuning* tile on System: CPU governor, underclock, GPU limits and a draggable fan-curve
   editor for each power profile. Needs the root helper.
-- **Settings** – English or German, five themes with accent colours, logo animation on or off, in-app updates, and **Setup**: install the
+- **Settings** – English or German, ten themes (SteamOS, SNES, Game Boy, PS2, Famicom and more) with accent colours, logo animation on or off, in-app updates, and **Setup**: install the
   root helper and route the AYN button with one tap each (password prompt, greyed out once done). About and AI disclosure.
 
 ## Requirements
