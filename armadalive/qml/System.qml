@@ -27,6 +27,7 @@ Item {
           act: () => { if (cfg.helper) settings.setRgb(!rgb.enabled, rgb.color || "FFFFFF", rgb.brightness === undefined ? 25 : rgb.brightness) } },
         { id: "wifi", icon: "wifi", label: Tr.t("Wi-Fi"), on: cc.wifi === true, act: () => controls.toggleWifi() },
         { id: "wifips", icon: "wifi", label: Tr.t("Wi-Fi saver"), on: cc.wifips === true, act: () => controls.toggleWifiSaver() },
+        { id: "tailscale", icon: "vpn", label: "Tailscale", on: (cc.tailscale || ({})).state === "on", act: () => controls.toggleTailscale() },
         { id: "bluetooth", icon: "bluetooth", label: "Bluetooth", on: cc.bluetooth === true, act: () => controls.toggleBluetooth() },
         { id: "plane", icon: "plane", label: Tr.t("Airplane"), on: cc.airplane === true, act: () => controls.toggleAirplane() },
         { id: "sound", icon: cc.muted ? "mute" : "sound", label: cc.muted ? Tr.t("Muted") : Tr.t("Sound"), on: cc.muted !== true, act: () => controls.toggleMute() },

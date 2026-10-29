@@ -174,6 +174,7 @@ Window {
         Row {
             anchors { right: parent.right; rightMargin: 24 * win.u; verticalCenter: parent.verticalCenter }
             spacing: 12 * win.u
+            Icon { visible: (controls.state.tailscale || ({})).state === "on"; width: 18 * win.u; height: width; anchors.verticalCenter: parent.verticalCenter; name: "vpn"; color: Theme.accent }
             Icon { width: 18 * win.u; height: width; anchors.verticalCenter: parent.verticalCenter; name: "wifi"; color: controls.state.wifi ? Theme.text : Theme.circle }
             Icon { width: 18 * win.u; height: width; anchors.verticalCenter: parent.verticalCenter; name: "bluetooth"; color: controls.state.bluetooth ? Theme.text : Theme.circle }
             Row {
@@ -250,6 +251,19 @@ Window {
         }
     }
 
+    Connections {
+        target: thermal
+        function onAlert(temp, profile) { win.bringUp(); toast.show(Tr.t("Hot") + ": " + temp + " °C" + (profile ? " · " + profile : ""), true) }
+    }
+    Connections {
+        target: controls
+        function onNotice(code, detail) {
+            const text = ({ tson: Tr.t("Tailscale connected"), tsoff: Tr.t("Tailscale off"), tslogin: Tr.t("Tailscale needs a login"),
+                            tsmissing: Tr.t("Tailscale is not running"), tsfail: Tr.t("Tailscale did not switch"),
+                            tsdenied: Tr.t("Run once: sudo tailscale set --operator=armada") })[code]
+            toast.show(text, code !== "tson" && code !== "tsoff")
+        }
+    }
     // short messages from the app: something was done (accent colour) or went wrong (red)
     Connections {
         target: steamShortcuts

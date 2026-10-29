@@ -4,7 +4,7 @@ from unittest import mock
 from tests.common import app  # noqa: F401
 from PySide6.QtGui import QColor, QImage
 
-from armadalive import backup, battery, closer, emusettings, gamepad, media, palette
+from armadalive import backup, battery, closer, controls, emusettings, gamepad, media, palette, thermal
 
 
 class Palette(unittest.TestCase):
@@ -149,6 +149,52 @@ class Closer(unittest.TestCase):
             idle = self.make(None)
             idle._combo(True)
             self.assertEqual(idle.state["phase"], "")
+
+
+class Thermal(unittest.TestCase):
+    def make(self, heat=85):
+        ui = mock.Mock(state={"heat": heat})
+        t = thermal.Thermal(mock.Mock(), ui)
+        t.alerts = []
+        t.alert.connect(lambda temp, profile: t.alerts.append((temp, profile)))
+        return t
+
+    def test_warns_once_then_waits_for_cooling_and_the_cooldown(self):
+        t = self.make()
+        t.check(80, "Balanced", 1000)
+        t.check(86.4, "Performance", 1001)
+        t.check(90, "Performance", 1002)          # still hot: no second popup
+        self.assertEqual(t.alerts, [(86, "Performance")])
+        t.check(79, "Performance", 1003)          # cooled by 5 degrees: armed again
+        t.check(88, "Performance", 1004)          # but inside the five minutes
+        self.assertEqual(len(t.alerts), 1)
+        t.check(79, "Performance", 1400)
+        t.check(88, "Performance", 1401)
+        self.assertEqual(len(t.alerts), 2)
+
+    def test_off_and_other_limits(self):
+        t = self.make(0)
+        t.check(99, "x", 1000)
+        self.assertEqual(t.alerts, [])
+        t = self.make(90)
+        t.check(89, "x", 1000)
+        self.assertEqual(t.alerts, [])
+
+
+class Tailscale(unittest.TestCase):
+    def test_status_json_becomes_a_state(self):
+        on = '{"BackendState": "Running", "Self": {"TailscaleIPs": ["100.1.2.3", "fd7a::1"]}}'
+        self.assertEqual(controls.tailscale_state(on), dict(state="on", ip="100.1.2.3"))
+        self.assertEqual(controls.tailscale_state('{"BackendState": "Stopped", "Self": null}')["state"], "off")
+        self.assertEqual(controls.tailscale_state('{"BackendState": "NeedsLogin"}')["state"], "login")
+        self.assertEqual(controls.tailscale_state("")["state"], "missing")
+        self.assertEqual(controls.tailscale_state("not json")["state"], "missing")
+
+    def test_the_retry_flags_come_from_tailscales_own_hint_and_must_look_like_flags(self):
+        err = "Error: changing settings via 'tailscale up' requires mentioning all\nnon-default flags. To proceed, specify --reset or:\n\n\ttailscale up --operator=deck\n"
+        self.assertEqual(controls.tailscale_retry(err), ["--operator=deck"])
+        self.assertIsNone(controls.tailscale_retry("tailscale up --operator=deck; rm -rf /"))
+        self.assertIsNone(controls.tailscale_retry("nothing useful here"))
 
 
 if __name__ == "__main__":

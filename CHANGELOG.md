@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Tailscale** tile: switch Tailscale on or off, with a shield in the status line while it is connected. Needs the user to be Tailscale's operator (`sudo tailscale set --operator=<user>`); without it the app says so.
+- **Heat warning:** a popup at 80, 85 or 90 °C (Settings → Battery and heat, default 85), with the running power profile, at most every five minutes.
 - **Add to Steam** tile: puts the game in front into Steam's library as a shortcut, with cover, background and logo from ES-DE's media. It uses the launch command ES-DE logged when it started the game (so start the game from ES-DE once first), knows when the shortcut exists already, and answers with a popup.
 
 ## 0.2.0

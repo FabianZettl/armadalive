@@ -257,7 +257,14 @@ Flickable {
         }
 
         Card {
-            Label { text: Tr.t("Battery") }
+            Label { text: Tr.t("Battery and heat") }
+            Label { text: Tr.t("Warn when it gets hot") }
+            Chips {
+                width: parent.width
+                model: [{ key: "0", label: Tr.t("Off") }, { key: "80", label: "80 °C" }, { key: "85", label: "85 °C" }, { key: "90", label: "90 °C" }]
+                current: String(page.look.heat === undefined ? 85 : page.look.heat)
+                onPicked: key => ui.setHeat(parseInt(key))
+            }
             Label { text: Tr.t("Warn when the battery drops to") }
             Chips {
                 width: parent.width

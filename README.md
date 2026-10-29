@@ -66,6 +66,9 @@ belongs to its owners; ArmadaLive does not ship any of it.
   launch command ES-DE wrote to its log when it started the game, so the game must have been started from ES-DE once. If the same
   command is already a shortcut the tile shows *In Steam* and a tap only says so. Each action ends in a short popup. Needs the Steam
   debug port like the Big Picture selection (see optional step 4); shortcuts are not removed again by ArmadaLive.
+- **Tailscale** – a tile switches Tailscale on or off (a shield shows in the status line while it is connected). The tile can only do that
+  if your user is Tailscale's operator: run `sudo tailscale set --operator=$USER` once.
+- **Heat warning** – a popup when the device reaches 80, 85 or 90 °C (or never), with the power profile that is running; at most every five minutes.
 - **Media bar** – when something plays on the main screen (music, video, a browser: anything that speaks MPRIS) a bar with title,
   previous, play/pause and next shows above the page bar.
 - **Close game** – hold **Start + Select for two seconds** to close the program in front: an emulator, ES-DE or a Steam game (never

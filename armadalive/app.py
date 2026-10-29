@@ -24,6 +24,7 @@ from .settings import Settings
 from .shell import Shell
 from .steamshortcuts import SteamShortcuts
 from .steamui import SteamUi
+from .thermal import Thermal
 from .tiles import Tiles
 from .ui import UiSettings
 from .updater import Updater
@@ -46,6 +47,7 @@ def main():
                     battery=Battery(), media=Media(), backup=Backup(), artwork=Palette(), steamShortcuts=SteamShortcuts(now))
     pad = backends["pad"] = Pad()   # must stay referenced, like the rest
     backends["closer"] = Closer(pad, gamescope, now, backends["ui"])
+    backends["thermal"] = Thermal(monitor, backends["ui"])
     for name, obj in backends.items():
         engine.rootContext().setContextProperty(name, obj)
     # closing the window only hides it: the app keeps listening for the AYN button and can bring itself back
@@ -90,7 +92,12 @@ def main():
             QTimer.singleShot(int(ms), lambda: backends["nowPlaying"].pin(json.loads(later).get("event"), json.loads(later).get("ui")))
         if "--notice" in sys.argv:  # code:title, show that popup message 600 ms in
             code, _, title = sys.argv[sys.argv.index("--notice") + 1].partition(":")
-            QTimer.singleShot(600, lambda: backends["steamShortcuts"].notice.emit(code, title))
+            if code == "hot":
+                QTimer.singleShot(600, lambda: backends["thermal"].alert.emit(88, "Performance"))
+            elif code.startswith("ts"):
+                QTimer.singleShot(600, lambda: backends["controls"].notice.emit(code, ""))
+            else:
+                QTimer.singleShot(600, lambda: backends["steamShortcuts"].notice.emit(code, title))
         if "--close-demo" in sys.argv:  # ms: hold Start + Select that many milliseconds in, with a pretend game in front
             closer = backends["closer"]
             closer.target = lambda: ([], "Demo Game")

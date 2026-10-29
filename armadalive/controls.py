@@ -1,5 +1,5 @@
 """Quick settings: radios, volume and the brightness of both screens."""
-import os, re, subprocess
+import json, os, re, subprocess, threading
 from . import privileged
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 
@@ -28,12 +28,33 @@ def _read(path, default=0):
         return default
 
 
+def tailscale_state(text):
+    """{state: on | off | login | missing, ip} from `tailscale status --json`; "missing" when there is no daemon to ask."""
+    try:
+        d = json.loads(text)
+    except ValueError:
+        return dict(state="missing", ip="")
+    state = {"Running": "on", "NeedsLogin": "login", "NeedsMachineAuth": "login"}.get(d.get("BackendState"), "off")
+    return dict(state=state, ip=((d.get("Self") or {}).get("TailscaleIPs") or [""])[0])
+
+
+def tailscale_retry(stderr):
+    """`tailscale up` refuses to run when earlier flags (such as --operator) are not repeated, and prints the command that would work.
+    Returns those flags, only if they look like plain flags."""
+    for line in stderr.splitlines():
+        words = line.split()
+        if words[:2] == ["tailscale", "up"] and all(re.fullmatch(r"--[a-z-]+(=[\w.,:/@-]+)?", w) for w in words[2:]):
+            return words[2:]
+    return None
+
+
 class Controls(QObject):
     changed = Signal()
+    notice = Signal(str, str)   # a short message code for the popup (see Main.qml), and a detail
 
     def __init__(self):
         super().__init__()
-        self._s = {}
+        self._s, self._n, self._ts = {}, 0, dict(state="missing", ip="")
         timer = QTimer(self)
         timer.timeout.connect(self._tick)
         timer.start(2000)
@@ -53,7 +74,10 @@ class Controls(QObject):
             top = _read(base + "/max_brightness", 1)
             bright[name] = round(100 * _read(base + "/brightness") / top)
         saver = "power save: on" in _out("iw", "dev", self._wlan(), "get", "power_save").lower() if wifi else False
-        self._s = dict(wifi=wifi, wifips=saver, bluetooth=bluetooth, airplane=not wifi and not bluetooth,
+        if self._n % 3 == 0:    # a status call is the most expensive thing here, and the VPN changes rarely
+            self._ts = tailscale_state(_out("tailscale", "status", "--json"))
+        self._n += 1
+        self._s = dict(wifi=wifi, wifips=saver, tailscale=self._ts, bluetooth=bluetooth, airplane=not wifi and not bluetooth,
                        volume=min(1.0, float(vol.group(1))) if vol else 0.0, muted="[MUTED]" in _out("wpctl", "get-volume", SINK),
                        brightness=bright)
         self.changed.emit()
@@ -61,6 +85,23 @@ class Controls(QObject):
     @staticmethod
     def _wlan():
         return next((d for d in os.listdir("/sys/class/net") if os.path.isdir(f"/sys/class/net/{d}/phy80211")), "wlan0")
+
+    @Slot()
+    def toggleTailscale(self):
+        state = self._ts["state"]
+        if state in ("missing", "login"):
+            self.notice.emit("tsmissing" if state == "missing" else "tslogin", "")
+            return
+        up = state != "on"
+
+        def run():
+            r = subprocess.run(["tailscale", "up" if up else "down"], capture_output=True, text=True, timeout=25)
+            if r.returncode and up and (flags := tailscale_retry(r.stderr)) is not None:
+                r = subprocess.run(["tailscale", "up", *flags], capture_output=True, text=True, timeout=25)
+            text = (r.stderr + r.stdout).lower()
+            self.notice.emit(("tsdenied" if "denied" in text or "sudo" in text else "tsfail") if r.returncode else ("tson" if up else "tsoff"), "")
+            self._ts = tailscale_state(_out("tailscale", "status", "--json"))
+        threading.Thread(target=run, daemon=True).start()
 
     @Slot()
     def toggleWifiSaver(self):
