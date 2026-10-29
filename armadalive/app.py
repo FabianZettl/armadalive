@@ -17,6 +17,7 @@ from .nowplaying import NowPlaying
 from .settings import Settings
 from .shell import Shell
 from .steamui import SteamUi
+from .tiles import Tiles
 from .ui import UiSettings
 from .updater import Updater
 from .system import SystemMonitor
@@ -34,7 +35,7 @@ def main():
     gamescope, steamui = Gamescope(), SteamUi()
     now, monitor = NowPlaying(gamescope, steamui), SystemMonitor(fps=lambda: gamescope.state["fps"])
     backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=Apps(), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
-                    health=Health(steamui), rules=GameRules(now, gamescope, monitor))
+                    health=Health(steamui), rules=GameRules(now, gamescope, monitor), tileStore=Tiles())
     for name, obj in backends.items():
         engine.rootContext().setContextProperty(name, obj)
     # closing the window only hides it: the app keeps listening for the AYN button and can bring itself back
@@ -64,7 +65,11 @@ def main():
             backends["ui"].changed.emit()
         if "--click" in sys.argv:  # x,y,ms: tap the window ms milliseconds in, to test touch behaviour
             x, y, ms = (int(v) for v in sys.argv[sys.argv.index("--click") + 1].split(","))
-            QTimer.singleShot(ms, lambda: QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(x, y)))
+            QTimer.singleShot(ms, lambda x=x, y=y: QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(x, y)))
+        if "--hold" in sys.argv:  # x,y,ms: press and hold at that point from ms on for 1.2 s, to test long presses
+            x, y, ms = (int(v) for v in sys.argv[sys.argv.index("--hold") + 1].split(","))
+            QTimer.singleShot(ms, lambda x=x, y=y: QTest.mousePress(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(x, y)))
+            QTimer.singleShot(ms + 1200, lambda x=x, y=y: QTest.mouseRelease(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(x, y)))
         for i, flag in enumerate(sys.argv):  # --ayn short:ms or long:ms: press the AYN button that many milliseconds in
             if flag == "--ayn":
                 kind, ms = sys.argv[i + 1].split(":")

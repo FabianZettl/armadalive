@@ -16,28 +16,37 @@ Item {
     readonly property var curve: prof ? curves.find(c => c.id === prof.fanCurve) : undefined
     property int qsPage: 0
 
-    readonly property var tiles: [
-        { icon: "perf", label: st.profile, on: st.profile === "Performance",
+    readonly property var rawTiles: [
+        { id: "perf", icon: "perf", label: st.profile, on: st.profile === "Performance",
           act: () => { const p = st.profiles; system.setProfile(p[(p.indexOf(st.profile) + 1) % p.length]) } },
-        { icon: "fan", label: curve ? curve.label : "–", on: curve !== undefined && curve.id === "aggressive",
+        { id: "fan", icon: "fan", label: curve ? curve.label : "–", on: curve !== undefined && curve.id === "aggressive",
           act: () => { if (cfg.helper && prof && curves.length) settings.setProfileOption(prof.id, "fan_curve", curves[(curves.indexOf(curve) + 1) % curves.length].id) } },
-        { icon: "clean", label: Tr.t("Clear RAM"), on: false, act: () => { if (cfg.helper) settings.dropCaches() } },
-        { icon: "led", label: Tr.t("Stick LEDs"), on: rgb.enabled === true,
+        { id: "clean", icon: "clean", label: Tr.t("Clear RAM"), on: false, act: () => { if (cfg.helper) settings.dropCaches() } },
+        { id: "led", icon: "led", label: Tr.t("Stick LEDs"), on: rgb.enabled === true,
           act: () => { if (cfg.helper) settings.setRgb(!rgb.enabled, rgb.color || "FFFFFF", rgb.brightness === undefined ? 25 : rgb.brightness) } },
-        { icon: "wifi", label: Tr.t("Wi-Fi"), on: cc.wifi === true, act: () => controls.toggleWifi() },
-        { icon: "bluetooth", label: "Bluetooth", on: cc.bluetooth === true, act: () => controls.toggleBluetooth() },
-        { icon: "plane", label: Tr.t("Airplane"), on: cc.airplane === true, act: () => controls.toggleAirplane() },
-        { icon: cc.muted ? "mute" : "sound", label: cc.muted ? Tr.t("Muted") : Tr.t("Sound"), on: cc.muted !== true, act: () => controls.toggleMute() },
-        { icon: "shot", label: "Screenshot", on: false, act: () => controls.screenshot() },
-        { icon: "edit", label: Tr.t("Tuning"), on: false, act: () => { Nav.go = "tuning" } },
-        { icon: "graph", label: Tr.t("Graphs"), on: false, act: () => { Nav.go = "graphs" } },
-        { icon: "power", label: Tr.t("Screen off"), on: false, act: () => { Nav.go = "blank" } },
-        { icon: "star", label: Tr.t("Game rule"), on: rl.gameKey !== "" && rl.rules.some(r => r.key === rl.gameKey), act: () => rules.toggle("game") },
-        { icon: "star", label: Tr.t("System rule"), on: rl.systemKey !== "" && rl.rules.some(r => r.key === rl.systemKey), act: () => rules.toggle("system") },
-        { icon: "gauge", label: st.gpuLevel === "auto" ? Tr.t("Auto") : st.gpuManual + " MHz", on: st.gpuLevel !== "auto",
+        { id: "wifi", icon: "wifi", label: Tr.t("Wi-Fi"), on: cc.wifi === true, act: () => controls.toggleWifi() },
+        { id: "bluetooth", icon: "bluetooth", label: "Bluetooth", on: cc.bluetooth === true, act: () => controls.toggleBluetooth() },
+        { id: "plane", icon: "plane", label: Tr.t("Airplane"), on: cc.airplane === true, act: () => controls.toggleAirplane() },
+        { id: "sound", icon: cc.muted ? "mute" : "sound", label: cc.muted ? Tr.t("Muted") : Tr.t("Sound"), on: cc.muted !== true, act: () => controls.toggleMute() },
+        { id: "shot", icon: "shot", label: "Screenshot", on: false, act: () => controls.screenshot() },
+        { id: "tuning", icon: "edit", label: Tr.t("Tuning"), on: false, act: () => { Nav.go = "tuning" } },
+        { id: "graphs", icon: "graph", label: Tr.t("Graphs"), on: false, act: () => { Nav.go = "graphs" } },
+        { id: "screenoff", icon: "power", label: Tr.t("Screen off"), on: false, act: () => { Nav.go = "blank" } },
+        { id: "gamerule", icon: "star", label: Tr.t("Game rule"), on: rl.gameKey !== "" && rl.rules.some(r => r.key === rl.gameKey), act: () => rules.toggle("game") },
+        { id: "systemrule", icon: "star", label: Tr.t("System rule"), on: rl.systemKey !== "" && rl.rules.some(r => r.key === rl.systemKey), act: () => rules.toggle("system") },
+        { id: "gpu", icon: "gauge", label: st.gpuLevel === "auto" ? Tr.t("Auto") : st.gpuManual + " MHz", on: st.gpuLevel !== "auto",
           act: () => st.gpuLevel === "auto" ? system.setGpuManual(st.gpuManual) : system.setGpuAuto() }
     ]
+    // the tiles in the order the user chose (Tiles keeps it); a long press on a tile starts moving, a tap on a second one swaps
+    readonly property var tiles: { tileStore.order; return tileStore.arrange(rawTiles.map(t => t.id)).map(id => rawTiles.find(t => t.id === id)) }
     readonly property int pageCount: Math.ceil(tiles.length / 8)
+    property bool editing: false
+    property string picked: ""
+    function tap(id) {
+        if (picked === "" || picked === id) { picked = picked === id ? "" : id; return }
+        tileStore.swap(picked, id, tiles.map(t => t.id))
+        picked = ""
+    }
 
     // --- row 1: FPS card and quick settings
     Rectangle {
@@ -117,9 +126,25 @@ Item {
                     icon: tile ? tile.icon : ""
                     label: tile ? tile.label : ""
                     on: tile ? tile.on : false
-                    onClicked: tile.act()
+                    marked: page.editing && page.picked === tile.id
+                    onClicked: page.editing ? page.tap(tile.id) : tile.act()
+                    onHeld: { page.editing = true; page.picked = tile.id }
                 }
             }
+        }
+        Text {
+            visible: page.editing
+            anchors { left: parent.left; leftMargin: 14 * page.u; bottom: parent.bottom; bottomMargin: 10 * page.u }
+            color: Theme.muted
+            font.pixelSize: 12 * page.u
+            text: Tr.t("Tap two tiles to swap")
+        }
+        Row {
+            visible: page.editing
+            anchors { right: parent.right; rightMargin: 12 * page.u; bottom: parent.bottom; bottomMargin: 6 * page.u }
+            spacing: 6 * page.u
+            PillButton { height: 28 * page.u; label: Tr.t("Reset"); onClicked: { tileStore.reset(); page.picked = "" } }
+            PillButton { height: 28 * page.u; label: Tr.t("Done"); primary: true; onClicked: { page.editing = false; page.picked = "" } }
         }
         Row {
             anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 8 * page.u }

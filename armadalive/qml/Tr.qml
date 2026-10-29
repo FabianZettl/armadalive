@@ -29,7 +29,7 @@ QtObject {
         "Updates need the GitHub repository, which does not exist yet.": "Updates brauchen das GitHub-Repository, das es noch nicht gibt.",
         "Repository coming soon": "Repository folgt", "Source code": "Quellcode", "About": "Über",
         "Graphs": "Graphen", "Temperature": "Temperatur", "Power": "Leistung", "Battery": "Akku", "last 2 minutes": "letzte 2 Minuten",
-        "Screen off": "Bildschirm aus", "Game rule": "Spielregel", "System rule": "Systemregel",
+        "Screen off": "Bildschirm aus", "Tap two tiles to swap": "Zwei Kacheln antippen zum Tauschen", "Done": "Fertig", "Reset": "Zurücksetzen", "Game rule": "Spielregel", "System rule": "Systemregel",
         "Health check": "Einrichtungs-Check", "ES-DE hooks": "ES-DE-Hooks", "ES-DE event scripts": "ES-DE-Ereignisskripte", "ES-DE media": "ES-DE-Medien",
         "Steam Big Picture link": "Steam-Big-Picture-Verbindung", "FPS source": "FPS-Quelle",
         "Run install.sh again: the ES-DE hooks are missing": "install.sh erneut ausführen: die ES-DE-Hooks fehlen",

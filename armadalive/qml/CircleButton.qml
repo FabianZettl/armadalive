@@ -7,8 +7,10 @@ Item {
     property string icon
     property string label
     property bool on: false
+    property bool marked: false     // picked for moving
     property real size: 52
     signal clicked()
+    signal held()
 
     implicitWidth: 72
     implicitHeight: 96
@@ -24,6 +26,14 @@ Item {
             color: b.on ? Theme.accentSoft : Theme.circle
             scale: area.pressed ? 0.92 : 1
             Behavior on scale { NumberAnimation { duration: 80 } }
+            Rectangle {
+                anchors.centerIn: parent
+                width: parent.width + 8; height: width; radius: width / 2
+                color: "transparent"
+                border.width: 2
+                border.color: Theme.accent
+                visible: b.marked
+            }
             Icon {
                 anchors.centerIn: parent
                 width: b.size * 0.5; height: width
@@ -42,5 +52,5 @@ Item {
             text: b.label
         }
     }
-    MouseArea { id: area; anchors.fill: parent; onClicked: b.clicked() }
+    MouseArea { id: area; anchors.fill: parent; onClicked: b.clicked(); onPressAndHold: b.held() }
 }

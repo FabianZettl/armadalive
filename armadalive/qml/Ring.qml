@@ -19,6 +19,7 @@ Item {
         anchors.centerIn: parent
         onPaint: {
             const c = getContext("2d"), w = width * 0.075, rad = width / 2 - w
+            if (rad <= 0) return    // not laid out yet
             const a0 = Math.PI * 0.75, span = Math.PI * 1.5
             c.reset()
             c.lineWidth = w

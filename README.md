@@ -124,6 +124,7 @@ nothing else, and greys out once it is done. The terminal commands below do the 
 | Leave it alone for 10 s | the screen dims a little; a touch, or a new game or logo, brightens it (can be switched off in Settings) |
 | AYN button | bring ArmadaLive to the front, always |
 | Press and hold an app tile | choose another app for that slot |
+| Hold a tile on *System* | move tiles: tap a second tile to swap the two (also across the two pages), *Done* to finish, *Reset* for the original order; the order is saved |
 | Hold the AYN button | screen off (black, touches ignored); press the button again, or hold a finger on the screen, to wake it |
 | Tap the *120 FPS MODE* pill | switch the frame limit between 60 and 120 |
 | *Settings → Setup* | install the root helper and route the AYN button, no terminal needed |

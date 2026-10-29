@@ -2,11 +2,13 @@
 
 ## Unreleased
 
+- Dashboard tiles can be rearranged: hold one, tap another to swap; the order is saved.
 - **Fixed:** theme, accent, language, logo animation and dimming were forgotten at every restart (the settings file was read wrongly and the defaults won).
 - **Graphs** (FPS, CPU, temperature, power, battery) and the battery time left in the status line.
 - **Game rule** and **System rule**: remember a power profile and FPS limit for a game or a whole system and apply it when the game starts; listed under Settings.
 - **Screen off**: hold the AYN button, or the new tile; black, touches ignored, wake with the AYN button or a long touch.
 - **Health check** in Settings: what is missing for ES-DE and Steam, with a hint for each.
+- Fixed errors in the gauges while the dashboard was still being laid out.
 - Updates are checked against a published SHA-256 and refused without one. Tests, a GitHub Actions workflow and `scripts/make-release.sh`.
 - Five new themes: **SteamOS**, **SNES**, **Game Boy**, **PS2** and **Famicom**, all dark so the white system logos stay readable.
 - The screen dims a little after 10 seconds without a touch; a touch, or a new game or logo, brightens it again. Can be switched off in Settings.
