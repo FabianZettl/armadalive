@@ -54,6 +54,8 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     # SIGUSR1 does what the AYN button does (used by the app-drawer launcher)
     signal.signal(signal.SIGUSR1, lambda *_: backends["ayn"].pressed.emit())
+    # SIGUSR2 is a whole tap of it (press and release), which toggles; here so the toggle can be tried without the button
+    signal.signal(signal.SIGUSR2, lambda *_: (backends["ayn"].pressed.emit(), backends["ayn"].released.emit()))
     wake = QTimer()
     wake.timeout.connect(lambda: None)  # keeps the interpreter running so it notices the signal
     wake.start(250)

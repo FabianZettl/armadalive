@@ -9,6 +9,7 @@ HOLD_MS = 800
 class AynButton(QObject):
     pressed = Signal()
     longPressed = Signal()      # held for HOLD_MS
+    released = Signal()         # let go before HOLD_MS: a tap (a hold that ran out does not count)
 
     def __init__(self):
         super().__init__()
@@ -27,5 +28,6 @@ class AynButton(QObject):
         if value > 0.5:  # on press: act at once, and see whether it turns into a hold
             self.pressed.emit()
             self._hold.start()
-        else:
+        elif self._hold.isActive():
             self._hold.stop()
+            self.released.emit()

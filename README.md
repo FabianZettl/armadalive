@@ -138,7 +138,7 @@ nothing else, and greys out once it is done. The terminal commands below do the 
 | Swipe left or right | next or previous page (not while you drag a slider, the fan curve or the quick-setting pages) |
 | Swipe up on *Game* | show the status line and the bar for three seconds |
 | Leave it alone for 10 s | the screen dims a little; a touch, or a new game or logo, brightens it (can be switched off in Settings) |
-| AYN button | bring ArmadaLive to the front, always |
+| AYN button | tap: bring ArmadaLive to the front, or send it to the background if it already is in front (so a dual-screen game like Azahar shows through) |
 | Press and hold an app tile | choose another app for that slot |
 | Hold a tile on *System* | move tiles: tap a second tile to swap the two (also across the two pages), *Done* to finish, *Reset* for the original order; the order is saved |
 | Hold Start + Select for 2 s | close the program in front (emulator, ES-DE, Steam game; not Steam itself), with a countdown |

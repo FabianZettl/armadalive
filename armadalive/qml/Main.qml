@@ -36,6 +36,7 @@ Window {
     property bool dimmed: false
     property bool blanked: false        // screen off: true black, ignores touches, a long press or the AYN button wakes it
     property bool pressWasBlanked: false
+    property bool pressWasFront: false
     readonly property bool dimEnabled: ui.state.dim !== false     // Settings > Dim after 10 s
     function wake() { dimmed = false; idle.restart() }
     onDimEnabledChanged: { if (dimEnabled) idle.restart(); else { idle.stop(); dimmed = false } }
@@ -89,10 +90,19 @@ Window {
     Connections {
         target: ayn
         function onLongPressed() { if (!win.pressWasBlanked) win.blanked = true }   // hold the AYN button: screen off
+        // a tap toggles: in front it goes to the background (so a dual-screen game on this screen shows), otherwise it comes up.
+        // Going away waits for the release, because holding the button turns the screen off and must not hide the window first.
         function onPressed() {
             win.pressWasBlanked = win.blanked
-            win.bringUp()
+            win.pressWasFront = win.active && win.visible && !win.blanked && win.visibility !== Window.Minimized
+            if (!win.pressWasFront) win.bringUp()
+            else win.wake()
             check.restart()
+        }
+        function onReleased() {
+            if (!win.pressWasFront) return
+            win.pressWasFront = false
+            win.showMinimized()
         }
     }
     function bringUp() {

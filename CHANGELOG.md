@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The AYN button is a toggle:** a tap brings ArmadaLive up, and a tap while it is in front sends it to the background, so a dual-screen game such as Azahar shows again. Holding the button still switches the screen off.
 - **Apps page** can be switched off in Settings; the bar then has four entries. The app grid still shows on the Game page while nothing is running.
 - **Tailscale** tile: switch Tailscale on or off, with a shield in the status line while it is connected. Needs the user to be Tailscale's operator (`sudo tailscale set --operator=<user>`); without it the app says so.
 - **Heat warning:** a popup at 80, 85 or 90 °C (Settings → Battery and heat, default 85), with the running power profile, at most every five minutes.
