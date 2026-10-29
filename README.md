@@ -51,7 +51,6 @@ belongs to its owners; ArmadaLive does not ship any of it.
   This page is full screen; **swipe up** to show the status line and the bar, swipe down to hide them again.
 - **Manual** and **Cheats** – the game's PDF manual from ES-DE's media, and cheats from your RetroArch cheats folder. These two
   entries only appear in the bar when the current game has them.
-- **Info** – what ES-DE knows about the game (description, year, developer, genre, players, rating, playtime) and your own notes on it.
 - **Apps** – a 3×3 grid of apps you choose (press and hold, or tap an empty tile). They open on the bottom screen.
   The grid also shows on the Game page when nothing is running.
 - **Mode** – brightness of both screens and the stick LEDs, volume.

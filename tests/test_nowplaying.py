@@ -5,12 +5,11 @@ from armadalive import nowplaying as n
 
 
 class Describe(unittest.TestCase):
-    def test_game_has_art_info_and_key(self):
+    def test_game_has_art_and_key(self):
         d = n.describe(GAME)
         self.assertEqual((d["kind"], d["title"], d["key"], d["system"]), ("game", "Super Game", "snes/Super Game (EU)", "snes"))
         self.assertTrue(d["logo"].endswith("Super%20Game%20%28EU%29.png") or d["logo"].endswith("Super Game (EU).png"))
         self.assertTrue(d["fanart"] and d["manual"])
-        self.assertEqual((d["info"]["developer"], d["info"]["gametime"], d["hasInfo"]), ("Dev", "7260", True))
         self.assertFalse(d["playing"])
         self.assertTrue(n.describe(dict(GAME, event="game-start"))["playing"])
 
@@ -63,19 +62,6 @@ class Precedence(unittest.TestCase):
         self.np._ui_focus, self.np._esde = True, False
         self.np._update()
         self.assertEqual(self.np._state["title"], "Super Game")
-
-
-class Notes(unittest.TestCase):
-    def test_notes_roundtrip_and_clear(self):
-        import tempfile
-        n.NOTES = tempfile.mkdtemp()
-        np = n.NowPlaying(Fake(), Fake())
-        np.pin(GAME)
-        self.assertEqual(np.notes(), "")
-        np.setNotes("hidden warp in level 3")
-        self.assertEqual(np.notes(), "hidden warp in level 3")
-        np.setNotes("  ")
-        self.assertEqual(np.notes(), "")
 
 
 if __name__ == "__main__":

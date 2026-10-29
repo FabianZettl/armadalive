@@ -13,7 +13,6 @@ Window {
     // Handbuch and Cheats are only listed while the current game has them; "under" pages are reached from another page
     readonly property var all: [
         { id: "now", label: Tr.t("Game"), icon: "play", file: "NowPlaying.qml", has: true },
-        { id: "info", label: Tr.t("Info"), icon: "note", file: "Info.qml", has: now.hasInfo === true },
         { id: "manual", label: Tr.t("Manual"), icon: "book", file: "Manual.qml", has: now.manual !== "" },
         { id: "cheats", label: Tr.t("Cheats"), icon: "cheats", file: "Cheats.qml", has: now.hasCheats },
         { id: "apps", label: Tr.t("Apps"), icon: "apps", file: "Apps.qml", has: true },

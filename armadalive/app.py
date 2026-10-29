@@ -55,7 +55,7 @@ def main():
         # back to "Game": {"event": {...}} like ES-DE sends, or {"ui": [appid, "name"]} for Steam's UI; none means idle
         demo = json.loads(sys.argv[sys.argv.index("--demo") + 1]) if "--demo" in sys.argv else {}
         backends["nowPlaying"].pin(demo.get("event"), demo.get("ui"))
-        window.setProperty("page", ["now", "apps", "mode", "system", "prefs", "tuning", "cheats", "manual", "info", "graphs"][page] if page < 10 else "now")
+        window.setProperty("page", ["now", "apps", "mode", "system", "prefs", "tuning", "cheats", "manual", "graphs"][page] if page < 9 else "now")
         if "--theme" in sys.argv:  # for screenshots too: not written to the settings file
             backends["ui"]._s["theme"], backends["ui"]._s["accent"] = sys.argv[sys.argv.index("--theme") + 1], ""
             backends["ui"].changed.emit()

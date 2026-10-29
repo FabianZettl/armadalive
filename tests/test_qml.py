@@ -37,7 +37,7 @@ class Translations(unittest.TestCase):
                 with open(f) as fh:
                     used |= set(re.findall(r'Tr\.t\("((?:[^"\\]|\\.)+)"\)', fh.read()))
         # a few texts are identical in both languages and need no entry
-        same = {"Cheats", "Apps", "System", "Tuning", "Info", "Auto", "Bluetooth", "Screenshot", "TEMP", "Updates", "Version", "Underclock", "Update", "FPS"}
+        same = {"Cheats", "Apps", "System", "Tuning", "Auto", "Bluetooth", "Screenshot", "TEMP", "Updates", "Version", "Underclock", "Update", "FPS"}
         self.assertEqual(sorted(t for t in used - german if t not in same), [])
 
 

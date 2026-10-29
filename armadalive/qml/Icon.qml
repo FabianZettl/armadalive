@@ -87,8 +87,6 @@ Canvas {
             rr(c, 6, 3, 12, 8, 2); rr(c, 6, 13, 12, 8, 2); ln(c, 9, 7, 15, 7); ln(c, 9, 17, 15, 17); break
         case "power":
             c.arc(12, 13, 8, -Math.PI * 0.3, Math.PI * 1.3, false); ln(c, 12, 3, 12, 11); break
-        case "note":
-            rr(c, 5, 3, 14, 18, 2); ln(c, 9, 8, 15, 8); ln(c, 9, 12, 15, 12); ln(c, 9, 16, 12, 16); break
         case "graph":
             ln(c, 4, 4, 4, 20); ln(c, 4, 20, 20, 20); c.moveTo(6, 16); c.lineTo(10, 11); c.lineTo(13, 14); c.lineTo(19, 6); break
         case "star":

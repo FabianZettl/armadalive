@@ -28,8 +28,6 @@ QtObject {
         "Installed. The app restarts in a moment.": "Installiert. Die App startet gleich neu.",
         "Updates need the GitHub repository, which does not exist yet.": "Updates brauchen das GitHub-Repository, das es noch nicht gibt.",
         "Repository coming soon": "Repository folgt", "Source code": "Quellcode", "About": "Über",
-        "Info": "Info", "players": "Spieler", "Playtime": "Spielzeit", "Played": "Gespielt", "Last played": "Zuletzt gespielt",
-        "Notes": "Notizen", "Tips, where you stopped, anything you want to remember": "Tipps, wo du aufgehört hast, alles was du dir merken willst",
         "Graphs": "Graphen", "Temperature": "Temperatur", "Power": "Leistung", "Battery": "Akku", "last 2 minutes": "letzte 2 Minuten",
         "Screen off": "Bildschirm aus", "Game rule": "Spielregel", "System rule": "Systemregel",
         "Health check": "Einrichtungs-Check", "ES-DE hooks": "ES-DE-Hooks", "ES-DE event scripts": "ES-DE-Ereignisskripte", "ES-DE media": "ES-DE-Medien",

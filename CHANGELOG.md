@@ -3,7 +3,6 @@
 ## Unreleased
 
 - **Fixed:** theme, accent, language, logo animation and dimming were forgotten at every restart (the settings file was read wrongly and the defaults won).
-- **Info** page: description, year, developer, genre, players, rating, playtime and last played from ES-DE, plus your own notes per game.
 - **Graphs** (FPS, CPU, temperature, power, battery) and the battery time left in the status line.
 - **Game rule** and **System rule**: remember a power profile and FPS limit for a game or a whole system and apply it when the game starts; listed under Settings.
 - **Screen off**: hold the AYN button, or the new tile; black, touches ignored, wake with the AYN button or a long touch.

@@ -30,26 +30,18 @@ def _system_logo(system):
     return _first(glob.escape(ES) + f"/themes/*/_inc/systems/logos/{glob.escape(system)}.svg")
 
 
-GAME_TAGS = ("name", "desc", "rating", "releasedate", "developer", "publisher", "genre", "players", "playcount", "lastplayed", "gametime")
-NOTES = os.path.expanduser("~/.config/armadalive/notes")
-
-
-def _game_meta(system, path):
-    """What ES-DE's gamelist knows about a game (empty if it has no entry)."""
+def _game_title(system, path):
+    """The name ES-DE's gamelist gives a game (empty if it has no entry)."""
     f = f"{GAMELISTS}/{system}/gamelist.xml"
     try:
         mtime = os.stat(f).st_mtime
         if _gamelists.get(system, (0,))[0] != mtime:
             # shortcut: matched by file basename, so same-named ROMs in subfolders collide
-            _gamelists[system] = (mtime, {os.path.basename(g.findtext("path") or ""): {t: g.findtext(t) or "" for t in GAME_TAGS}
+            _gamelists[system] = (mtime, {os.path.basename(g.findtext("path") or ""): g.findtext("name") or ""
                                           for g in ET.parse(f).getroot().iter("game")})
-        return _gamelists[system][1].get(os.path.basename(path), {})
+        return _gamelists[system][1].get(os.path.basename(path), "")
     except (OSError, ET.ParseError):
-        return {}
-
-
-def _notes_file(key):
-    return os.path.join(NOTES, re.sub(r"[^\w.-]+", "_", key) + ".txt")
+        return ""
 
 
 def _cheat_file(path):
@@ -121,7 +113,7 @@ def describe_steam_ui(appid, name):
     logo = _first(cache + "/logo.png") or _first(grid + "_logo.*")
     hero = _first(cache + "/library_hero.jpg") or _first(grid + "_hero.*")
     return dict(kind="game", title=name or str(appid), logo=_url(logo), fanart=_url(hero), manual="", hasCheats=False, playing=False,
-                key=f"steam/{appid}", system="steam", info={}, hasInfo=True)
+                key=f"steam/{appid}", system="steam")
 
 
 def describe_steam(appid):
@@ -134,14 +126,14 @@ def describe_steam(appid):
             continue
         return dict(kind="game", title=title, logo=_url(_first(cache + "/logo.png")),
                     fanart=_url(_first(cache + "/library_hero.jpg")), manual="", hasCheats=False, playing=True,
-                    key=f"steam/{appid}", system="steam", info={}, hasInfo=True)
+                    key=f"steam/{appid}", system="steam")
     return None
 
 
 def describe(event):
     """Reduce an ES-DE event to what the UI shows."""
     ev, system, path = event.get("event", "idle"), event.get("system", ""), event.get("path", "")
-    out = dict(kind="idle", title="ArmadaLive", logo="", fanart="", manual="", hasCheats=False, playing=False, key="", system="", info={}, hasInfo=False)
+    out = dict(kind="idle", title="ArmadaLive", logo="", fanart="", manual="", hasCheats=False, playing=False, key="", system="")
     if ev == "system-select" and re.fullmatch(r"[\w.-]+", system):
         fan = sorted(glob.glob(glob.escape(f"{MEDIA}/{system}/fanart") + "/*"))
         out.update(kind="system", system=system, title=event.get("systemName") or system, logo=_url(_system_logo(system)),
@@ -149,11 +141,10 @@ def describe(event):
     elif path and system and ev not in ("quit", "startup"):
         base = glob.escape(f"{MEDIA}/{system}/%s/" + os.path.splitext(os.path.basename(path))[0])
         media = lambda t: _first((base % t) + ".*")
-        info = _game_meta(system, path)
-        out.update(kind="game", title=info.get("name") or event.get("name", ""), logo=_url(media("marquees")),
+        out.update(kind="game", title=_game_title(system, path) or event.get("name", ""), logo=_url(media("marquees")),
                    fanart=_url(media("fanart") or media("screenshots")), manual=_url(media("manuals")),
                    hasCheats=bool(_cheat_file(path)), playing=ev == "game-start",
-                   key=f"{system}/{os.path.splitext(os.path.basename(path))[0]}", system=system, info=info, hasInfo=True)
+                   key=f"{system}/{os.path.splitext(os.path.basename(path))[0]}", system=system)
     return out
 
 
@@ -186,26 +177,6 @@ class NowPlaying(QObject):
     @Slot(result="QVariant")
     def cheats(self):
         return read_cheats(self._path)
-
-    @Slot(result=str)
-    def notes(self):
-        key = self._state.get("key", "")
-        try:
-            return open(_notes_file(key)).read() if key else ""
-        except OSError:
-            return ""
-
-    @Slot(str)
-    def setNotes(self, text):
-        key = self._state.get("key", "")
-        if not key:
-            return
-        os.makedirs(NOTES, exist_ok=True)
-        if text.strip():
-            with open(_notes_file(key), "w") as f:
-                f.write(text)
-        elif os.path.exists(_notes_file(key)):
-            os.remove(_notes_file(key))
 
     def _poll(self):
         try:
