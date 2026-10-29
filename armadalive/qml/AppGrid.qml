@@ -8,16 +8,17 @@ Item {
     readonly property real gap: 14
     readonly property real cell: Math.max(60, Math.min((width - 4 * gap) / 3, (height - 4 * gap) / 3))
 
-    Grid {
-        anchors.centerIn: parent
-        columns: 3
-        spacing: grid.gap
+    // every cell is placed from the current size, not by a Grid that lays out a frame after the cells have already resized
+    Item {
+        anchors.fill: parent
         Repeater {
             model: 9
             delegate: Rectangle {
                 readonly property var app: grid.slots[index] || ({})
                 width: grid.cell
                 height: grid.cell
+                x: Math.round((grid.width - 3 * grid.cell - 2 * grid.gap) / 2) + (index % 3) * (grid.cell + grid.gap)
+                y: Math.round((grid.height - 3 * grid.cell - 2 * grid.gap) / 2) + Math.floor(index / 3) * (grid.cell + grid.gap)
                 radius: 18
                 border.color: Theme.border
                 scale: area.pressed ? 0.95 : 1
