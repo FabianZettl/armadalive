@@ -40,7 +40,7 @@ QtObject {
         "Screens": "Bildschirme", "General": "Allgemein", "Close game": "Spiel beenden", "Hold Start + Select for 2 s": "Start + Select 2 s halten", "Theme": "Theme", "Changing the LEDs needs the root helper (Settings → Setup).": "Zum Ändern der LEDs braucht es den Root-Helper (Einstellungen → Setup).",
         "Add to Steam": "Zu Steam", "In Steam": "In Steam", "Shortcut created": "Shortcut erstellt", "Already in Steam": "Schon in Steam",
         "Launch the game from ES-DE once first": "Spiel erst einmal aus ES-DE starten", "Steam is not reachable": "Steam nicht erreichbar",
-        "Hot": "Heiß", "Battery and heat": "Akku und Hitze", "Warn when it gets hot": "Warnen, wenn es heiß wird",
+        "Apps page": "Apps-Seite", "The app grid in the bar": "Das App-Raster in der Leiste", "Hot": "Heiß", "Battery and heat": "Akku und Hitze", "Warn when it gets hot": "Warnen, wenn es heiß wird",
         "Tailscale connected": "Tailscale verbunden", "Tailscale off": "Tailscale aus", "Tailscale needs a login": "Tailscale braucht eine Anmeldung",
         "Tailscale is not running": "Tailscale läuft nicht", "Tailscale did not switch": "Tailscale hat nicht umgeschaltet",
         "Run once: sudo tailscale set --operator=armada": "Einmalig: sudo tailscale set --operator=armada",

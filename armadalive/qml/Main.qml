@@ -15,7 +15,7 @@ Window {
         { id: "now", label: Tr.t("Game"), icon: "play", file: "NowPlaying.qml", has: true },
         { id: "manual", label: Tr.t("Manual"), icon: "book", file: "Manual.qml", has: now.manual !== "", under: "now" },
         { id: "cheats", label: Tr.t("Cheats"), icon: "cheats", file: "Cheats.qml", has: now.hasCheats, under: "now" },
-        { id: "apps", label: Tr.t("Apps"), icon: "apps", file: "Apps.qml", has: true },
+        { id: "apps", label: Tr.t("Apps"), icon: "apps", file: "Apps.qml", has: ui.state.apps !== false },
         { id: "mode", label: Tr.t("Mode"), icon: "mode", file: "Mode.qml", has: true },
         { id: "system", label: Tr.t("System"), icon: "gear", file: "System.qml", has: true },
         { id: "prefs", label: Tr.t("Settings"), icon: "info", file: "Preferences.qml", has: true },

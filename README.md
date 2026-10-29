@@ -52,7 +52,7 @@ belongs to its owners; ArmadaLive does not ship any of it.
 - **Manual** and **Cheats** – the game's PDF manual from ES-DE's media, and cheats from your RetroArch cheats folder. Tap the Game
   page and two buttons appear for a few seconds, each only if the current game has it. They are not in the bar.
 - **Apps** – a 3×3 grid of apps you choose (press and hold, or tap an empty tile). They open on the bottom screen.
-  The grid also shows on the Game page when nothing is running.
+  The grid also shows on the Game page when nothing is running. The page can be switched off in Settings (it then leaves the bar).
 - **Mode** – brightness of both screens and the stick LEDs, volume.
 - **System** – FPS, a 60/120 FPS limit, quick settings (power profile, fan curve, clear RAM, stick LEDs, Wi-Fi, Bluetooth,
   airplane mode, sound, screenshot, GPU clock, screen off), temperature, fan, and gauges for CPU, GPU, power and RAM. The status line

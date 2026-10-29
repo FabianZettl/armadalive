@@ -115,6 +115,13 @@ Flickable {
                     onToggled: ui.setDim(page.look.dim === false)
                 }
                 Setting {
+                    title: Tr.t("Apps page")
+                    hint: Tr.t("The app grid in the bar")
+                    label: page.look.apps === false ? Tr.t("Off") : Tr.t("On")
+                    on: page.look.apps !== false
+                    onToggled: ui.setApps(page.look.apps === false)
+                }
+                Setting {
                     title: Tr.t("Close game")
                     hint: Tr.t("Hold Start + Select for 2 s")
                     label: page.look.close === false ? Tr.t("Off") : Tr.t("On")
