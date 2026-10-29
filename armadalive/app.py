@@ -9,8 +9,10 @@ from . import __version__
 from .admin import Admin
 from .apps import Apps
 from .ayn import AynButton
+from .gamerules import GameRules
 from .controls import Controls
 from .gamescope import Gamescope
+from .health import Health
 from .nowplaying import NowPlaying
 from .settings import Settings
 from .shell import Shell
@@ -30,7 +32,9 @@ def main():
     engine = QQmlApplicationEngine()
     # the context does not own these objects: keep them referenced for the life of the app
     gamescope, steamui = Gamescope(), SteamUi()
-    backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=NowPlaying(gamescope, steamui), system=SystemMonitor(), ayn=AynButton(), settings=Settings(), apps=Apps(), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin())
+    now, monitor = NowPlaying(gamescope, steamui), SystemMonitor(fps=lambda: gamescope.state["fps"])
+    backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=Apps(), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
+                    health=Health(steamui), rules=GameRules(now, gamescope, monitor))
     for name, obj in backends.items():
         engine.rootContext().setContextProperty(name, obj)
     # closing the window only hides it: the app keeps listening for the AYN button and can bring itself back
@@ -51,7 +55,7 @@ def main():
         # back to "Game": {"event": {...}} like ES-DE sends, or {"ui": [appid, "name"]} for Steam's UI; none means idle
         demo = json.loads(sys.argv[sys.argv.index("--demo") + 1]) if "--demo" in sys.argv else {}
         backends["nowPlaying"].pin(demo.get("event"), demo.get("ui"))
-        window.setProperty("page", ["now", "apps", "mode", "system", "prefs", "tuning", "cheats", "manual"][page] if page < 8 else "now")
+        window.setProperty("page", ["now", "apps", "mode", "system", "prefs", "tuning", "cheats", "manual", "info", "graphs"][page] if page < 10 else "now")
         if "--theme" in sys.argv:  # for screenshots too: not written to the settings file
             backends["ui"]._s["theme"], backends["ui"]._s["accent"] = sys.argv[sys.argv.index("--theme") + 1], ""
             backends["ui"].changed.emit()
@@ -61,6 +65,11 @@ def main():
         if "--click" in sys.argv:  # x,y,ms: tap the window ms milliseconds in, to test touch behaviour
             x, y, ms = (int(v) for v in sys.argv[sys.argv.index("--click") + 1].split(","))
             QTimer.singleShot(ms, lambda: QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(x, y)))
+        for i, flag in enumerate(sys.argv):  # --ayn short:ms or long:ms: press the AYN button that many milliseconds in
+            if flag == "--ayn":
+                kind, ms = sys.argv[i + 1].split(":")
+                ayn = backends["ayn"]
+                QTimer.singleShot(int(ms), lambda ayn=ayn, kind=kind: (ayn.pressed.emit(), kind == "long" and ayn.longPressed.emit()))
         if "--demo-later" in sys.argv:  # ms:json, switch to another pinned game that many milliseconds in
             ms, later = sys.argv[sys.argv.index("--demo-later") + 1].split(":", 1)
             QTimer.singleShot(int(ms), lambda: backends["nowPlaying"].pin(json.loads(later).get("event"), json.loads(later).get("ui")))

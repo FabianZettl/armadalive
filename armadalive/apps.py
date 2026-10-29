@@ -78,7 +78,8 @@ class Apps(QObject):
 
     def _save(self):
         os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
-        json.dump({"slots": self._slots}, open(CONFIG, "w"))
+        with open(CONFIG, "w") as f:
+            json.dump({"slots": self._slots}, f)
 
     def _entry(self, app_id):
         if not app_id:

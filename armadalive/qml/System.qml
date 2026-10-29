@@ -8,6 +8,7 @@ Item {
     readonly property var cc: controls.state
     readonly property var cfg: settings.data
     readonly property var rgb: cfg.rgb || ({})
+    readonly property var rl: rules.state
     readonly property real u: Math.min(width / 620, height / 488)
     readonly property real m: 10 * u
     readonly property var prof: (cfg.profiles || []).find(p => p.id === (st.profile || "").toLowerCase())
@@ -29,6 +30,10 @@ Item {
         { icon: cc.muted ? "mute" : "sound", label: cc.muted ? Tr.t("Muted") : Tr.t("Sound"), on: cc.muted !== true, act: () => controls.toggleMute() },
         { icon: "shot", label: "Screenshot", on: false, act: () => controls.screenshot() },
         { icon: "edit", label: Tr.t("Tuning"), on: false, act: () => { Nav.go = "tuning" } },
+        { icon: "graph", label: Tr.t("Graphs"), on: false, act: () => { Nav.go = "graphs" } },
+        { icon: "power", label: Tr.t("Screen off"), on: false, act: () => { Nav.go = "blank" } },
+        { icon: "star", label: Tr.t("Game rule"), on: rl.gameKey !== "" && rl.rules.some(r => r.key === rl.gameKey), act: () => rules.toggle("game") },
+        { icon: "star", label: Tr.t("System rule"), on: rl.systemKey !== "" && rl.rules.some(r => r.key === rl.systemKey), act: () => rules.toggle("system") },
         { icon: "gauge", label: st.gpuLevel === "auto" ? Tr.t("Auto") : st.gpuManual + " MHz", on: st.gpuLevel !== "auto",
           act: () => st.gpuLevel === "auto" ? system.setGpuManual(st.gpuManual) : system.setGpuAuto() }
     ]

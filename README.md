@@ -51,14 +51,18 @@ belongs to its owners; ArmadaLive does not ship any of it.
   This page is full screen; **swipe up** to show the status line and the bar, swipe down to hide them again.
 - **Manual** and **Cheats** – the game's PDF manual from ES-DE's media, and cheats from your RetroArch cheats folder. These two
   entries only appear in the bar when the current game has them.
+- **Info** – what ES-DE knows about the game (description, year, developer, genre, players, rating, playtime) and your own notes on it.
 - **Apps** – a 3×3 grid of apps you choose (press and hold, or tap an empty tile). They open on the bottom screen.
   The grid also shows on the Game page when nothing is running.
 - **Mode** – brightness of both screens and the stick LEDs, volume.
 - **System** – FPS, a 60/120 FPS limit, quick settings (power profile, fan curve, clear RAM, stick LEDs, Wi-Fi, Bluetooth,
-  airplane mode, sound, screenshot, GPU clock), temperature, fan, and gauges for CPU, GPU, power and RAM.
+  airplane mode, sound, screenshot, GPU clock, screen off), temperature, fan, and gauges for CPU, GPU, power and RAM. The status line
+  shows the battery time left. Two tiles open **Graphs** (FPS, CPU, temperature, power and battery over the last two minutes) and
+  **Tuning**. Two more, *Game rule* and *System rule*, remember the current power profile and FPS limit for the game in front, or for
+  its whole system, and apply them the next time that game starts.
 - **Tuning** – reached from the *Tuning* tile on System: CPU governor, underclock, GPU limits and a draggable fan-curve
   editor for each power profile. Needs the root helper.
-- **Settings** – English or German, ten themes (SteamOS, SNES, Game Boy, PS2, Famicom and more) with accent colours, logo animation on or off, in-app updates, and **Setup**: install the
+- **Settings** – a health check (what is missing so that ArmadaLive can see your games, with a hint for each), English or German, ten themes (SteamOS, SNES, Game Boy, PS2, Famicom and more) with accent colours, logo animation on or off, in-app updates, and **Setup**: install the
   root helper and route the AYN button with one tap each (password prompt, greyed out once done). About and AI disclosure.
 
 ## Requirements
@@ -121,6 +125,7 @@ nothing else, and greys out once it is done. The terminal commands below do the 
 | Leave it alone for 10 s | the screen dims a little; a touch, or a new game or logo, brightens it (can be switched off in Settings) |
 | AYN button | bring ArmadaLive to the front, always |
 | Press and hold an app tile | choose another app for that slot |
+| Hold the AYN button | screen off (black, touches ignored); press the button again, or hold a finger on the screen, to wake it |
 | Tap the *120 FPS MODE* pill | switch the frame limit between 60 and 120 |
 | *Settings → Setup* | install the root helper and route the AYN button, no terminal needed |
 
@@ -158,6 +163,16 @@ PYTHONPATH=. QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
 
 renders a page to an image (pages: 0 game, 1 apps, 2 mode, 3 system, 4 settings, 5 tuning). The interface is plain QML in
 `armadalive/qml`; the English text is the key and German lives in `Tr.qml`.
+
+### Tests and releases
+
+```sh
+QT_QPA_PLATFORM=offscreen python3 -m unittest discover -s tests -t . -v
+```
+
+runs the tests (a fake ES-DE folder, the root helper against a temp folder, settings, game rules, all QML files, German texts).
+GitHub runs them on every push. `scripts/make-release.sh <version> <notes.md>` runs them, builds `armadalive.tar.gz` with its
+`.sha256` and publishes the release; the in-app updater checks the download against that checksum and refuses a release without one.
 
 ## License
 

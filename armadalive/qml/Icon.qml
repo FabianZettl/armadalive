@@ -85,6 +85,15 @@ Canvas {
             c.arc(12, 14, 8, Math.PI, 2 * Math.PI); ln(c, 4, 14, 20, 14); ln(c, 12, 14, 16.5, 9); break
         case "dual":
             rr(c, 6, 3, 12, 8, 2); rr(c, 6, 13, 12, 8, 2); ln(c, 9, 7, 15, 7); ln(c, 9, 17, 15, 17); break
+        case "power":
+            c.arc(12, 13, 8, -Math.PI * 0.3, Math.PI * 1.3, false); ln(c, 12, 3, 12, 11); break
+        case "note":
+            rr(c, 5, 3, 14, 18, 2); ln(c, 9, 8, 15, 8); ln(c, 9, 12, 15, 12); ln(c, 9, 16, 12, 16); break
+        case "graph":
+            ln(c, 4, 4, 4, 20); ln(c, 4, 20, 20, 20); c.moveTo(6, 16); c.lineTo(10, 11); c.lineTo(13, 14); c.lineTo(19, 6); break
+        case "star":
+            for (let i = 0; i < 10; i++) { const r = i % 2 ? 4.2 : 9.5, a = -Math.PI / 2 + i * Math.PI / 5; (i ? c.lineTo : c.moveTo).call(c, 12 + r * Math.cos(a), 12.5 + r * Math.sin(a)) }
+            c.closePath(); break
         case "info":
             ci(c, 12, 12, 9); ln(c, 12, 11, 12, 17); ci(c, 12, 7.6, 0.5); break
         default:

@@ -47,6 +47,10 @@ class SteamUi(QObject):
         timer.timeout.connect(self._tick)
         timer.start(700)
 
+    @property
+    def connected(self):
+        return self._ws.state() == QAbstractSocket.SocketState.ConnectedState
+
     def _set(self, value):
         if value != self._last:
             self._last = value

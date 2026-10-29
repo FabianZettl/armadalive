@@ -1,5 +1,5 @@
 """In-app update: look up the newest GitHub release, download it and run its installer outside the running service."""
-import json, os, re, shutil, subprocess, tarfile, threading, urllib.request
+import hashlib, json, os, re, shutil, subprocess, tarfile, threading, urllib.request
 from PySide6.QtCore import Property, QObject, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 
@@ -14,6 +14,17 @@ def _version(tag):
     return tuple(int(x) for x in re.findall(r"\d+", tag)[:3])
 
 
+ASSET, CHECKSUM = "armadalive.tar.gz", "armadalive.tar.gz.sha256"
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
 def _get(url, timeout=15):
     return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": f"ArmadaLive/{__version__}"}), timeout=timeout)
 
@@ -24,7 +35,7 @@ class Updater(QObject):
     def __init__(self):
         super().__init__()
         self._s = dict(version=__version__, repo=REPO_ID, repoUrl=f"https://github.com/{REPO_ID}" if REPO_ID else "",
-                       status="norepo" if not REPO_ID else "idle", latest="", message="", tarball="")
+                       status="norepo" if not REPO_ID else "idle", latest="", message="", tarball="", sha="")
 
     @Property("QVariant", notify=changed)
     def state(self):
@@ -52,8 +63,12 @@ class Updater(QObject):
             tag = release["tag_name"]
         except (OSError, ValueError, KeyError) as e:
             return self._set(status="error", message=str(e))
+        assets = {a["name"]: a["browser_download_url"] for a in release.get("assets", [])}
         if _version(tag) > _version(__version__):
-            self._set(status="available", latest=tag, tarball=release["tarball_url"], message=(release.get("body") or "")[:400])
+            if ASSET in assets and CHECKSUM in assets:
+                self._set(status="available", latest=tag, tarball=assets[ASSET], sha=assets[CHECKSUM], message="")
+            else:  # nothing to verify the download against: do not run it
+                self._set(status="error", latest=tag, message="Release has no checksum file; update by hand from GitHub")
         else:
             self._set(status="uptodate", latest=tag, message="")
 
@@ -73,6 +88,10 @@ class Updater(QObject):
             archive = f"{dest}.tar.gz"
             with _get(self._s["tarball"], 60) as r, open(archive, "wb") as f:
                 shutil.copyfileobj(r, f)
+            want = _get(self._s["sha"]).read().decode().split()[0].lower()
+            if sha256(archive) != want:
+                os.remove(archive)
+                raise RuntimeError("checksum mismatch, download discarded")
             with tarfile.open(archive) as t:
                 t.extractall(dest, filter="data")  # refuses absolute paths, links out of the tree and device files
             (root,) = [d for d in os.listdir(dest) if os.path.isdir(f"{dest}/{d}")]

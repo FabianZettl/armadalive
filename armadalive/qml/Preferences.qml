@@ -6,6 +6,7 @@ Flickable {
     readonly property var look: ui.state
     readonly property var up: updater.state
     readonly property var adm: admin.state
+    readonly property var rl: rules.state
     readonly property var accents: ["A97BE0", "68E1FB", "2EE59D", "D4AF37", "FF9F0A", "FF453A", "FF3DF2", "1A9FFF"]
     readonly property real m: 10
     contentHeight: col.height + 2 * m
@@ -130,6 +131,23 @@ Flickable {
         }
 
         Card {
+            Label { text: Tr.t("Health check") }
+            Repeater {
+                model: health.checks
+                delegate: Column {
+                    width: parent.width
+                    spacing: 2
+                    Row {
+                        spacing: 10
+                        Rectangle { width: 12; height: 12; radius: 6; anchors.verticalCenter: parent.verticalCenter; color: modelData.ok ? Theme.accent : Theme.hot }
+                        Text { color: Theme.text; font.pixelSize: 15; text: ({ hooks: Tr.t("ES-DE hooks"), events: Tr.t("ES-DE event scripts"), media: Tr.t("ES-DE media"), steam: Tr.t("Steam Big Picture link"), gamescope: Tr.t("FPS source") })[modelData.id] }
+                    }
+                    Text { visible: !modelData.ok; x: 22; width: parent.width - 22; wrapMode: Text.WordWrap; color: Theme.muted; font.pixelSize: 12; text: Tr.t(modelData.hint) }
+                }
+            }
+        }
+
+        Card {
             Label { text: Tr.t("Setup") }
             Setup {
                 width: parent.width
@@ -155,6 +173,37 @@ Flickable {
                 visible: page.adm.message !== ""
                 color: Theme.hot
                 text: page.adm.message === "wrong password" ? Tr.t("Wrong password.") : page.adm.message
+            }
+        }
+
+        Card {
+            Label { text: Tr.t("Game rules") }
+            Chips {
+                width: parent.width
+                model: [{ key: "on", label: Tr.t("Apply automatically") }, { key: "off", label: Tr.t("Off") }]
+                current: page.rl.enabled ? "on" : "off"
+                onPicked: key => rules.setEnabled(key === "on")
+            }
+            Body {
+                visible: page.rl.rules.length === 0
+                color: Theme.muted
+                font.pixelSize: 13
+                text: Tr.t("While a game is in front, tap Game rule or System rule on the System page to save its power profile and FPS limit here.")
+            }
+            Repeater {
+                model: page.rl.rules
+                delegate: Item {
+                    width: parent.width
+                    height: 44
+                    Text {
+                        anchors { left: parent.left; right: del.left; rightMargin: 10; verticalCenter: parent.verticalCenter }
+                        elide: Text.ElideRight
+                        color: Theme.text
+                        font.pixelSize: 14
+                        text: (modelData.key.indexOf("system:") === 0 ? Tr.t("System") + " " : "") + modelData.key.replace(/^(game|system):/, "") + "  ·  " + modelData.profile + (modelData.fps ? ", " + modelData.fps + " FPS" : "")
+                    }
+                    PillButton { id: del; anchors { right: parent.right; verticalCenter: parent.verticalCenter } label: "✕"; onClicked: rules.remove(modelData.key) }
+                }
             }
         }
 

@@ -1,5 +1,5 @@
 """Live device stats and power controls for the AYN Thor on Armada OS."""
-import glob, json, os, subprocess
+import collections, glob, json, os, subprocess
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 from PySide6.QtDBus import QDBusConnection, QDBusInterface
 
@@ -35,8 +35,11 @@ def _ram():
 class SystemMonitor(QObject):
     changed = Signal()
 
-    def __init__(self):
+    def __init__(self, fps=None):
         super().__init__()
+        self._fps = fps or (lambda: 0)
+        self._hist = {k: collections.deque(maxlen=120) for k in ("fps", "cpu", "temp", "watts", "battery")}
+        self._amps = collections.deque(maxlen=20)
         self._power = QDBusInterface("org.armada.Power", "/org/armada/Power", "org.armada.Power1",
                                      QDBusConnection.systemBus())
         self._cpu = _cpu_times()
@@ -50,6 +53,11 @@ class SystemMonitor(QObject):
     def stats(self):
         return self._stats
 
+    @Property("QVariant", notify=changed)
+    def history(self):
+        """The last two minutes, one sample per second, for each series."""
+        return {k: list(v) for k, v in self._hist.items()}
+
     def _prop(self, name, default=None):
         v = self._power.property(name) if self._power.isValid() else None
         return default if v is None else v
@@ -60,6 +68,12 @@ class SystemMonitor(QObject):
         self._cpu = (idle, total)
         used, total_gb = _ram()
         amps, volts = int(_read(BATTERY + "/current_now", "0")), int(_read(BATTERY + "/voltage_now", "0"))
+        self._amps.append(abs(amps))
+        avg = sum(self._amps) / len(self._amps)  # current jumps around: judge the time left on the last 20 seconds
+        now, full = int(_read(BATTERY + "/charge_now", "0")), int(_read(BATTERY + "/charge_full", "0"))
+        charging = _read(BATTERY + "/status") == "Charging"
+        left = (full - now) if charging else now
+        eta = round(60 * left / avg) if avg > 50000 and full else -1   # minutes; -1 when unknown
         self._stats = dict(
             cpu=round(100 * (1 - d_idle / d_total)) if d_total else 0,
             ramUsed=round(used, 1), ramTotal=round(total_gb, 1),
@@ -71,7 +85,10 @@ class SystemMonitor(QObject):
             gpuMin=self._prop("ManualGpuClockMin", 220), gpuMax=self._prop("ManualGpuClockMax", 680),
             gpuManual=self._prop("ManualGpuClock", 680),
             battery=int(_read(BATTERY + "/capacity", "0")), charging=_read(BATTERY + "/status") == "Charging",
-            watts=round(abs(amps * volts) / 1e12, 1), led=self._led())
+            watts=round(abs(amps * volts) / 1e12, 1), led=self._led(), eta=eta)
+        for key, value in (("fps", self._fps()), ("cpu", self._stats["cpu"]), ("temp", self._stats["temp"]),
+                           ("watts", self._stats["watts"]), ("battery", self._stats["battery"])):
+            self._hist[key].append(value)
         self.changed.emit()
 
     @staticmethod

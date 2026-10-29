@@ -13,13 +13,15 @@ Window {
     // Handbuch and Cheats are only listed while the current game has them; "under" pages are reached from another page
     readonly property var all: [
         { id: "now", label: Tr.t("Game"), icon: "play", file: "NowPlaying.qml", has: true },
+        { id: "info", label: Tr.t("Info"), icon: "note", file: "Info.qml", has: now.hasInfo === true },
         { id: "manual", label: Tr.t("Manual"), icon: "book", file: "Manual.qml", has: now.manual !== "" },
         { id: "cheats", label: Tr.t("Cheats"), icon: "cheats", file: "Cheats.qml", has: now.hasCheats },
         { id: "apps", label: Tr.t("Apps"), icon: "apps", file: "Apps.qml", has: true },
         { id: "mode", label: Tr.t("Mode"), icon: "mode", file: "Mode.qml", has: true },
         { id: "system", label: Tr.t("System"), icon: "gear", file: "System.qml", has: true },
         { id: "prefs", label: Tr.t("Settings"), icon: "info", file: "Preferences.qml", has: true },
-        { id: "tuning", label: Tr.t("Tuning"), icon: "perf", file: "Tuning.qml", has: true, under: "system" }
+        { id: "tuning", label: Tr.t("Tuning"), icon: "perf", file: "Tuning.qml", has: true, under: "system" },
+        { id: "graphs", label: Tr.t("Graphs"), icon: "graph", file: "Graphs.qml", has: true, under: "system" }
     ]
     readonly property var pages: all.filter(p => p.has && !p.under)
     property string page: "now"
@@ -33,13 +35,15 @@ Window {
 
     // the screen dims a little after 10 s without a touch; the next touch wakes it (and does nothing else)
     property bool dimmed: false
+    property bool blanked: false        // screen off: true black, ignores touches, a long press or the AYN button wakes it
+    property bool pressWasBlanked: false
     readonly property bool dimEnabled: ui.state.dim !== false     // Settings > Dim after 10 s
     function wake() { dimmed = false; idle.restart() }
     onDimEnabledChanged: { if (dimEnabled) idle.restart(); else { idle.stop(); dimmed = false } }
     Timer {
         id: idle
         interval: 10000
-        onTriggered: { if (Auth.ask === "") win.dimmed = true; else idle.restart() }   // not while the password prompt is open
+        onTriggered: { if (Auth.ask === "" && !Gesture.locked) win.dimmed = true; else idle.restart() }   // not while the password prompt is open
     }
     PointHandler { target: null; onActiveChanged: if (active) win.wake() }  // sees every touch, takes none
     // a new game, logo or background (scrolling in ES-DE or Steam, a game starting) brightens it too
@@ -66,12 +70,19 @@ Window {
     }
     Connections {
         target: Nav
-        function onGoChanged() { if (Nav.go) { win.go(Nav.go); Nav.go = "" } }
+        function onGoChanged() {
+            if (Nav.go === "blank") win.blanked = true
+            else if (Nav.go) win.go(Nav.go)
+            Nav.go = ""
+        }
     }
     // the AYN button (see scripts/ayn-button.sh) always brings the app up, whatever is in front on this screen
     Connections {
         target: ayn
+        function onLongPressed() { if (!win.pressWasBlanked) win.blanked = true }   // hold the AYN button: screen off
         function onPressed() {
+            win.pressWasBlanked = win.blanked
+            win.blanked = false
             win.wake()
             win.show()
             win.applyVisibility()
@@ -153,7 +164,13 @@ Window {
                             color: system.stats.charging ? Theme.accent : (system.stats.battery < 20 ? Theme.hot : Theme.text) } }
                     Rectangle { x: parent.width - 3 * win.u; anchors.verticalCenter: parent.verticalCenter; width: 3 * win.u; height: parent.height * 0.4; radius: 1; color: Theme.muted }
                 }
-                Text { anchors.verticalCenter: parent.verticalCenter; color: Theme.text; font.pixelSize: 14 * win.u; text: system.stats.battery + "%" }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: Theme.text
+                    font.pixelSize: 14 * win.u
+                    // minutes left (or until full) when the current is steady enough to tell
+                    text: system.stats.battery + "%" + (system.stats.eta > 0 ? "  ·  " + Math.floor(system.stats.eta / 60) + "h " + (system.stats.eta % 60) + "m" : "")
+                }
             }
         }
     }
@@ -200,5 +217,15 @@ Window {
         visible: opacity > 0.01
         Behavior on opacity { NumberAnimation { duration: 500 } }
         MouseArea { anchors.fill: parent; enabled: win.dimmed; onPressed: win.wake() }
+    }
+
+    // screen off: nothing but black, touches are swallowed, only holding a finger down or the AYN button brings it back
+    Rectangle {
+        anchors.fill: parent
+        color: "#000000"
+        opacity: win.blanked ? 1 : 0
+        visible: opacity > 0.01
+        Behavior on opacity { NumberAnimation { duration: 250 } }
+        MouseArea { anchors.fill: parent; enabled: win.blanked; onPressAndHold: win.blanked = false }
     }
 }

@@ -5,15 +5,21 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 CONFIG = os.path.expanduser("~/.config/armadalive/ui.json")
 
 
+DEFAULTS = dict(theme="stock", accent="", lang="en", animate=True, dim=True)
+
+
 class UiSettings(QObject):
     changed = Signal()
 
     def __init__(self):
         super().__init__()
         try:
-            self._s = dict(theme="stock", accent="", lang="en", animate=True, dim=True, **json.load(open(CONFIG)))
-        except (OSError, ValueError, TypeError):
-            self._s = dict(theme="stock", accent="", lang="en", animate=True, dim=True)
+            with open(CONFIG) as f:
+                saved = json.load(f)
+        except (OSError, ValueError):
+            saved = {}
+        # saved values win over the defaults; keys we do not know are dropped
+        self._s = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}} if isinstance(saved, dict) else dict(DEFAULTS)
 
     @Property("QVariant", notify=changed)
     def state(self):
@@ -21,7 +27,8 @@ class UiSettings(QObject):
 
     def _save(self):
         os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
-        json.dump(self._s, open(CONFIG, "w"))
+        with open(CONFIG, "w") as f:
+            json.dump(self._s, f)
         self.changed.emit()
 
     @Slot(str)
