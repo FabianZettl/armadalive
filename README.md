@@ -49,8 +49,8 @@ belongs to its owners; ArmadaLive does not ship any of it.
 
   Artwork comes from ES-DE's `downloaded_media` (so scrape once in ES-DE) and from Steam's own library cache.
   This page is full screen; **swipe up** to show the status line and the bar, swipe down to hide them again.
-- **Manual** and **Cheats** – the game's PDF manual from ES-DE's media, and cheats from your RetroArch cheats folder. These two
-  entries only appear in the bar when the current game has them.
+- **Manual** and **Cheats** – the game's PDF manual from ES-DE's media, and cheats from your RetroArch cheats folder. Tap the Game
+  page and two buttons appear for a few seconds, each only if the current game has it. They are not in the bar.
 - **Apps** – a 3×3 grid of apps you choose (press and hold, or tap an empty tile). They open on the bottom screen.
   The grid also shows on the Game page when nothing is running.
 - **Mode** – brightness of both screens and the stick LEDs, volume.

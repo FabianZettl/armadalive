@@ -10,11 +10,11 @@ Window {
     title: "ArmadaLive"
 
     readonly property var now: nowPlaying.state
-    // Handbuch and Cheats are only listed while the current game has them; "under" pages are reached from another page
+    // Manual and Cheats are reached by tapping the Game page, and only while the current game has them; "under" pages are not in the bar
     readonly property var all: [
         { id: "now", label: Tr.t("Game"), icon: "play", file: "NowPlaying.qml", has: true },
-        { id: "manual", label: Tr.t("Manual"), icon: "book", file: "Manual.qml", has: now.manual !== "" },
-        { id: "cheats", label: Tr.t("Cheats"), icon: "cheats", file: "Cheats.qml", has: now.hasCheats },
+        { id: "manual", label: Tr.t("Manual"), icon: "book", file: "Manual.qml", has: now.manual !== "", under: "now" },
+        { id: "cheats", label: Tr.t("Cheats"), icon: "cheats", file: "Cheats.qml", has: now.hasCheats, under: "now" },
         { id: "apps", label: Tr.t("Apps"), icon: "apps", file: "Apps.qml", has: true },
         { id: "mode", label: Tr.t("Mode"), icon: "mode", file: "Mode.qml", has: true },
         { id: "system", label: Tr.t("System"), icon: "gear", file: "System.qml", has: true },

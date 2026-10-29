@@ -98,12 +98,27 @@ Item {
 
     Component.onCompleted: { la.st = s; la.v = idle ? 0 : 1 }
     onSigChanged: {
+        extras = false
         if (idle) { cur.v = 0; return }
         const next = cur === la ? lb : la
         next.st = s
         next.v = 1
         cur.v = 0
         cur = next
+    }
+
+    // a tap on the artwork shows Manual and Cheats for a few seconds, if this game has them
+    property bool extras: false
+    TapHandler { enabled: !root.idle; onTapped: { root.extras = !root.extras; hideExtras.restart() } }
+    Timer { id: hideExtras; interval: 4000; onTriggered: root.extras = false }
+    Row {
+        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 130 }
+        spacing: 12
+        opacity: root.extras ? 1 : 0
+        visible: opacity > 0.01
+        Behavior on opacity { NumberAnimation { duration: 180 } }
+        PillButton { visible: root.s.manual !== ""; label: Tr.t("Manual"); onClicked: { root.extras = false; Nav.go = "manual" } }
+        PillButton { visible: root.s.hasCheats === true; label: Tr.t("Cheats"); onClicked: { root.extras = false; Nav.go = "cheats" } }
     }
 
     AppGrid {
