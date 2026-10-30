@@ -57,6 +57,30 @@ Flickable {
             onPicked: key => page.sel = key
         }
 
+        Text {
+            visible: (page.d.presets || []).length > 0
+            width: parent.width
+            wrapMode: Text.WordWrap
+            color: Theme.muted
+            font.pixelSize: 15
+            text: Tr.t("Presets for this profile") + "  ·  " + ((page.d.device || ({})).name || "")
+        }
+        Chips {
+            visible: (page.d.presets || []).length > 0
+            width: parent.width
+            model: (page.d.presets || []).map(p => ({ key: p.id, label: Tr.t(p.label) }))
+            current: ""
+            onPicked: key => settings.applyPreset(page.sel, key)
+        }
+        Text {
+            visible: (page.d.presets || []).length > 0
+            width: parent.width
+            wrapMode: Text.WordWrap
+            color: Theme.muted
+            font.pixelSize: 12
+            text: ((page.d.presets || []).map(p => Tr.t(p.label) + ": " + Tr.t(p.hint)).join("  ·  ")) + "  ·  " + Tr.t("Every change is taken back after 15 s unless you keep it.")
+        }
+
         Column {
             visible: page.prof !== undefined
             width: parent.width

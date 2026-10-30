@@ -312,6 +312,43 @@ Window {
         Timer { id: hideToast; interval: 4000; onTriggered: toast.opacity = 0 }
     }
 
+    // a tuning change (fan curve, governor, GPU or CPU limit) is taken back unless it is kept, like a new screen resolution
+    readonly property var tuning: settings.pending
+    onTuningChanged: if (tuning.active) wake()
+    Rectangle {
+        id: keep
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: 10 * win.u
+        width: Math.min(parent.width - 30 * win.u, 520 * win.u)
+        height: keepCol.height + 24 * win.u
+        radius: Theme.radius * win.u
+        color: Theme.card
+        border.color: Theme.warm
+        border.width: 2
+        opacity: win.tuning.active ? 1 : 0
+        visible: opacity > 0.01
+        Behavior on opacity { NumberAnimation { duration: 150 } }
+        MouseArea { anchors.fill: parent }
+        Column {
+            id: keepCol
+            x: 14 * win.u; y: 12 * win.u
+            width: parent.width - 28 * win.u
+            spacing: 8 * win.u
+            Text { width: parent.width; color: Theme.text; font.pixelSize: 16 * win.u; wrapMode: Text.WordWrap
+                   text: Tr.t("Keep this setting?") + "  ·  " + Tr.t("back to the old one in") + " " + win.tuning.seconds + " s" }
+            Rectangle {
+                width: parent.width; height: 6 * win.u; radius: height / 2; color: Theme.circle
+                Rectangle { width: parent.width * win.tuning.seconds / Math.max(1, win.tuning.total); height: parent.height; radius: height / 2; color: Theme.warm
+                            Behavior on width { NumberAnimation { duration: 900 } } }
+            }
+            Row {
+                spacing: 10 * win.u
+                PillButton { primary: true; label: Tr.t("Keep"); onClicked: settings.confirm() }
+                PillButton { label: Tr.t("Undo"); onClicked: settings.revert() }
+            }
+        }
+    }
+
     // Start + Select held: countdown until the game in front is closed
     Rectangle {
         anchors.fill: parent

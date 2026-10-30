@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Tuning changes are taken back unless you keep them**, like a new screen resolution: after changing the governor, underclock, GPU limits or a fan curve (also with the fan tile on System), a bar asks *Keep this setting?* for 15 seconds, and without an answer the old value is restored. A change that was never confirmed (app closed, crash) is undone the next time the app starts. A chain of changes goes back to the value before the first one and can stay unconfirmed for 60 seconds at most.
+- **Presets** on the Tuning page: *Cool*, *Quiet* and *Fast* for the selected profile. They only use what the device has (GPU limits snap to a real step, governors and fan curves that do not exist are left out), and `armadalive/presets.json` can override a preset for one model (`ayn,thor` or `ayn,thor:pro`). The model comes from the device tree; Pro, Base and Max are told apart by memory, which is a guess.
+- **Bug report form** for GitHub issues (device model, Armada OS version, ArmadaLive version, page).
+
 ## 0.3.0
 
 - **Keyboard** tile: shows the system on-screen keyboard of the bottom screen and keeps it up (it is put back if Plasma hides it) until the tile is tapped again, for dialogs (such as the wallet password) that do not ask for it themselves.

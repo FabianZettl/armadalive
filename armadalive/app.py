@@ -93,6 +93,10 @@ def main():
         if "--demo-later" in sys.argv:  # ms:json, switch to another pinned game that many milliseconds in
             ms, later = sys.argv[sys.argv.index("--demo-later") + 1].split(":", 1)
             QTimer.singleShot(int(ms), lambda: backends["nowPlaying"].pin(json.loads(later).get("event"), json.loads(later).get("ui")))
+        if "--keep-demo" in sys.argv:  # show the keep-or-undo bar with 11 s left (nothing is changed or reverted)
+            st = backends["settings"]
+            st._undo, st._left = {("profile", "demo", "demo"): "x"}, 11
+            st.changed.emit()
         if "--ask" in sys.argv:
             window.setProperty("askDemo", sys.argv[sys.argv.index("--ask") + 1])
         if "--notice" in sys.argv:  # code:title, show that popup message 600 ms in

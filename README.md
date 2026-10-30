@@ -76,7 +76,9 @@ belongs to its owners; ArmadaLive does not ship any of it.
   Steam itself). ArmadaLive comes to the front with a countdown; let go early and nothing happens. It asks the program to quit
   and kills it after three seconds if it does not. Can be switched off in Settings.
 - **Tuning** – reached from the *Tuning* tile on System: CPU governor, underclock, GPU limits and a draggable fan-curve
-  editor for each power profile. Needs the root helper.
+  editor for each power profile, plus three presets (Cool, Quiet, Fast) fitted to the device. Needs the root helper. A change here
+  is taken back after 15 seconds unless you tap *Keep*, so a bad fan curve or limit cannot stick; if the app is closed before you
+  confirm, the change is undone at the next start.
 - **Settings** – a health check (what is missing so that ArmadaLive can see your games, with a hint for each), English or German, eleven themes (SteamOS, SNES, Game Boy, PS2, Famicom and more) with accent colours, one of them **Follow game** whose whole palette takes its colour from the artwork of the game in front,
   a low-battery warning and an optional charge limit (80 or 90 %), a one-file **backup** of settings, game rules and tile order, logo animation on or off, in-app updates, and **Setup**: install the
   root helper and route the AYN button with one tap each (password prompt, greyed out once done). About and AI disclosure.
