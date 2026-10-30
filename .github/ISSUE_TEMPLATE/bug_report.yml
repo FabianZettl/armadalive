@@ -1,0 +1,56 @@
+name: Bug report
+description: Something does not work on your device
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ArmadaLive has only been tried on one Thor so far, so the details of your setup matter. Thanks for filling them in.
+  - type: dropdown
+    id: model
+    attributes:
+      label: Thor model
+      options: [Thor Base, Thor Pro, Thor Max, Thor Lite, Other AYN or Armada device, Not sure]
+    validations:
+      required: true
+  - type: input
+    id: armada
+    attributes:
+      label: Armada OS version
+      description: "Settings → About, or `grep PRETTY_NAME /etc/os-release` (for example `Armada 20261010.c3d178c`) and the image channel (testing, beta or stable) if you know it."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ArmadaLive version
+      description: "Settings → About (for example 0.3.0)."
+    validations:
+      required: true
+  - type: dropdown
+    id: page
+    attributes:
+      label: Page where it went wrong
+      options: [Game, Apps, Mode, System, Settings, Tuning, Graphs, Manual or Cheats, Setup (root helper or AYN button), Update, Other / whole app]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log (optional)
+      description: "Output of `journalctl --user -u armadalive -n 80 --no-pager`. Remove anything private first."
+      render: shell
+  - type: checkboxes
+    id: helper
+    attributes:
+      label: Setup
+      options:
+        - label: The root helper is installed (Settings → Setup)
+        - label: The AYN button is set up
+        - label: Steam's debug port is on (Decky Loader is installed)
