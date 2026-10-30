@@ -66,7 +66,7 @@ belongs to its owners; ArmadaLive does not ship any of it.
   launch command ES-DE wrote to its log when it started the game, so the game must have been started from ES-DE once. If the same
   command is already a shortcut the tile shows *In Steam* and a tap only says so. Each action ends in a short popup. Needs the Steam
   debug port like the Big Picture selection (see optional step 4); shortcuts are not removed again by ArmadaLive.
-- **Keyboard** – a tile that opens or closes the on-screen keyboard of the bottom screen (it normally appears by itself in text fields; this is for dialogs that do not ask for it, such as the wallet password).
+- **Keyboard** – a tile that shows the on-screen keyboard of the bottom screen and keeps it up until you tap it again (it normally appears by itself in text fields; this is for dialogs that do not ask for it, such as the wallet password).
 - **Tailscale** – a tile switches Tailscale on or off (a shield shows in the status line while it is connected). The tile can only do that
   if your user is Tailscale's operator: run `sudo tailscale set --operator=$USER` once.
 - **Heat warning** – a popup when the device reaches 80, 85 or 90 °C (or never), with the power profile that is running; at most every five minutes.

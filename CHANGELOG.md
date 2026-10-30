@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Keyboard** tile: opens or closes the system on-screen keyboard of the bottom screen on demand, for dialogs (such as the wallet password) that do not ask for it themselves.
+- **Keyboard** tile: shows the system on-screen keyboard of the bottom screen and keeps it up (it is put back if Plasma hides it) until the tile is tapped again, for dialogs (such as the wallet password) that do not ask for it themselves.
 - **Password dialog has its own on-screen keyboard** (letters, shift, numbers and symbols). Keys from a Bluetooth or system keyboard go to the session on the top screen, so typing the sudo password for Setup was impossible before.
 - **Survives a system image without PySide6:** `install.sh` now creates its own Python environment with PySide6 and PyMuPDF when the system has none (a system update removed it and the service no longer started). Manuals are drawn with PyMuPDF where Qt has no PDF module.
 - **The AYN button is a toggle:** a tap brings ArmadaLive up, and a tap while it is in front sends it to the background, so a dual-screen game such as Azahar shows again. Holding the button still switches the screen off.

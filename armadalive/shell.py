@@ -1,6 +1,6 @@
 """Bring the ArmadaLive window to the front of the bottom Plasma session, whatever is on top of it."""
 import glob, json, os, stat, subprocess, threading
-from PySide6.QtCore import QObject, QTimer, Slot
+from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 
 TITLE = "ArmadaLive"
 _bus = None
@@ -50,18 +50,52 @@ def activate_window():
     return False
 
 
-def toggle_keyboard():
-    """KWin's virtual keyboard of the bottom session, opened or closed whether or not the focused app asked for it."""
+def _kb(*args):
     bus = _bus or _find_bus()
-    if bus:
-        subprocess.run(["busctl", f"--address={bus}", "call", "org.kde.KWin", "/VirtualKeyboard", "org.kde.kwin.VirtualKeyboard",
-                        "forceActivate"], capture_output=True, timeout=5)
+    if not bus:
+        return ""
+    try:
+        return subprocess.run(["busctl", f"--address={bus}", *args], capture_output=True, text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+KB = ["org.kde.KWin", "/VirtualKeyboard", "org.kde.kwin.VirtualKeyboard"]
+
+
+def keyboard_visible():
+    return _kb("get-property", *KB, "visible") == "b true"
+
+
+def keyboard_show():
+    if not keyboard_visible():     # forceActivate toggles, so only when it is not up
+        _kb("call", *KB, "forceActivate")
+
+
+def keyboard_hide():
+    _kb("set-property", *KB, "active", "b", "false")
 
 
 class Shell(QObject):
+    keyboardChanged = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self._pinned = False
+        timer = QTimer(self)    # Plasma hides its keyboard when focus moves on; while pinned it is put back
+        timer.timeout.connect(lambda: self._pinned and threading.Thread(target=keyboard_show, daemon=True).start())
+        timer.start(800)
+
+    @Property(bool, notify=keyboardChanged)
+    def keyboardPinned(self):
+        return self._pinned
+
     @Slot()
     def keyboard(self):
-        threading.Thread(target=toggle_keyboard, daemon=True).start()
+        """Shows the on-screen keyboard and keeps it up until this is called again."""
+        self._pinned = not self._pinned
+        self.keyboardChanged.emit()
+        threading.Thread(target=keyboard_show if self._pinned else keyboard_hide, daemon=True).start()
 
     @Slot()
     def activate(self):
