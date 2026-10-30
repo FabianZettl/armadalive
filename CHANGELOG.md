@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Password dialog has its own on-screen keyboard** (letters, shift, numbers and symbols). Keys from a Bluetooth or system keyboard go to the session on the top screen, so typing the sudo password for Setup was impossible before.
 - **Survives a system image without PySide6:** `install.sh` now creates its own Python environment with PySide6 and PyMuPDF when the system has none (a system update removed it and the service no longer started). Manuals are drawn with PyMuPDF where Qt has no PDF module.
 - **The AYN button is a toggle:** a tap brings ArmadaLive up, and a tap while it is in front sends it to the background, so a dual-screen game such as Azahar shows again. Holding the button still switches the screen off.
 - **Apps page** can be switched off in Settings; the bar then has four entries. The app grid still shows on the Game page while nothing is running.

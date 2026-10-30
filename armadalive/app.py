@@ -93,6 +93,8 @@ def main():
         if "--demo-later" in sys.argv:  # ms:json, switch to another pinned game that many milliseconds in
             ms, later = sys.argv[sys.argv.index("--demo-later") + 1].split(":", 1)
             QTimer.singleShot(int(ms), lambda: backends["nowPlaying"].pin(json.loads(later).get("event"), json.loads(later).get("ui")))
+        if "--ask" in sys.argv:
+            window.setProperty("askDemo", sys.argv[sys.argv.index("--ask") + 1])
         if "--notice" in sys.argv:  # code:title, show that popup message 600 ms in
             code, _, title = sys.argv[sys.argv.index("--notice") + 1].partition(":")
             if code == "hot":

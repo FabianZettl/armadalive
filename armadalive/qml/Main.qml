@@ -37,6 +37,8 @@ Window {
     property bool blanked: false        // screen off: true black, ignores touches, a long press or the AYN button wakes it
     property bool pressWasBlanked: false
     property bool pressWasFront: false
+    property string askDemo: ""     // snapshots only: open the password dialog
+    onAskDemoChanged: Auth.ask = askDemo
     readonly property bool dimEnabled: ui.state.dim !== false     // Settings > Dim after 10 s
     function wake() { dimmed = false; idle.restart() }
     onDimEnabledChanged: { if (dimEnabled) idle.restart(); else { idle.stop(); dimmed = false } }
