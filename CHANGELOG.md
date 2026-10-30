@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - **Keyboard** tile: shows the system on-screen keyboard of the bottom screen and keeps it up (it is put back if Plasma hides it) until the tile is tapped again, for dialogs (such as the wallet password) that do not ask for it themselves.
 - **Password dialog has its own on-screen keyboard** (letters, shift, numbers and symbols). Keys from a Bluetooth or system keyboard go to the session on the top screen, so typing the sudo password for Setup was impossible before.
