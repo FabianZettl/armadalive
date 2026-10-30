@@ -11,6 +11,13 @@ Flickable {
     readonly property var rgb: d.rgb || ({})
     readonly property var swatches: ["FFFFFF", "1A9FFF", "34C759", "FF9F0A", "FF453A", "BF5AF2"]
     property string notice: ""
+    // a preset counts as active while the selected profile has exactly its values
+    readonly property string activePreset: {
+        if (!prof) return ""
+        const now = { cpu_governor: prof.governor, cpu_underclock: prof.underclock, gpu_max_mhz: prof.gpuMax, fan_curve: prof.fanCurve }
+        const hit = (d.presets || []).find(p => p.items.every(i => { const kv = i.split("="); return String(now[kv[0]]) === kv[1] }))
+        return hit ? hit.id : ""
+    }
 
     contentHeight: col.height + 28
     clip: true
@@ -69,7 +76,7 @@ Flickable {
             visible: (page.d.presets || []).length > 0
             width: parent.width
             model: (page.d.presets || []).map(p => ({ key: p.id, label: Tr.t(p.label) }))
-            current: ""
+            current: page.activePreset
             onPicked: key => settings.applyPreset(page.sel, key)
         }
         Text {
