@@ -39,6 +39,7 @@ Item {
         { id: "systemrule", icon: "star", label: Tr.t("System rule"), on: rl.systemKey !== "" && rl.rules.some(r => r.key === rl.systemKey), act: () => rules.toggle("system") },
         { id: "res", icon: "gauge", label: rl.resOk ? ((rl.rules.find(r => r.key === rl.gameKey) || {}).res ? (rl.rules.find(r => r.key === rl.gameKey)).res + "× " + Tr.t("render") : Tr.t("Resolution")) : Tr.t("Resolution"),
           on: rl.resOk && (rl.rules.find(r => r.key === rl.gameKey) || {}).res > 0, act: () => rules.cycleRes() },
+        { id: "keyboard", icon: "edit", label: Tr.t("Keyboard"), on: false, act: () => shell.keyboard() },
         { id: "steam", icon: ss.exists ? "done" : "add", label: ss.exists ? Tr.t("In Steam") : Tr.t("Add to Steam"), on: ss.exists === true, act: () => steamShortcuts.add() },
         { id: "gpu", icon: "gauge", label: st.gpuLevel === "auto" ? Tr.t("Auto") : st.gpuManual + " MHz", on: st.gpuLevel !== "auto",
           act: () => st.gpuLevel === "auto" ? system.setGpuManual(st.gpuManual) : system.setGpuAuto() }

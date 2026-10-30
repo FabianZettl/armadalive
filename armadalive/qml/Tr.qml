@@ -38,7 +38,7 @@ QtObject {
         "Steam Big Picture selection needs ~/.steam/steam/.cef-enable-remote-debugging (Decky Loader) and a Steam restart": "Die Big-Picture-Auswahl braucht ~/.steam/steam/.cef-enable-remote-debugging (Decky Loader) und einen Steam-Neustart",
         "gamescope's stats pipe is missing: FPS cannot be read": "Die Stats-Pipe von gamescope fehlt: FPS lassen sich nicht lesen",
         "Screens": "Bildschirme", "General": "Allgemein", "Close game": "Spiel beenden", "Hold Start + Select for 2 s": "Start + Select 2 s halten", "Theme": "Theme", "Changing the LEDs needs the root helper (Settings → Setup).": "Zum Ändern der LEDs braucht es den Root-Helper (Einstellungen → Setup).",
-        "Add to Steam": "Zu Steam", "In Steam": "In Steam", "Shortcut created": "Shortcut erstellt", "Already in Steam": "Schon in Steam",
+        "Keyboard": "Tastatur", "Add to Steam": "Zu Steam", "In Steam": "In Steam", "Shortcut created": "Shortcut erstellt", "Already in Steam": "Schon in Steam",
         "Launch the game from ES-DE once first": "Spiel erst einmal aus ES-DE starten", "Steam is not reachable": "Steam nicht erreichbar",
         "Apps page": "Apps-Seite", "The app grid in the bar": "Das App-Raster in der Leiste", "Manuals need PyMuPDF (pip install pymupdf).": "Handbücher brauchen PyMuPDF (pip install pymupdf).", "This manual could not be read.": "Dieses Handbuch konnte nicht gelesen werden.", "Loading…": "Lädt…",
         "Hot": "Heiß", "Battery and heat": "Akku und Hitze", "Warn when it gets hot": "Warnen, wenn es heiß wird",

@@ -50,7 +50,19 @@ def activate_window():
     return False
 
 
+def toggle_keyboard():
+    """KWin's virtual keyboard of the bottom session, opened or closed whether or not the focused app asked for it."""
+    bus = _bus or _find_bus()
+    if bus:
+        subprocess.run(["busctl", f"--address={bus}", "call", "org.kde.KWin", "/VirtualKeyboard", "org.kde.kwin.VirtualKeyboard",
+                        "forceActivate"], capture_output=True, timeout=5)
+
+
 class Shell(QObject):
+    @Slot()
+    def keyboard(self):
+        threading.Thread(target=toggle_keyboard, daemon=True).start()
+
     @Slot()
     def activate(self):
         # the window has just been shown; give KWin a moment to list it
