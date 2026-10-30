@@ -14,7 +14,7 @@ Item {
     readonly property var marks: [["1","2","3","4","5","6","7","8","9","0"], ["@","#","$","%","&","*","-","+","=","_"], ["!","?",".",",",":",";","/","\\","(",")"]]
     readonly property var rows: symbols ? marks : [["1","2","3","4","5","6","7","8","9","0"]].concat(letters)
     function press(ch) {
-        field.insert(field.cursorPosition, shift && !symbols ? ch.toUpperCase() : ch)
+        field.text += shift && !symbols ? ch.toUpperCase() : ch
         if (shift) shift = false
     }
     onVisibleChanged: if (visible) { field.text = ""; shift = false; symbols = false }
@@ -64,7 +64,7 @@ Item {
                     color: Theme.text
                     font.pixelSize: 18
                     clip: true
-                    readOnly: false
+                    readOnly: true      // keeps the system keyboard away (this dialog has its own); text is set by the keys below
                     cursorVisible: true
                     onAccepted: if (text !== "") d.accepted(text)
                 }
@@ -130,7 +130,7 @@ Item {
                     width: (kb.width - 12 - 6 * 6) / 7 * 1.5; height: kb.kh; radius: 8
                     color: bs.pressed ? Theme.accent : Theme.circle
                     Text { anchors.centerIn: parent; color: bs.pressed ? Theme.bg : Theme.text; font.pixelSize: kb.kh * 0.5; text: "⌫" }
-                    MouseArea { id: bs; anchors.fill: parent; onClicked: field.remove(Math.max(0, field.cursorPosition - 1), field.cursorPosition) }
+                    MouseArea { id: bs; anchors.fill: parent; onClicked: field.text = field.text.slice(0, -1) }
                 }
             }
         }
