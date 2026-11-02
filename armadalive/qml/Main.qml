@@ -17,6 +17,7 @@ Window {
         { id: "cheats", label: Tr.t("Cheats"), icon: "cheats", file: "Cheats.qml", has: now.hasCheats, under: "now" },
         { id: "apps", label: Tr.t("Apps"), icon: "apps", file: "Apps.qml", has: ui.state.apps !== false },
         { id: "mode", label: Tr.t("Mode"), icon: "mode", file: "Mode.qml", has: true },
+        { id: "trackpad", label: Tr.t("Trackpad"), icon: "pad", file: "Trackpad.qml", has: true },
         { id: "system", label: Tr.t("System"), icon: "gear", file: "System.qml", has: true },
         { id: "prefs", label: Tr.t("Settings"), icon: "info", file: "Preferences.qml", has: true },
         { id: "tuning", label: Tr.t("Tuning"), icon: "perf", file: "Tuning.qml", has: true, under: "system" },
@@ -310,6 +311,39 @@ Window {
             text: toast.text
         }
         Timer { id: hideToast; interval: 4000; onTriggered: toast.opacity = 0 }
+    }
+
+    // Ludo is syncing saves before a game starts: stays up until the game is running
+    Connections {
+        target: ludo
+        function onChanged() { if (ludo.state.phase) win.bringUp() }
+    }
+    Rectangle {
+        id: ludoBar
+        readonly property string phase: ludo.state.phase
+        readonly property string title: ludo.state.title
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: 58 * win.u
+        width: Math.min(ludoText.implicitWidth + 40 * win.u, parent.width - 40 * win.u)
+        height: 40 * win.u
+        radius: height / 2
+        color: Theme.accent
+        opacity: phase ? 1 : 0
+        visible: opacity > 0.01
+        Behavior on opacity { NumberAnimation { duration: 250 } }
+        Text {
+            id: ludoText
+            anchors.centerIn: parent
+            width: parent.width - 24 * win.u
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
+            color: Theme.bg
+            font.pixelSize: 16 * win.u
+            text: {
+                const base = ({ check: Tr.t("Checking saves…"), sync: Tr.t("Syncing saves"), start: Tr.t("Starting"), upload: Tr.t("Uploading saves…") })[ludoBar.phase] || ""
+                return ludoBar.title ? base + ": " + ludoBar.title : base
+            }
+        }
     }
 
     // a tuning change (fan curve, governor, GPU or CPU limit) is taken back unless it is kept, like a new screen resolution

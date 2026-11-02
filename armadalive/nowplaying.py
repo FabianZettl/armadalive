@@ -15,6 +15,8 @@ STEAM_LIBRARIES = [os.path.expanduser(p) for p in ("~/.local/share/Steam", "/run
 EMULATORS = ("retroarch", "eden", "azahar", "cemu", "armsx2", "pcsx2", "dolphin-emu", "ppsspp", "rpcs3", "xemu", "duckstation",
              "vita3k", "mgba", "melonds", "flycast", "redream", "xenia", "shadps4", "citra", "yuzu", "ryujinx", "mednafen", "scummvm", "dosbox")
 _gamelists, _cheats = {}, {}
+LUDO = os.path.expanduser("~/.config/ludo/library_snapshot.json")
+_ludo = (0, "", {})   # snapshot mtime, server URL, games by RomM id
 
 
 def _first(pattern):
@@ -85,8 +87,11 @@ def running_game():
             continue
         for arg in args[1:]:
             text = arg.decode(errors="replace")
-            at = text.find(rom_dir + "/")
-            parts = text[at + len(rom_dir) + 1:].split("/") if at >= 0 else []
+            for marker in (rom_dir + "/", "/roms/"):   # Ludo mounts the card as /run/media/EXT, ES-DE as /run/media/armada/EXT
+                at = text.find(marker)
+                if at >= 0:
+                    break
+            parts = text[at + len(marker):].split("/") if at >= 0 else []
             if len(parts) >= 2 and (best is None or int(pid) > best[0]):  # system folder + game; the newest process wins
                 best = (int(pid), parts[0], parts[1])
     if not best:
@@ -114,6 +119,32 @@ def describe_steam_ui(appid, name):
     hero = _first(cache + "/library_hero.jpg") or _first(grid + "_hero.*")
     return dict(kind="game", title=name or str(appid), logo=_url(logo), fanart=_url(hero), manual="", hasCheats=False, playing=False,
                 key=f"steam/{appid}", system="steam")
+
+
+def _ludo_library():
+    global _ludo
+    try:
+        mtime = os.stat(LUDO).st_mtime_ns
+        if mtime != _ludo[0]:
+            data = json.load(open(LUDO))
+            _ludo = (mtime, data.get("server_url", "").rstrip("/"), {g["rom_id"]: g for g in data.get("games", [])})
+    except (OSError, ValueError, KeyError, AttributeError):
+        _ludo = (0, "", {})
+    return _ludo[1:]
+
+
+def describe_ludo(appid, name, screenshot):
+    """A game highlighted in the Ludo plugin: a downloaded one has the ES-DE art of its ROM, any other the server's screenshot."""
+    rom_id = int(appid.split(":")[1])
+    server, games = _ludo_library()
+    path = (games.get(rom_id) or {}).get("local_path", "")
+    out = describe(dict(event="game-select", system=os.path.basename(os.path.dirname(path)), path=path)) if path else {}
+    if out.get("kind") != "game":
+        out = dict(kind="game", logo="", fanart="", manual="")
+    if not out["fanart"] and server and screenshot:
+        out["fanart"] = server + screenshot
+    out.update(title=name or str(rom_id), hasCheats=False, playing=False, key=f"ludo/{rom_id}", system="steam", path="")
+    return out
 
 
 def describe_steam(appid):
@@ -158,6 +189,7 @@ class NowPlaying(QObject):
         self._ui_focus, self._ui_app, self._hold, self._esde = False, (0, ""), 0.0, False
         self._pinned = False
         self._shortcut = False   # a non-Steam shortcut (ES-DE itself, or an emulator it started) is in front
+        self._steamui = steamui
         steamui.selected.connect(self._ui_selected)
         self._state, self._mtime, self._key, self._path = describe({}), 0, "", ""
         gamescope.focusChanged.connect(self._focus)
@@ -225,7 +257,8 @@ class NowPlaying(QObject):
         """What the bottom screen shows follows what is in front: Steam's UI, a Steam game, or ES-DE and its emulators."""
         if self._pinned:
             return
-        ui = describe_steam_ui(*self._ui_app) if self._ui_app[0] else None
+        ludo = isinstance(self._ui_app[0], str)
+        ui = (describe_ludo(*self._ui_app, getattr(self._steamui, "screenshot", "")) if ludo else describe_steam_ui(*self._ui_app)) if self._ui_app[0] else None
         if self._ui_focus:                  # browsing Steam: the highlighted app, whatever runs in the background
             self._path, state, key = "", ui or describe({}), None
         elif self._steam:                   # a Steam game is in front

@@ -40,6 +40,8 @@ QtObject {
         "Screens": "Bildschirme", "General": "Allgemein", "Close game": "Spiel beenden", "Hold Start + Select for 2 s": "Start + Select 2 s halten", "Theme": "Theme", "Changing the LEDs needs the root helper (Settings → Setup).": "Zum Ändern der LEDs braucht es den Root-Helper (Einstellungen → Setup).",
         "Keyboard": "Tastatur", "Add to Steam": "Zu Steam", "In Steam": "In Steam", "Shortcut created": "Shortcut erstellt", "Already in Steam": "Schon in Steam",
         "Launch the game from ES-DE once first": "Spiel erst einmal aus ES-DE starten", "Steam is not reachable": "Steam nicht erreichbar",
+        "Checking saves…": "Prüfe Spielstände …", "Syncing saves": "Spielstände werden abgeglichen", "Starting": "Startet", "Uploading saves…": "Spielstände werden hochgeladen …",
+        "Trackpad": "Trackpad", "Glide": "Gleiten",
         "Apps page": "Apps-Seite", "The app grid in the bar": "Das App-Raster in der Leiste", "Manuals need PyMuPDF (pip install pymupdf).": "Handbücher brauchen PyMuPDF (pip install pymupdf).", "This manual could not be read.": "Dieses Handbuch konnte nicht gelesen werden.", "Loading…": "Lädt…",
         "Presets for this profile": "Voreinstellungen für dieses Profil", "Keep this setting?": "Einstellung behalten?", "back to the old one in": "zurück zur alten in", "Keep": "Behalten", "Undo": "Zurücksetzen",
         "Every change is taken back after 15 s unless you keep it.": "Jede Änderung wird nach 15 s zurückgenommen, wenn du sie nicht behältst.",

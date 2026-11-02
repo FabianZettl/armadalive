@@ -37,7 +37,7 @@ find "$share" -name __pycache__ -prune -exec rm -rf {} +
 rm -rf "$share/scripts"
 cp -r "$here/scripts" "$share/scripts"
 install -m 755 "$here/scripts/esde-event.py" "$share/esde-event.py"
-sed "s#^ExecStart=/usr/bin/python3#ExecStart=$py#" "$here/data/armadalive.service" >"$unit"
+cp "$here/data/armadalive.service" "$unit"
 cp "$here/data/armadalive.desktop" "$desktop"
 for e in $events; do
     mkdir -p "$HOME/ES-DE/scripts/$e"

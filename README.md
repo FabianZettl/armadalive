@@ -67,6 +67,9 @@ belongs to its owners; ArmadaLive does not ship any of it.
   command is already a shortcut the tile shows *In Steam* and a tap only says so. Each action ends in a short popup. Needs the Steam
   debug port like the Big Picture selection (see optional step 4); shortcuts are not removed again by ArmadaLive.
 - **Keyboard** – a tile that shows the on-screen keyboard of the bottom screen and keeps it up until you tap it again (it normally appears by itself in text fields; this is for dialogs that do not ask for it, such as the wallet password).
+- **Ludo start banner** – with the Ludo plugin (RomM) installed, the bottom screen shows what Ludo is doing before a game starts (checking saves, syncing, starting, uploading after a game closed). It reads Ludo's log in `~/homebrew/logs/ludo`.
+- **Ludo games** – the game highlighted in Ludo shows its logo and background on the bottom screen, like in ES-DE (ES-DE media for downloaded games, the server's screenshot for the rest).
+- **Trackpad** – two trackpads and the back buttons L4 L5 R4 R5 on the bottom screen, with a buzz for every touch (virtual mouse and pad through `/dev/uinput`; the back buttons are a second controller to Steam and are mapped in Steam Input).
 - **Tailscale** – a tile switches Tailscale on or off (a shield shows in the status line while it is connected). The tile can only do that
   if your user is Tailscale's operator: run `sudo tailscale set --operator=$USER` once.
 - **Heat warning** – a popup when the device reaches 80, 85 or 90 °C (or never), with the power profile that is running; at most every five minutes.

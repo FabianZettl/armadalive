@@ -15,6 +15,8 @@ FOCUS_JS = """(() => {
   const key = Object.keys(leaf).find(k => k.startsWith("__reactFiber$"));
   let f = key && leaf[key];
   for (let d = 0; f && d < 40; d++, f = f.return) {
+    const g = (f.memoizedProps || {}).game;   // a tile of the Ludo plugin (RomM)
+    if (g && typeof g.rom_id === "number") return JSON.stringify({ appid: "ludo:" + g.rom_id, name: g.name || "", screenshot: g.screenshot || "" });
     const a = (f.memoizedProps || {}).app;
     if (a && typeof a.appid === "number") return JSON.stringify({ appid: a.appid, name: a.display_name || "" });
   }
@@ -73,11 +75,12 @@ def eval_js(expression, done, timeout=30000):
 
 
 class SteamUi(QObject):
-    selected = Signal(object, str)  # appid (a Python int: shortcut ids exceed 32 bit) and name, (0, "") when nothing is highlighted
+    selected = Signal(object, str)  # appid (a Python int: shortcut ids exceed 32 bit; "ludo:<rom id>" for a Ludo tile) and name, (0, "") when nothing is highlighted
 
     def __init__(self):
         super().__init__()
         self._last, self._busy, self._ticks = (0, ""), 0, 0
+        self.screenshot = ""   # server path of the highlighted Ludo game's screenshot
         self._ws = QWebSocket()
         self._ws.textMessageReceived.connect(self._reply)
         self._ws.disconnected.connect(lambda: self._set((0, "")))
@@ -117,4 +120,5 @@ class SteamUi(QObject):
         # an empty answer (a game's details page, a menu) keeps the last highlighted app: the screen must not fall back
         # to the app grid while the user opens a game or it starts; only closing Big Picture clears the selection
         if app.get("appid"):
+            self.screenshot = app.get("screenshot", "")   # before _set: its signal reads this
             self._set((app["appid"], app.get("name", "")))

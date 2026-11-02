@@ -1,4 +1,5 @@
 import time, unittest
+from unittest import mock
 
 from tests.common import ESDE, GAME, ROMS, Fake
 from armadalive import nowplaying as n
@@ -62,6 +63,19 @@ class Precedence(unittest.TestCase):
         self.np._ui_focus, self.np._esde = True, False
         self.np._update()
         self.assertEqual(self.np._state["title"], "Super Game")
+
+
+class RunningGame(unittest.TestCase):
+    def cmdline(self, rom):
+        args = b"\0".join(a.encode() for a in ("retroarch", "-L", "/cores/x.so", rom, "--appendconfig", "/c.cfg")) + b"\0"
+        return mock.patch("builtins.open", mock.mock_open(read_data=args)), mock.patch("os.listdir", return_value=["42"]), mock.patch.object(n, "_rom_dir", return_value=ROMS)
+
+    def test_a_rom_under_another_mount_of_the_same_card_is_found(self):   # what Ludo starts: /run/media/EXT instead of /run/media/armada/EXT
+        for rom in ("/run/media/EXT/Emulation/roms/gbc/Pokemon - Silver.gbc", ROMS + "/gbc/Pokemon - Silver.gbc"):
+            a, b, c = self.cmdline(rom)
+            with a, b, c:
+                game = n.running_game()
+            self.assertEqual((game["system"], game["name"]), ("gbc", "Pokemon - Silver"))
 
 
 if __name__ == "__main__":
