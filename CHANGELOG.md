@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.5
 
 - **Quieter and smoother**: the quick-settings read (Wi-Fi, Bluetooth, volume, Wi-Fi saver, VPN), the media player check, Gamescope's X properties and the game-process scan ran on the UI thread and spawned a handful of processes each; the quick-settings read alone blocked it for about 200 ms every 2 seconds on a Thor. They now run on a worker thread (`armadalive/poller.py`), Wi-Fi and Bluetooth come from `/sys/class/rfkill` instead of `nmcli` and `rfkill`, and the volume is one `wpctl` call instead of two. The app's idle CPU use went from about 7 % to 4 % of one core. Still polled on the UI thread: the system monitor (20 ms a second, mostly D-Bus property reads).
 - **Dimming**: the 10-second timer no longer runs (and dims) when *Dim after 10 s* is off, and a finger that stays down and moves (slider, scroll, trackpad) keeps the screen awake; before, only the first touch did.
