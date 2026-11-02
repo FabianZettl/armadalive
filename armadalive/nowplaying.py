@@ -2,6 +2,7 @@
 import glob, json, os, random, re, time
 import xml.etree.ElementTree as ET
 from PySide6.QtCore import Property, QObject, QTimer, QUrl, Signal, Slot
+from .poller import Poller
 
 ES = os.path.expanduser(os.environ.get("ARMADALIVE_ESDE_DIR", "~/ES-DE"))
 MEDIA, GAMELISTS = ES + "/downloaded_media", ES + "/gamelists"
@@ -197,9 +198,7 @@ class NowPlaying(QObject):
         timer = QTimer(self)
         timer.timeout.connect(self._poll)
         timer.start(400)
-        procs = QTimer(self)
-        procs.timeout.connect(self._scan)
-        procs.start(2000)  # reading /proc is cheap but not worth doing every 400 ms
+        self._procs = Poller(self, lambda: (running_game(), esde_running()), self._scan, 2000)   # /proc walk: a worker thread
         self._poll()
 
     @Property("QVariant", notify=changed)
@@ -222,8 +221,8 @@ class NowPlaying(QObject):
         self._event = event
         self._update()
 
-    def _scan(self):
-        game, esde = running_game(), esde_running()
+    def _scan(self, found):
+        game, esde = found
         if game != self._proc or esde != self._esde:
             self._proc, self._esde = game, esde
             self._update()

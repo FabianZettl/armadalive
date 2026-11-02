@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Quieter and smoother**: the quick-settings read (Wi-Fi, Bluetooth, volume, Wi-Fi saver, VPN), the media player check, Gamescope's X properties and the game-process scan ran on the UI thread and spawned a handful of processes each; the quick-settings read alone blocked it for about 200 ms every 2 seconds on a Thor. They now run on a worker thread (`armadalive/poller.py`), Wi-Fi and Bluetooth come from `/sys/class/rfkill` instead of `nmcli` and `rfkill`, and the volume is one `wpctl` call instead of two. The app's idle CPU use went from about 7 % to 4 % of one core. Still polled on the UI thread: the system monitor (20 ms a second, mostly D-Bus property reads).
+- **Dimming**: the 10-second timer no longer runs (and dims) when *Dim after 10 s* is off, and a finger that stays down and moves (slider, scroll, trackpad) keeps the screen awake; before, only the first touch did.
+- **Charge limit**: a battery that refuses the limit (the Thor's controller times out on the Preview image: writing `charge_control_end_threshold` fails with *Connection timed out*) now gives a plain message instead of a Python traceback, and the limit is only remembered once the battery kept it.
+
 ## 0.4.0
 
 - **Trackpad** page: the bottom screen as a Steam Deck's two trackpads and back buttons. The right pad moves the pointer, the left one scrolls; a tap clicks (left pad: right click) and holding a moment before moving drags. A flick lets the pointer glide on like a trackball (switch *Glide*). L4, L5, R4 and R5 and the shortcut keys Esc, Tab, Enter, Space and Backspace are on the page too. Touches buzz the haptic motor: a click for taps and keys, a light tick every 40 px of pointer travel and for every scroll step. It all comes from virtual devices on `/dev/uinput` (the `input` group may use it, no setup). The back buttons are a second controller to Steam and are mapped in Steam Input, because InputPlumber's own Steam Deck controller has no input for them from here (its D-Bus `SendEvent` crashes in 0.83). Not tested in a game yet.

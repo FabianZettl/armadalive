@@ -1,6 +1,7 @@
 """Gamescope on the main screen: FPS and focused app from its stats pipe, FPS limit and refresh rate from X properties."""
 import os, subprocess, threading, time
-from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
+from PySide6.QtCore import Property, QObject, Signal, Slot
+from .poller import Poller
 
 PIPE = f"/run/user/{os.getuid()}/gamescope-stats/stats.pipe"
 ENV = dict(os.environ, DISPLAY=os.environ.get("ARMADALIVE_GAMESCOPE_DISPLAY", ":0"))
@@ -23,10 +24,7 @@ class Gamescope(QObject):
         super().__init__()
         self._fps, self._seen, self._focus, self._limit, self._refresh, self._n = 0.0, 0.0, "", 0, 0, 0
         threading.Thread(target=self._read, daemon=True).start()
-        timer = QTimer(self)
-        timer.timeout.connect(self._tick)
-        timer.start(1000)
-        self._tick()
+        self._poller = Poller(self, self._read_x, self._apply, 1000)   # xprop runs here: not on the UI thread
 
     @Property("QVariant", notify=changed)
     def state(self):
@@ -49,17 +47,21 @@ class Gamescope(QObject):
                 pass
             time.sleep(1)
 
-    def _tick(self):
+    def _read_x(self):
+        app = _xprop("GAMESCOPE_FOCUSED_APP")
+        x = dict(focus=str(app) if app else "")
+        if self._n % 3 == 0:  # X properties change rarely
+            x.update(limit=_xprop("GAMESCOPE_FPS_LIMIT"), refresh=_xprop("GAMESCOPE_DISPLAY_REFRESH_RATE_FEEDBACK"))
+        self._n += 1
+        return x
+
+    def _apply(self, x):
         if time.monotonic() - self._seen > 3:
             self._fps = 0.0  # a static screen produces no frames
-        app = _xprop("GAMESCOPE_FOCUSED_APP")
-        focus = str(app) if app else ""
-        if focus != self._focus:
-            self._focus = focus
-            self.focusChanged.emit(focus)
-        if self._n % 3 == 0:  # X properties change rarely
-            self._limit, self._refresh = _xprop("GAMESCOPE_FPS_LIMIT"), _xprop("GAMESCOPE_DISPLAY_REFRESH_RATE_FEEDBACK")
-        self._n += 1
+        if x["focus"] != self._focus:
+            self._focus = x["focus"]
+            self.focusChanged.emit(self._focus)
+        self._limit, self._refresh = x.get("limit", self._limit), x.get("refresh", self._refresh)
         self.changed.emit()
 
     @Slot(int)

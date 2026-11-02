@@ -176,11 +176,14 @@ def op_charge_limit(args):
     if len(args) != 1:
         die("charge-limit <50..100>")
     limit = number(args[0], 50, 100)
-    path = "/sys/class/power_supply/battery/charge_control_end_threshold"
+    path = os.environ.get("ARMADALIVE_CHARGE_LIMIT_FILE", "/sys/class/power_supply/battery/charge_control_end_threshold")
     if not os.path.exists(path):
         die("this battery has no charge limit")
-    with open(path, "w") as f:
-        f.write(str(limit))
+    try:
+        with open(path, "w") as f:
+            f.write(str(limit))
+    except OSError as e:   # the Thor's battery controller times out on some Armada images
+        die(f"the battery did not accept the limit ({e.strerror})")
 
 
 OPS = {"wifi-powersave": op_wifi_powersave, "charge-limit": op_charge_limit, "drop-caches": op_drop_caches, "rgb": op_rgb, "profile": op_profile, "fan-curve": op_fan_curve, "fan": op_fan, "reset": op_reset}

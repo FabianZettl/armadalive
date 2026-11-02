@@ -37,6 +37,17 @@ class Helper(unittest.TestCase):
         self.assertEqual(self.run_helper("profile", "eco", "cpu_max=0.1").returncode, 2)
         self.assertEqual(self.run_helper("profile", "eco", "cpu_governor=evil").returncode, 2)
 
+    def test_a_battery_that_refuses_the_limit_is_reported_plainly(self):
+        self.env["ARMADALIVE_CHARGE_LIMIT_FILE"] = os.path.join(self.etc, "no", "such", "dir", "threshold")
+        self.assertEqual(self.run_helper("charge-limit", "80").returncode, 2)   # missing file: "no charge limit"
+        path = os.path.join(self.etc, "threshold")
+        os.mkdir(path)   # opening a directory for writing fails with an OSError, like the Thor's timeout
+        self.env["ARMADALIVE_CHARGE_LIMIT_FILE"] = path
+        r = self.run_helper("charge-limit", "80")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("did not accept the limit", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+
     def test_charge_limit_and_wifi_saver_values_are_checked(self):
         for args in (("charge-limit", "49"), ("charge-limit", "101"), ("charge-limit", "x"), ("wifi-powersave", "maybe"), ("wifi-powersave",)):
             self.assertEqual(self.run_helper(*args).returncode, 2, args)

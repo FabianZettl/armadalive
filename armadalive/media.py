@@ -1,6 +1,7 @@
 """What is playing on the main screen's session (music, video, browser: anything that speaks MPRIS), with play/pause and skip."""
 import json, os, subprocess
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
+from .poller import Poller
 
 # ArmadaLive lives on the bottom session's private bus; the games and players run on the user's normal one
 BUS = f"unix:path=/run/user/{os.getuid()}/bus"
@@ -39,16 +40,13 @@ class Media(QObject):
     def __init__(self):
         super().__init__()
         self._s = dict(active=False)
-        timer = QTimer(self)
-        timer.timeout.connect(self._tick)
-        timer.start(3000)
-        self._tick()
+        self._poller = Poller(self, self._read, self._apply, 3000)   # busctl runs here: not on the UI thread
 
     @Property("QVariant", notify=changed)
     def state(self):
         return self._s
 
-    def _tick(self):
+    def _read(self):
         listed = _bus("list") or []
         players = []
         for entry in listed:
@@ -58,7 +56,9 @@ class Media(QObject):
                 meta = (_bus("get-property", name, *PLAYER, "Metadata") or {}).get("data")
                 players.append(describe(name, status, meta))
         found = pick(players)
-        new = dict(found, active=True) if found else dict(active=False)
+        return dict(found, active=True) if found else dict(active=False)
+
+    def _apply(self, new):
         if new != self._s:
             self._s = new
             self.changed.emit()
@@ -67,7 +67,7 @@ class Media(QObject):
         if self._s.get("active"):
             subprocess.Popen(["busctl", f"--address={BUS}", "call", self._s["name"], *PLAYER, method],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            QTimer.singleShot(400, self._tick)
+            QTimer.singleShot(400, self._poller.kick)
 
     @Slot()
     def playPause(self):

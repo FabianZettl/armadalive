@@ -74,6 +74,8 @@ class Battery(QObject):
     def setLimit(self, percent):
         percent = max(50, min(100, int(percent)))
         self.error = privileged.run("charge-limit", percent) if privileged.available() else "root helper missing"
+        if not self.error and _read(LIMIT_FILE) not in (str(percent), ""):   # accepted, but the battery kept its old value
+            self.error = "the battery did not keep the limit"
         if not self.error:
             self._s["limit"] = percent
         self._save()

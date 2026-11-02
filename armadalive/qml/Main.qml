@@ -41,14 +41,15 @@ Window {
     property string askDemo: ""     // snapshots only: open the password dialog
     onAskDemoChanged: Auth.ask = askDemo
     readonly property bool dimEnabled: ui.state.dim !== false     // Settings > Dim after 10 s
-    function wake() { dimmed = false; idle.restart() }
+    function wake() { dimmed = false; if (dimEnabled) idle.restart() }
     onDimEnabledChanged: { if (dimEnabled) idle.restart(); else { idle.stop(); dimmed = false } }
     Timer {
         id: idle
         interval: 10000
-        onTriggered: { if (Auth.ask === "" && !Gesture.locked) win.dimmed = true; else idle.restart() }   // not while the password prompt is open
+        onTriggered: { if (!win.dimEnabled) return; if (Auth.ask === "" && !Gesture.locked) win.dimmed = true; else idle.restart() }   // not while the password prompt is open
     }
-    PointHandler { target: null; onActiveChanged: if (active) win.wake() }  // sees every touch, takes none
+    // sees every touch, takes none; a finger that stays down and moves (a slider, a scroll, the trackpad) is not idle either
+    PointHandler { target: null; onActiveChanged: if (active) win.wake(); onPointChanged: if (active && win.dimEnabled) idle.restart() }
     // a new game, logo or background (scrolling in ES-DE or Steam, a game starting) brightens it too
     readonly property string shown: [now.kind, now.title, now.logo, now.fanart].join("|")
     onShownChanged: wake()
@@ -72,7 +73,7 @@ Window {
         Theme.apply(ui.state.theme, ui.state.theme === "follow" ? followColor : ui.state.accent)
     }
     onFollowColorChanged: applyTheme()
-    Component.onCompleted: { idle.start(); applyVisibility(); applyTheme(); Tr.lang = ui.state.lang }
+    Component.onCompleted: { if (dimEnabled) idle.start(); applyVisibility(); applyTheme(); Tr.lang = ui.state.lang }
     Connections {
         target: ui
         function onChanged() { win.applyTheme(); Tr.lang = ui.state.lang }

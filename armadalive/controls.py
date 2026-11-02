@@ -1,6 +1,7 @@
 """Quick settings: radios, volume and the brightness of both screens."""
-import json, os, re, subprocess, threading
+import glob, json, os, re, subprocess, threading
 from . import privileged
+from .poller import Poller
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 
 # DSI-1 (1080x1240) is the bottom panel, DSI-2 (1080x1920) the top one; the backlight names follow the DSI order
@@ -15,6 +16,17 @@ def _out(*cmd):
         return subprocess.run(cmd, capture_output=True, text=True, timeout=3).stdout
     except (OSError, subprocess.TimeoutExpired):
         return ""
+
+
+def _rfkill(kind):
+    """True when the radio of this type is on, False when it is blocked, None when the kernel lists none."""
+    for node in glob.glob("/sys/class/rfkill/rfkill*"):
+        try:
+            if open(node + "/type").read().strip() == kind:
+                return open(node + "/soft").read().strip() == "0" and open(node + "/hard").read().strip() == "0"
+        except OSError:
+            pass
+    return None
 
 
 def _run(*cmd):
@@ -55,19 +67,21 @@ class Controls(QObject):
     def __init__(self):
         super().__init__()
         self._s, self._n, self._ts = {}, 0, dict(state="missing", ip="")
-        timer = QTimer(self)
-        timer.timeout.connect(self._tick)
-        timer.start(2000)
-        self._tick()
+        self._apply(self._read())   # once, so the first frame has values
+        self._poller = Poller(self, self._read, self._apply, 2000, now=False)   # the reads spawn processes: not on the UI thread
 
     @Property("QVariant", notify=changed)
     def state(self):
         return self._s
 
-    def _tick(self):
-        wifi = _out("nmcli", "radio", "wifi").strip() == "enabled"
-        bluetooth = "Soft blocked: no" in _out("rfkill", "list", "bluetooth")  # this rfkill has no JSON output
-        vol = re.search(r"([\d.]+)", _out("wpctl", "get-volume", SINK))
+    def _read(self):
+        wifi, bluetooth = _rfkill("wlan"), _rfkill("bluetooth")   # sysfs: no process for each
+        if wifi is None:
+            wifi = _out("nmcli", "radio", "wifi").strip() == "enabled"
+        if bluetooth is None:
+            bluetooth = "Soft blocked: no" in _out("rfkill", "list", "bluetooth")  # this rfkill has no JSON output
+        volume_text = _out("wpctl", "get-volume", SINK)   # one call gives the level and the mute flag
+        vol = re.search(r"([\d.]+)", volume_text)
         bright = {}
         for name, dev in BACKLIGHTS.items():
             base = f"/sys/class/backlight/{dev}"
@@ -77,10 +91,14 @@ class Controls(QObject):
         if self._n % 3 == 0:    # a status call is the most expensive thing here, and the VPN changes rarely
             self._ts = tailscale_state(_out("tailscale", "status", "--json"))
         self._n += 1
-        self._s = dict(wifi=wifi, wifips=saver, tailscale=self._ts, bluetooth=bluetooth, airplane=not wifi and not bluetooth,
-                       volume=min(1.0, float(vol.group(1))) if vol else 0.0, muted="[MUTED]" in _out("wpctl", "get-volume", SINK),
-                       brightness=bright)
-        self.changed.emit()
+        return dict(wifi=wifi, wifips=saver, tailscale=self._ts, bluetooth=bluetooth, airplane=not wifi and not bluetooth,
+                    volume=min(1.0, float(vol.group(1))) if vol else 0.0, muted="[MUTED]" in volume_text,
+                    brightness=bright)
+
+    def _apply(self, state):
+        if state != self._s:
+            self._s = state
+            self.changed.emit()
 
     @staticmethod
     def _wlan():
@@ -107,8 +125,10 @@ class Controls(QObject):
     def toggleWifiSaver(self):
         # shortcut: the kernel drops this setting when Wi-Fi reconnects, so it is a per-session switch
         if privileged.available():
-            privileged.run("wifi-powersave", "off" if self._s.get("wifips") else "on")
-            self._tick()
+            def run(mode="off" if self._s.get("wifips") else "on"):
+                privileged.run("wifi-powersave", mode)   # sudo: not on the UI thread
+                self._poller.kick()
+            threading.Thread(target=run, daemon=True).start()
 
     @Slot()
     def toggleWifi(self):

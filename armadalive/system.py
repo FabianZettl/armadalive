@@ -74,10 +74,11 @@ class SystemMonitor(QObject):
         charging = _read(BATTERY + "/status") == "Charging"
         left = (full - now) if charging else now
         eta = round(60 * left / avg) if avg > 50000 and full else -1   # minutes; -1 when unknown
+        ghz = _cpu_ghz()
         self._stats = dict(
             cpu=round(100 * (1 - d_idle / d_total)) if d_total else 0,
             ramUsed=round(used, 1), ramTotal=round(total_gb, 1),
-            cpuGhz=round(_cpu_ghz()[0], 2), cpuMaxGhz=round(_cpu_ghz()[1], 2),
+            cpuGhz=round(ghz[0], 2), cpuMaxGhz=round(ghz[1], 2),
             gpuMhz=int(_read(GPU_DEVFREQ, "0")) // 1000000,
             temp=self._prop("Temperature", 0), fanRpm=self._prop("FanRpm", 0), fanPwm=self._prop("FanPwm", 0),
             profile=self._prop("Profile", ""), profiles=list(self._prop("AvailableProfiles", [])),
