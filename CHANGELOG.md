@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Controls** replaces the *Trackpad* entry in the bar and has two tabs: *Trackpad* (as before) and the new **Lupe**. In the Lupe you drag a rectangle over a small live picture of the main screen, say the minimap, and from then on that part is shown live and enlarged on the bottom screen (about 30 fps, the screen does not dim while it is open; *Choose area* picks another one; the area is remembered). It reads the main screen's PipeWire video source (the gamescope instance that is not the bottom screen's) with `gst-launch-1.0`, which crops, scales and hands raw frames to the app. That needs GStreamer's `pipewiresrc`, which Armada's image does not ship: `scripts/install-lupe.sh` takes it out of the Fedora package into `gst-plugins/` of the app folder (no reboot), and without it the page says what is missing. Tested on a Thor against the main screen's real PipeWire stream (picture, crop, zoom, about 7 fps on the nearly static Steam UI); not yet tried over a running game, and the touch drag on the real screen is not tried. gamescope sends a picture only when the main screen changes, so a still screen shows the last cut from the picker's picture and a hint.
+- The bar entry *Trackpad* is called **Controls** now (same page).
 
 ## 0.4.6
 

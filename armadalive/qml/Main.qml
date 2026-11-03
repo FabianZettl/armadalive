@@ -17,7 +17,7 @@ Window {
         { id: "cheats", label: Tr.t("Cheats"), icon: "cheats", file: "Cheats.qml", has: now.hasCheats, under: "now" },
         { id: "apps", label: Tr.t("Apps"), icon: "apps", file: "Apps.qml", has: ui.state.apps !== false },
         { id: "mode", label: Tr.t("Mode"), icon: "mode", file: "Mode.qml", has: true },
-        { id: "controls", label: Tr.t("Controls"), icon: "pad", file: "Controls.qml", has: true },
+        { id: "controls", label: Tr.t("Controls"), icon: "pad", file: "Trackpad.qml", has: true },
         { id: "system", label: Tr.t("System"), icon: "gear", file: "System.qml", has: true },
         { id: "prefs", label: Tr.t("Settings"), icon: "info", file: "Preferences.qml", has: true },
         { id: "tuning", label: Tr.t("Tuning"), icon: "perf", file: "Tuning.qml", has: true, under: "system" },
@@ -40,7 +40,7 @@ Window {
     property bool pressWasFront: false
     property string askDemo: ""     // snapshots only: open the password dialog
     onAskDemoChanged: Auth.ask = askDemo
-    readonly property bool dimEnabled: ui.state.dim !== false && !lupe.running     // Settings > Dim after 10 s; never over the Lupe
+    readonly property bool dimEnabled: ui.state.dim !== false     // Settings > Dim after 10 s
     function wake() { dimmed = false; if (dimEnabled) idle.restart() }
     onDimEnabledChanged: { if (dimEnabled) idle.restart(); else { idle.stop(); dimmed = false } }
     Timer {
