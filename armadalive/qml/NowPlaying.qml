@@ -48,6 +48,17 @@ Item {
             scale: 0.96 + 0.04 * l.v    // the logo grows a little while it fades in
             // natural size of the logo, measured on an image that has no size of its own (the visible one would loop)
             Image { id: natural; visible: false; source: l.st.logo }
+            // ES-DE's system logos are white: on a light theme they get a dark plate to stay readable
+            Rectangle {
+                visible: Theme.light && l.st.kind !== "game" && logoImg.visible
+                anchors.centerIn: logoImg
+                anchors.verticalCenterOffset: logoImg.anchors.verticalCenterOffset
+                width: Math.min(l.width * 0.8, logoImg.paintedWidth + 60)
+                height: logoImg.paintedHeight + 40
+                radius: 24
+                color: "#2b2b36"
+                opacity: 0.9
+            }
             Image {
                 id: logoImg
                 visible: source != ""

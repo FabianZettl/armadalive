@@ -14,7 +14,7 @@ Rectangle {
     Text {
         id: text
         anchors.centerIn: parent
-        color: b.primary ? Theme.bg : Theme.text
+        color: b.primary ? Theme.onAccent : Theme.text
         font.pixelSize: 15
         text: b.label
     }

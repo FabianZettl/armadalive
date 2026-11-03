@@ -36,7 +36,7 @@ Item {
             x: s.bar * 0.25; anchors.verticalCenter: parent.verticalCenter
             width: s.bar * 0.56; height: width
             name: s.icon
-            color: Theme.bg
+            color: Theme.onAccent
         }
     }
     // the touch area is the whole row, margin included: dragging past the end of the bar means 100 %

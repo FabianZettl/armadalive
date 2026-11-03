@@ -1,6 +1,9 @@
-"""The nine-app grid on the idle screen: installed apps from their .desktop files, launched on the bottom screen."""
+"""The app grid on the idle screen: installed apps from their .desktop files (launched on the bottom screen) and Steam games and
+shortcuts (launched through Steam on the main screen) and ES-DE games (through a Steam shortcut they get on the first tap), as many as you add; the grid scrolls sideways."""
 import configparser, json, os, re, subprocess
 from PySide6.QtCore import Property, QObject, QUrl, Signal, Slot
+
+from . import esdelib, steamlib, steamshortcuts, steamui
 
 CONFIG = os.path.expanduser("~/.config/armadalive/apps.json")
 APP_DIRS = [os.path.expanduser(p) for p in (
@@ -11,7 +14,6 @@ ICON_ROOTS = [os.path.expanduser(p) for p in (
     "/usr/share/icons/hicolor", "/usr/share/icons/breeze", "/usr/share/icons/Adwaita", "/usr/share/pixmaps")]
 DEFAULTS = ["org.mozilla.firefox", "org.kde.dolphin", "org.kde.konsole", "systemsettings", "com.moonlight_stream.Moonlight",
             "org.localsend.localsend_app", "it.mijorus.gearlever", "com.ranfdev.DistroShelf"]
-SLOTS = 9
 _icons = {}
 
 
@@ -66,47 +68,89 @@ class Apps(QObject):
     def __init__(self):
         super().__init__()
         self._apps = _catalog()
+        self._scan()
         self._slots = self._load()
         self._icon_cache = {}
+
+    def _scan(self):
+        self._steam = {g["id"]: g for g in steamlib.games()}
+        self._systems = esdelib.systems()
+        self._esde = {}   # id -> game, with its system
+        for system, found in esdelib.games().items():
+            for g in found:
+                self._esde[g["id"]] = dict(g, system=system)
+
+    def _known(self, app_id):
+        return app_id in self._apps or app_id in self._steam or app_id in self._esde
 
     def _load(self):
         try:
             slots = json.load(open(CONFIG))["slots"]
         except (OSError, ValueError, KeyError):
             slots = [a for a in DEFAULTS if a in self._apps]
-        return ([s if s in self._apps else "" for s in slots] + [""] * SLOTS)[:SLOTS]
+        return [s for s in slots if self._known(s)]   # a removed app or game just leaves the grid
 
     def _save(self):
         os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
         with open(CONFIG, "w") as f:
             json.dump({"slots": self._slots}, f)
 
-    def _entry(self, app_id):
-        if not app_id:
-            return {}
+    def _entry(self, app_id, thumb=False):
+        if app_id in self._esde:
+            g = self._esde[app_id]   # the picker lists plain files; only a tile gets the cut, rounded cover
+            return dict(id=app_id, name=g["name"], icon=(QUrl.fromLocalFile(g["cover"]).toString() if thumb else steamlib._url(g["cover"])) if g["cover"] else "",
+                        cover=True, group="esde:" + g["system"])
+        if app_id in self._steam:
+            return dict(self._steam[app_id], cover=True, group="steam")
         a = self._apps[app_id]
         if app_id not in self._icon_cache:
             self._icon_cache[app_id] = _icon(a["iconName"])
-        return dict(id=app_id, name=a["name"], icon=self._icon_cache[app_id])
+        return dict(id=app_id, name=a["name"], icon=self._icon_cache[app_id], cover=False, group="apps")
 
     @Property("QVariant", notify=changed)
     def slots(self):
-        return [self._entry(s) for s in self._slots]
+        return [self._entry(s) for s in self._slots] + [{}]   # the last, empty tile adds one
 
     @Slot(result="QVariant")
     def catalog(self):
-        return [dict(self._entry(a), id=a) for a in sorted(self._apps, key=lambda a: self._apps[a]["name"].lower())]
+        self._scan()   # new installs and new ROMs show up without a restart
+        ids = list(self._apps) + list(self._steam) + list(self._esde)
+        return [self._entry(a, thumb=True) for a in sorted(ids, key=lambda a: self._entry(a, thumb=True)["name"].lower())]
+
+    @Slot(result="QVariant")
+    def groups(self):
+        """The picker's tabs: desktop apps, Steam, then every ES-DE system that has games."""
+        out = [dict(id="apps", label=""), dict(id="steam", label="")]
+        names = {g["system"] for g in self._esde.values()}
+        return out + [dict(id="esde:" + n, label=self._systems[n]["fullname"]) for n in sorted(names, key=lambda n: self._systems[n]["fullname"].lower())]
 
     @Slot(int, str)
     def assign(self, slot, app_id):
-        if 0 <= slot < SLOTS and (app_id in self._apps or app_id == ""):
-            self._slots[slot] = app_id
-            self._save()
-            self.changed.emit()
+        if app_id == "":
+            if 0 <= slot < len(self._slots):
+                del self._slots[slot]
+        elif self._known(app_id) and 0 <= slot <= len(self._slots):
+            if slot == len(self._slots):
+                self._slots.append(app_id)
+            else:
+                self._slots[slot] = app_id
+        else:
+            return
+        self._save()
+        self.changed.emit()
 
     @Slot(int)
     def launch(self, slot):
-        app_id = self._slots[slot] if 0 <= slot < SLOTS else ""
+        app_id = self._slots[slot] if 0 <= slot < len(self._slots) else ""
+        if app_id in self._steam:
+            steamui.eval_js(f'SteamClient.Apps.RunGame("{app_id[6:]}", "", -1, 100)', lambda _: None)
+            return
+        if app_id in self._esde:
+            g = self._esde[app_id]
+            words = esdelib.command(g["system"], g["rom"])
+            if words:
+                steamshortcuts.run_rom(g["name"], g["system"], g["rom"], words)
+            return
         if app_id not in self._apps:  # only ids from the catalog ever reach gtk-launch
             return
         # run as a plain app on the bottom Plasma session; our own Qt settings must not leak into it

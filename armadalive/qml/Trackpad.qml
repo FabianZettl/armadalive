@@ -91,7 +91,7 @@ Item {
         radius: height / 2
         Text {
             anchors.centerIn: parent
-            color: kp.pressed ? Theme.bg : Theme.text
+            color: kp.pressed ? Theme.onAccent : Theme.text
             font.pixelSize: 18
             font.weight: Font.Medium
             text: key.label
@@ -132,7 +132,7 @@ Item {
             width: (shortcuts.width - 5 * page.gap) / 6; height: shortcuts.height
             radius: height / 2
             color: trackpad.trackball ? Theme.accent : Theme.circle
-            Text { anchors.centerIn: parent; color: trackpad.trackball ? Theme.bg : Theme.text; font.pixelSize: 16; font.weight: Font.Medium; text: Tr.t("Glide") }
+            Text { anchors.centerIn: parent; color: trackpad.trackball ? Theme.onAccent : Theme.text; font.pixelSize: 16; font.weight: Font.Medium; text: Tr.t("Glide") }
             MouseArea { anchors.fill: parent; onClicked: trackpad.setTrackball(!trackpad.trackball) }
         }
     }

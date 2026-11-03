@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
+- **Light themes**: *Nintendo DS* (icy white and blue), *Nintendo 3DS* (white and red) and *iiSU* (pale lavender and blue), plus the dark *iiSU Night*. Text on an accent colour (buttons, slider icons, toasts) turns dark or white to stay readable on a light theme; the dark themes look as before. ES-DE's white system logos get a dark plate behind them on a light theme. The colours are guesses from screenshots of the Nintendo handhelds and the iiSU launcher, not measured; the accent can be changed as for every theme.
+- **Settings left the bar** (one icon less): it is a tile on the System page now, next to Tuning and Graphs, and opens the same page. The tile starts at the end of the tile order; move it where you like.
 - The bar entry *Trackpad* is called **Controls** now (same page).
+- **Apps grid with Steam games and shortcuts**: the grid scrolls sideways (three rows, as many tiles as you add, the last empty tile adds one). Besides desktop apps the picker lists your installed Steam games and non-Steam shortcuts (read from Steam's `appmanifest_*.acf` and `shortcuts.vdf`), shown as rounded square covers from Steam's own cover cache. A Steam tile starts the game through Steam on the main screen. Covers are cut once and cached in `~/.cache/armadalive/covers`. A game without a cover shows its first letter. The picker has tabs: Apps, Steam and one per ES-DE system that has games. An ES-DE game starts through a Steam shortcut: ArmadaLive rebuilds the launch command from ES-DE's own system definitions and find rules (read from the ES-DE AppImage and your `custom_systems`, honouring the alternative emulator set in the gamelist; the result matched ES-DE's log for the three games it could be compared with), creates the shortcut with the ES-DE artwork on the first tap and starts it, so it runs on the main screen like any other game. The tile size comes from the window (the width, and the height left with the status line, media bar and dock showing), so three rows always fit, the tiles keep their size when the dock is hidden and just stay centred; scrolling the grid or the picker's tabs no longer switches the page; tiles pop in, and a tapped tile swells and flashes. Not tried: starting an ES-DE game from a tile, games on a library Steam has not mounted, and covers of shortcuts that have no picture in Steam's `grid` folder.
 
 ## 0.4.6
 

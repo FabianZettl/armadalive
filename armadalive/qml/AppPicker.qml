@@ -5,10 +5,12 @@ Rectangle {
     id: p
     property int slot: -1
     property var items: []
+    property var groups: []
+    property string group: "apps"
     signal closed()
 
     color: Theme.bg
-    onVisibleChanged: if (visible) items = apps.catalog()
+    onVisibleChanged: if (visible) { items = apps.catalog(); groups = apps.groups() }
     MouseArea { anchors.fill: parent }      // swallow touches so the grid below stays untouched
 
     Item {
@@ -42,10 +44,37 @@ Rectangle {
             }
         }
     }
+    // tabs: desktop apps, Steam, and one per ES-DE system that has games
     ListView {
-        anchors { left: parent.left; right: parent.right; top: head.bottom; bottom: parent.bottom }
+        id: tabs
+        anchors { left: parent.left; right: parent.right; top: head.bottom }
+        height: 44
+        orientation: ListView.Horizontal
+        spacing: 8
+        leftMargin: 12
+        rightMargin: 12
         clip: true
-        model: p.items
+        model: p.groups
+        delegate: Rectangle {
+            width: tabText.width + 28
+            height: 36
+            radius: Theme.radius
+            color: p.group === modelData.id ? Theme.accentSoft : Theme.card
+            border.color: p.group === modelData.id ? Theme.accent : Theme.border
+            Text {
+                id: tabText
+                anchors.centerIn: parent
+                color: Theme.text
+                font.pixelSize: 15
+                text: modelData.id === "apps" ? Tr.t("Apps") : modelData.id === "steam" ? "Steam" : modelData.label
+            }
+            MouseArea { anchors.fill: parent; onClicked: p.group = modelData.id }
+        }
+    }
+    ListView {
+        anchors { left: parent.left; right: parent.right; top: tabs.bottom; bottom: parent.bottom }
+        clip: true
+        model: p.items.filter(function (i) { return i.group === p.group })
         delegate: Item {
             width: ListView.view.width
             height: 60

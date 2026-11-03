@@ -125,7 +125,7 @@ Flickable {
                     color: Theme.accent
                     border.width: page.ledColor === page.hex(Theme.accent) ? 4 : 1
                     border.color: page.ledColor === page.hex(Theme.accent) ? Theme.text : Theme.border
-                    Text { anchors.centerIn: parent; color: Theme.bg; font.pixelSize: 11; font.weight: Font.DemiBold; text: Tr.t("Theme") }
+                    Text { anchors.centerIn: parent; color: Theme.onAccent; font.pixelSize: 11; font.weight: Font.DemiBold; text: Tr.t("Theme") }
                     MouseArea { anchors.fill: parent; onClicked: page.paint(page.hex(Theme.accent)) }
                 }
             }

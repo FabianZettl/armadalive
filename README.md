@@ -38,6 +38,18 @@ belongs to its owners; ArmadaLive does not ship any of it.
 > **Made with AI.** A large part of this code was written by an AI assistant (Claude Code). Read
 > [AI_DISCLOSURE.md](AI_DISCLOSURE.md) before you install it, especially the optional root helper.
 
+## In short
+
+ArmadaLive covers the whole bottom screen of a Thor in Game mode:
+
+- **See what plays**: logo and background of the game in front (ES-DE, emulators, Steam, Ludo), its manual and cheats, a Ludo start banner and a media bar for what plays on the main screen.
+- **Launch things**: a sideways-scrolling grid of covers with desktop apps, Steam games and shortcuts, and ES-DE games by system; trackpads and back buttons L4 L5 R4 R5.
+- **Control the device**: power profile, fan curves, brightness, volume, Wi-Fi, Bluetooth, Tailscale, airplane mode, stick LEDs, FPS limit, render resolution of some emulators, per-game and per-system rules, heat and battery warnings, a charge limit.
+- **Tune it**: CPU governor, underclock, GPU limits and a fan-curve editor with an automatic undo, plus live graphs.
+- **Stay out of the way**: it never draws over the game, closes a game with Start + Select held, dims itself, and the AYN button always brings it up. English and German, fifteen themes (three of them light: Nintendo DS, Nintendo 3DS and iiSU; the dark iiSU Night is the fourth new one), in-app updates, a one-file backup.
+
+Details per page follow.
+
 ## What it does
 
 - **Game** – the game in front, with logo and background. The logo moves gently (it can be switched off in Settings), and
@@ -51,7 +63,7 @@ belongs to its owners; ArmadaLive does not ship any of it.
   This page is full screen; **swipe up** to show the status line and the bar, swipe down to hide them again.
 - **Manual** and **Cheats** – the game's PDF manual from ES-DE's media, and cheats from your RetroArch cheats folder. Tap the Game
   page and two buttons appear for a few seconds, each only if the current game has it. They are not in the bar.
-- **Apps** – a 3×3 grid of apps you choose (press and hold, or tap an empty tile). They open on the bottom screen.
+- **Apps** – a grid of apps you choose, three rows that scroll sideways (press and hold, or tap the empty tile at the end). It takes desktop apps (they open on the bottom screen) and Steam games and shortcuts and ES-DE games (the picker has a tab per ES-DE system), shown as rounded square covers. Steam and ES-DE tiles start the game on the main screen (an ES-DE game gets a Steam shortcut on its first tap).
   The grid also shows on the Game page when nothing is running. The page can be switched off in Settings (it then leaves the bar).
 - **Mode** – brightness of both screens and the stick LEDs, volume.
 - **System** – FPS, a 60/120 FPS limit, quick settings (power profile, fan curve, clear RAM, stick LEDs, Wi-Fi, Bluetooth,
@@ -82,7 +94,7 @@ belongs to its owners; ArmadaLive does not ship any of it.
   editor for each power profile, plus three presets (Cool, Quiet, Fast) fitted to the device. Needs the root helper. A change here
   is taken back after 15 seconds unless you tap *Keep*, so a bad fan curve or limit cannot stick; if the app is closed before you
   confirm, the change is undone at the next start.
-- **Settings** – a health check (what is missing so that ArmadaLive can see your games, with a hint for each), English or German, eleven themes (SteamOS, SNES, Game Boy, PS2, Famicom and more) with accent colours, one of them **Follow game** whose whole palette takes its colour from the artwork of the game in front,
+- **Settings** (a tile on the System page) – a health check (what is missing so that ArmadaLive can see your games, with a hint for each), English or German, fifteen themes (three of them light: Nintendo DS, Nintendo 3DS and iiSU; the dark iiSU Night is the fourth new one) (SteamOS, SNES, Game Boy, PS2, Famicom and more) with accent colours, one of them **Follow game** whose whole palette takes its colour from the artwork of the game in front,
   a low-battery warning and an optional charge limit (80 or 90 %), a one-file **backup** of settings, game rules and tile order, logo animation on or off, in-app updates, and **Setup**: install the
   root helper and route the AYN button with one tap each (password prompt, greyed out once done). About and AI disclosure.
 

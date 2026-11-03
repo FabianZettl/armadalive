@@ -19,7 +19,7 @@ Window {
         { id: "mode", label: Tr.t("Mode"), icon: "mode", file: "Mode.qml", has: true },
         { id: "controls", label: Tr.t("Controls"), icon: "pad", file: "Trackpad.qml", has: true },
         { id: "system", label: Tr.t("System"), icon: "gear", file: "System.qml", has: true },
-        { id: "prefs", label: Tr.t("Settings"), icon: "info", file: "Preferences.qml", has: true },
+        { id: "prefs", label: Tr.t("Settings"), icon: "info", file: "Preferences.qml", has: true, under: "system" },
         { id: "tuning", label: Tr.t("Tuning"), icon: "perf", file: "Tuning.qml", has: true, under: "system" },
         { id: "graphs", label: Tr.t("Graphs"), icon: "graph", file: "Graphs.qml", has: true, under: "system" }
     ]
@@ -309,7 +309,7 @@ Window {
             width: parent.width - 24 * win.u
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight
-            color: toast.bad ? "#ffffff" : Theme.bg
+            color: toast.bad ? "#ffffff" : Theme.onAccent
             font.pixelSize: 16 * win.u
             text: toast.text
         }
@@ -340,7 +340,7 @@ Window {
             width: parent.width - 24 * win.u
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight
-            color: Theme.bg
+            color: Theme.onAccent
             font.pixelSize: 16 * win.u
             text: {
                 const base = ({ check: Tr.t("Checking saves…"), sync: Tr.t("Syncing saves"), start: Tr.t("Starting"), upload: Tr.t("Uploading saves…") })[ludoBar.phase] || ""

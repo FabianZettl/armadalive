@@ -21,7 +21,7 @@ Flow {
                 id: label
                 anchors.centerIn: parent
                 text: modelData.label
-                color: parent.on ? "#04101f" : Theme.text
+                color: parent.on ? Theme.onAccent : Theme.text
                 font.pixelSize: 16
             }
             MouseArea { anchors.fill: parent; onClicked: c.picked(modelData.key) }

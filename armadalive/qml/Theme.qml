@@ -17,12 +17,15 @@ QtObject {
     Behavior on accent { ColorAnimation { duration: 600 } }
     // accent washed into the card colour: the lit disc behind an active icon
     readonly property color accentSoft: Qt.rgba(accent.r * 0.24 + card.r * 0.76, accent.g * 0.24 + card.g * 0.76, accent.b * 0.24 + card.b * 0.76, 1)
+    // light themes: a dark text on a light accent, white on a dark one; dark themes keep the old dark-on-accent look
+    readonly property bool light: 0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b > 0.5
+    readonly property color onAccent: !light ? bg : (0.299 * accent.r + 0.587 * accent.g + 0.114 * accent.b < 0.5 ? "#ffffff" : "#101828")
     readonly property color warm: "#f0a43a"
     readonly property color hot: "#ef5b5b"
     readonly property int radius: 14
 
     // palettes: stock and Thor Blue follow the colours measured from the stock dual-screen app's screenshot; the console themes
-    // are inspired by the machines' own colours and stay dark, because the system logos are white
+    // are inspired by the machines' own colours; Nintendo DS, 3DS and iiSU are light, and a system logo (white) then gets a dark plate
     readonly property var themes: ({
         stock:    { name: "Stock Console",  bg: "#000000", card: "#161616", circle: "#282828", border: "#262626", text: "#ffffff", muted: "#9a9a9a", accent: "#a97be0" },
         steamos:  { name: "SteamOS",        bg: "#0b0f14", card: "#1b2838", circle: "#2a475e", border: "#34536b", text: "#dfe3e8", muted: "#8f98a0", accent: "#1a9fff" },
@@ -34,6 +37,10 @@ QtObject {
         obsidian: { name: "Obsidian Gold",  bg: "#080705", card: "#16130e", circle: "#26211a", border: "#2a241b", text: "#f0ead9", muted: "#968d78", accent: "#d4af37" },
         emerald:  { name: "Emerald Matrix", bg: "#040a07", card: "#0c1812", circle: "#16281f", border: "#1a3326", text: "#dcf7e8", muted: "#74a08a", accent: "#2ee59d" },
         follow:   { name: "Follow game",   bg: "#000000", card: "#161616", circle: "#282828", border: "#262626", text: "#ffffff", muted: "#9a9a9a", accent: "#a97be0" },
+        ds:       { name: "Nintendo DS",    bg: "#e6e9f0", card: "#ffffff", circle: "#d9deea", border: "#c6cddd", text: "#1b2233", muted: "#667089", accent: "#2f6fe4" },
+        n3ds:     { name: "Nintendo 3DS",   bg: "#efeff2", card: "#ffffff", circle: "#e0e0e6", border: "#cdcdd6", text: "#222228", muted: "#707078", accent: "#d81e2c" },
+        iisu:     { name: "iiSU",           bg: "#e4e9fb", card: "#ffffff", circle: "#d6ddf6", border: "#c3ccf0", text: "#232849", muted: "#6a729f", accent: "#3a86ff" },
+        iisunight:{ name: "iiSU Night",     bg: "#120e26", card: "#211a42", circle: "#31285c", border: "#413776", text: "#eeeaff", muted: "#9b93c9", accent: "#4fd2ff" },
         neon:     { name: "Neon Cyber",     bg: "#09050f", card: "#150d26", circle: "#241740", border: "#2b1c4d", text: "#f1e8ff", muted: "#9d89c8", accent: "#ff3df2" }
     })
 

@@ -2,11 +2,12 @@
 
 The launch command is the one ES-DE logged when it started that game, so the shortcut runs exactly what ES-DE would.
 That means the game has to have been started from ES-DE once."""
-import base64, glob, json, os, re, shlex
+import base64, glob, json, os, re, shlex, struct
 from PySide6.QtCore import Property, QBuffer, QIODevice, QObject, QTimer, Qt, Signal, Slot
 from PySide6.QtGui import QImage
 
 from .nowplaying import ES, MEDIA
+from .steamlib import _vdf_map
 from .steamui import eval_js
 
 LOG = ES + "/logs/es_log.txt"
@@ -50,6 +51,34 @@ def shortcut_launches():
 
 def options_for(words):
     return f"{WRAP} %command% {shlex.join(words[1:])}"
+
+
+def known_appid(words):
+    """The AppId of the shortcut that already runs these words (found by its launch options), else None."""
+    tail = shlex.join(words[1:])
+    for f in glob.glob(SHORTCUTS):
+        try:
+            entries = _vdf_map(open(f, "rb").read())[0].get("shortcuts", {})
+        except (OSError, ValueError, struct.error):
+            continue
+        for e in entries.values():
+            if str(e.get("LaunchOptions", "")).endswith(tail) and isinstance(e.get("appid"), int):
+                return e["appid"]
+    return None
+
+
+def run_rom(name, system, path, words):
+    """Start a game through Steam, so it runs on the main screen like any other: reuse its shortcut, or create one first."""
+    def run(appid):
+        eval_js(f'SteamClient.Apps.RunGame("{(appid << 32) | 0x02000000}", "", -1, 100)', lambda _: None)
+
+    appid = known_appid(words)
+    if appid is not None:
+        run(appid)
+        return
+    payload = dict(name=name, exe=f'"{words[0]}"', start=os.path.dirname(words[0]) + "/", launch=options_for(words), art=artwork(system, path))
+    # the shortcut needs a moment before Steam can start it
+    eval_js(ADD_JS % json.dumps(payload), lambda v: isinstance(v, int) and QTimer.singleShot(1500, lambda: run(v & 0xFFFFFFFF)))
 
 
 def _encode(path, width, height, fmt):
