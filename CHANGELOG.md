@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.6
 
 - **Desktop mode**: the start script no longer sends Qt to the bottom screen's Wayland socket when that session does not exist. Without it Qt aborted, and the service started and died every three seconds (the icon that flashed in the taskbar, issue #2). In desktop mode `scripts/run.sh` now uses the desktop's own Wayland socket (`wayland-*`, else X11) and starts the app with `--windowed`, an ordinary window instead of the always-fullscreen bottom screen. With no display at all it exits quietly. The unit restarts only after a failure (`Restart=on-failure`; run `install.sh` again for it). Not tried in desktop mode itself, it is chosen by which sockets exist.
 - **FPS no longer drops to 0 between readings** (issue #1): gamescope writes its `fps=` line every 5 seconds, and the display went to 0 after 3 seconds without one, so it alternated between the value and 0. It now waits for two missing readings. Not changed: the value is gamescope's own, which can differ from Steam's performance overlay (the report has 39/40 against Steam's 29/30), and that needs a second look.
