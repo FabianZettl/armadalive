@@ -14,6 +14,7 @@ from .battery import Battery
 from .closer import Closer
 from .gamepad import Pad
 from .ludo import LudoSync
+from .lupe import Lupe
 from .manuals import Manuals
 from .media import Media
 from .palette import Palette
@@ -47,12 +48,13 @@ def main():
     now, monitor = NowPlaying(gamescope, steamui), SystemMonitor(fps=lambda: gamescope.state["fps"])
     backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=Apps(), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
                     health=Health(steamui), rules=GameRules(now, gamescope, monitor), tileStore=Tiles(),
-                    battery=Battery(), media=Media(), backup=Backup(), artwork=Palette(), steamShortcuts=SteamShortcuts(now), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad())
+                    battery=Battery(), media=Media(), backup=Backup(), artwork=Palette(), steamShortcuts=SteamShortcuts(now), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad(), lupe=Lupe())
     pad = backends["pad"] = Pad()   # must stay referenced, like the rest
     backends["closer"] = Closer(pad, gamescope, now, backends["ui"])
     backends["thermal"] = Thermal(monitor, backends["ui"])
     for name, obj in backends.items():
         engine.rootContext().setContextProperty(name, obj)
+    engine.addImageProvider("lupe", backends["lupe"].provider)
     # closing the window only hides it: the app keeps listening for the AYN button and can bring itself back
     app.setQuitOnLastWindowClosed(False)
     # SIGUSR1 does what the AYN button does (used by the app-drawer launcher)
@@ -73,7 +75,7 @@ def main():
         # back to "Game": {"event": {...}} like ES-DE sends, or {"ui": [appid, "name"]} for Steam's UI; none means idle
         demo = json.loads(sys.argv[sys.argv.index("--demo") + 1]) if "--demo" in sys.argv else {}
         backends["nowPlaying"].pin(demo.get("event"), demo.get("ui"))
-        window.setProperty("page", ["now", "apps", "mode", "system", "prefs", "tuning", "cheats", "manual", "graphs", "trackpad"][page] if page < 10 else "now")
+        window.setProperty("page", ["now", "apps", "mode", "system", "prefs", "tuning", "cheats", "manual", "graphs", "controls"][page] if page < 10 else "now")
         if "--theme" in sys.argv:  # for screenshots too: not written to the settings file
             backends["ui"]._s["theme"], backends["ui"]._s["accent"] = sys.argv[sys.argv.index("--theme") + 1], ""
             backends["ui"].changed.emit()
