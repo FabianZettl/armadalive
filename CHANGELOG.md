@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Desktop mode**: the start script no longer sends Qt to the bottom screen's Wayland socket when that session does not exist. Without it Qt aborted, and the service started and died every three seconds (the icon that flashed in the taskbar, issue #2). In desktop mode `scripts/run.sh` now uses the desktop's own Wayland socket (`wayland-*`, else X11) and starts the app with `--windowed`, an ordinary window instead of the always-fullscreen bottom screen. With no display at all it exits quietly. The unit restarts only after a failure (`Restart=on-failure`; run `install.sh` again for it). Not tried in desktop mode itself, it is chosen by which sockets exist.
+- **FPS no longer drops to 0 between readings** (issue #1): gamescope writes its `fps=` line every 5 seconds, and the display went to 0 after 3 seconds without one, so it alternated between the value and 0. It now waits for two missing readings. Not changed: the value is gamescope's own, which can differ from Steam's performance overlay (the report has 39/40 against Steam's 29/30), and that needs a second look.
+
 ## 0.4.5
 
 - **Quieter and smoother**: the quick-settings read (Wi-Fi, Bluetooth, volume, Wi-Fi saver, VPN), the media player check, Gamescope's X properties and the game-process scan ran on the UI thread and spawned a handful of processes each; the quick-settings read alone blocked it for about 200 ms every 2 seconds on a Thor. They now run on a worker thread (`armadalive/poller.py`), Wi-Fi and Bluetooth come from `/sys/class/rfkill` instead of `nmcli` and `rfkill`, and the volume is one `wpctl` call instead of two. The app's idle CPU use went from about 7 % to 4 % of one core. Still polled on the UI thread: the system monitor (20 ms a second, mostly D-Bus property reads).

@@ -56,8 +56,8 @@ class Gamescope(QObject):
         return x
 
     def _apply(self, x):
-        if time.monotonic() - self._seen > 3:
-            self._fps = 0.0  # a static screen produces no frames
+        if time.monotonic() - self._seen > 12:
+            self._fps = 0.0  # gamescope writes fps= every 5 s (not every second): zero only after two samples are missing
         if x["focus"] != self._focus:
             self._focus = x["focus"]
             self.focusChanged.emit(self._focus)

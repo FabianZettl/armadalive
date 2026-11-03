@@ -55,7 +55,9 @@ Window {
     onShownChanged: wake()
 
     // always full screen: Plasma's own panels only come back with its swipe-up gesture
-    function applyVisibility() { if (visibility !== Window.FullScreen) visibility = Window.FullScreen }
+    // --windowed (desktop mode, one Plasma session for both screens): an ordinary window, not the always-fullscreen bottom screen
+    readonly property bool windowed: Qt.application.arguments.indexOf("--windowed") >= 0
+    function applyVisibility() { if (!windowed && visibility !== Window.FullScreen) visibility = Window.FullScreen }
     // whatever un-fullscreens the window (another app, Plasma, a resize) is undone at once; Plasma's swipe-up panels draw over it
     onVisibilityChanged: if (win.visible && win.visibility !== Window.FullScreen && win.visibility !== Window.Hidden && win.visibility !== Window.Minimized) Qt.callLater(applyVisibility)
     onActiveChanged: if (active) applyVisibility()

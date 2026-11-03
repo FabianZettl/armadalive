@@ -6,7 +6,7 @@ After=armada-bottom-screen.service
 Environment=QT_QPA_PLATFORM=wayland WAYLAND_DISPLAY=armada-plasma-bottom QT_QUICK_CONTROLS_STYLE=Basic
 Environment=PYTHONPATH=%h/.local/share/armadalive
 ExecStart=%h/.local/share/armadalive/scripts/run.sh
-Restart=always
+Restart=on-failure
 RestartSec=3
 
 [Install]
