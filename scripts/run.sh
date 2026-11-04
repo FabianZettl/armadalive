@@ -6,6 +6,13 @@
 # socket shows the window too, but passes no touch to it; X11 does, and has no window frames.
 run="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 windowed=""
+# Game mode while the bottom session is still starting (boot): the marker exists, its socket not yet. Wait for it, and fail
+# (the unit then retries) rather than taking the desktop branch below, which at boot found nothing and ended quietly for good.
+if [ ! -S "$run/armada-plasma-bottom" ] && [ -e "$run/armada-bottom-screen-active" ]; then
+    n=0
+    while [ ! -S "$run/armada-plasma-bottom" ] && [ "$n" -lt "${ARMADALIVE_WAIT:-20}" ]; do sleep 1; n=$((n + 1)); done
+    [ -S "$run/armada-plasma-bottom" ] || [ -r "$run/armada-bottom-env" ] || { echo "ArmadaLive: the bottom session is not up yet" >&2; exit 1; }
+fi
 if [ -S "$run/armada-plasma-bottom" ]; then
     :   # the normal case: the bottom Plasma session
 elif [ -r "$run/armada-bottom-env" ]; then

@@ -46,6 +46,13 @@ class RunSh(unittest.TestCase):
         self.assertIn("platform=wayland wayland=wayland-0", r.stdout)
         self.assertIn("windowed=--windowed", r.stdout)
 
+    def test_game_mode_still_starting_fails_so_the_unit_retries_instead_of_ending_quietly(self):
+        open(os.path.join(self.dir, "armada-bottom-screen-active"), "w").close()   # the bottom session unit has started, no socket yet
+        self.sock("wayland-0")                                                      # must not be taken for desktop mode
+        r = self.run_sh(ARMADALIVE_WAIT="0")
+        self.assertEqual(r.returncode, 1)
+        self.assertNotIn("platform=", r.stdout)
+
     def test_nothing_to_show_it_on_ends_quietly_instead_of_aborting(self):
         r = self.run_sh()
         self.assertEqual(r.returncode, 0)

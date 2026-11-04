@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+- **ArmadaLive starts again on boot in Game mode** (reported on issue #2): since 0.4.6 `scripts/run.sh` took a bottom session that was still starting for desktop mode, found no screen, and ended without an error, so the unit never retried. It now sees that the bottom session has been started (its marker file exists), waits up to 20 seconds for its socket and otherwise fails, so the unit tries again after 3 seconds. Desktop mode is unchanged. Found by reading the script, not by rebooting a Thor; the test covers the decision, not the boot itself.
+
 ## 0.5.0
 
 - **Light themes**: *Nintendo DS* (icy white and blue), *Nintendo 3DS* (white and red) and *iiSU* (pale lavender and blue), plus the dark *iiSU Night*. Text on an accent colour (buttons, slider icons, toasts) turns dark or white to stay readable on a light theme; the dark themes look as before. ES-DE's white system logos get a dark plate behind them on a light theme. The colours are guesses from screenshots of the Nintendo handhelds and the iiSU launcher, not measured; the accent can be changed as for every theme.
