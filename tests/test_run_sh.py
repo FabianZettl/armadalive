@@ -53,10 +53,17 @@ class RunSh(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertNotIn("platform=", r.stdout)
 
-    def test_nothing_to_show_it_on_ends_quietly_instead_of_aborting(self):
-        r = self.run_sh()
-        self.assertEqual(r.returncode, 0)
-        self.assertIn("nothing to show it on", r.stderr)
+    def test_nothing_to_show_it_on_fails_so_the_unit_retries_instead_of_ending_quietly(self):
+        r = self.run_sh(ARMADALIVE_WAIT="0")   # boot: neither session is there yet; exit 0 would count as success and never be retried
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("tries again", r.stderr)
+
+    def test_a_session_that_appears_while_waiting_is_taken(self):
+        import threading, time
+        threading.Thread(target=lambda: (time.sleep(1.5), self.sock("armada-plasma-bottom")), daemon=True).start()
+        r = self.run_sh(ARMADALIVE_WAIT="10", WAYLAND_DISPLAY="armada-plasma-bottom", QT_QPA_PLATFORM="wayland")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("wayland=armada-plasma-bottom", r.stdout)
 
 
 if __name__ == "__main__":

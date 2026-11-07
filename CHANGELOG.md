@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **ArmadaLive now starts on boot in Game mode** (reported again on issue #2 after 0.5.1, with a fresh install): the 0.5.1 wait only applied once the bottom session's marker file existed, but this unit starts before that session is even started, so the script found nothing, exited with success and was never started again (journal: "no bottom session and no desktop display found; nothing to show it on"). The start script now keeps looking for the bottom session or a desktop display for up to 60 seconds and then fails, so the unit retries. Checked with tests for both outcomes and by restarting the service on a Thor; not by a reboot.
+
 ## 0.5.1
 
 - **ArmadaLive starts again on boot in Game mode** (reported on issue #2): since 0.4.6 `scripts/run.sh` took a bottom session that was still starting for desktop mode, found no screen, and ended without an error, so the unit never retried. It now sees that the bottom session has been started (its marker file exists), waits up to 20 seconds for its socket and otherwise fails, so the unit tries again after 3 seconds. Desktop mode is unchanged. Found by reading the script, not by rebooting a Thor; the test covers the decision, not the boot itself.
