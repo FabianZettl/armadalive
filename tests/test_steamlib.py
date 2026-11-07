@@ -33,6 +33,10 @@ class Library(unittest.TestCase):
         self.assertEqual(set(g), {"steam:10", f"steam:{(3422048380 << 32) | 0x02000000}"})
         self.assertEqual(g["steam:10"]["name"], "Counter-Strike")
 
+    def test_a_shortcut_is_found_by_its_app_id(self):
+        self.assertEqual(steamlib.shortcut(3422048380), ("Eglantine", ""))
+        self.assertIsNone(steamlib.shortcut(1))
+
     def test_cover_is_a_cached_rounded_square(self):
         url = {x["id"]: x for x in steamlib.games()}["steam:10"]["icon"]
         img = QImage(url.replace("file://", ""))

@@ -47,6 +47,14 @@ class Games(unittest.TestCase):
         self.assertEqual([(g["id"], g["name"]) for g in found["snes"]],
                          [("esde:snes/Chrono.sfc", "Chrono Trigger"), ("esde:snes/sub/Deep.SFC", "Deep")])
 
+    def test_a_system_with_its_own_path_is_read_from_there(self):
+        root, other = tempfile.mkdtemp(prefix="armadalive-roms-"), tempfile.mkdtemp(prefix="armadalive-internal-")
+        touch(f"{other}/Game.nup")
+        defs = {"switch2": dict(fullname="Switch 2", path=other, extensions={".nup"}, commands=[("a", "x")])}
+        with mock.patch.object(esdelib, "systems", lambda: defs), mock.patch.object(esdelib, "_rom_dir", lambda: root):
+            found = esdelib.games()
+        self.assertEqual([g["rom"] for g in found["switch2"]], [f"{other}/Game.nup"])
+
 
 if __name__ == "__main__":
     unittest.main()

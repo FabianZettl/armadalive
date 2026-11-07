@@ -241,10 +241,16 @@ Flickable {
                 onPicked: key => rules.setEnabled(key === "on")
             }
             Body {
+                visible: page.rl.loaded !== ""
+                color: Theme.accent
+                font.pixelSize: 13
+                text: Tr.t("Loaded last") + ": " + page.rl.loaded
+            }
+            Body {
                 visible: page.rl.rules.length === 0
                 color: Theme.muted
                 font.pixelSize: 13
-                text: Tr.t("While a game is in front, tap Game rule or System rule on the System page to save its power profile and FPS limit here.")
+                text: Tr.t("While a game is in front, tap Game rule or System rule on the System page to save its power profile and FPS limit here. Base rule applies to every game without a rule of its own, Idle rule when no game runs any more.")
             }
             Repeater {
                 model: page.rl.rules
@@ -256,7 +262,7 @@ Flickable {
                         elide: Text.ElideRight
                         color: Theme.text
                         font.pixelSize: 14
-                        text: (modelData.key.indexOf("system:") === 0 ? Tr.t("System") + " " : "") + modelData.key.replace(/^(game|system):/, "") + "  ·  " + (modelData.profile || "–") + (modelData.fps ? ", " + modelData.fps + " FPS" : "") + (modelData.res ? ", " + modelData.res + "×" : "")
+                        text: modelData.key === page.rl.idleKey ? Tr.t("Idle rule") : modelData.key === page.rl.baseKey ? Tr.t("Base rule") : (modelData.key.indexOf("system:") === 0 ? Tr.t("System") + " " : "") + modelData.key.replace(/^(game|system):/, "") + "  ·  " + (modelData.profile || "–") + (modelData.fps ? ", " + modelData.fps + " FPS" : "") + (modelData.res ? ", " + modelData.res + "×" : "")
                     }
                     PillButton { id: del; anchors { right: parent.right; verticalCenter: parent.verticalCenter } label: "✕"; onClicked: rules.remove(modelData.key) }
                 }

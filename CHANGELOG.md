@@ -1,8 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.5.2
 
 - **ArmadaLive now starts on boot in Game mode** (reported again on issue #2 after 0.5.1, with a fresh install): the 0.5.1 wait only applied once the bottom session's marker file existed, but this unit starts before that session is even started, so the script found nothing, exited with success and was never started again (journal: "no bottom session and no desktop display found; nothing to show it on"). The start script now keeps looking for the bottom session or a desktop display for up to 60 seconds and then fails, so the unit retries. Checked with tests for both outcomes and by restarting the service on a Thor; not by a reboot.
+- **Idle rule and base rule** (tiles on the System page): the base rule applies to every game that has no game or system rule of its own, the idle rule when no game runs any more (not while Steam's menu is only in front of a running game). Both save the current power profile and FPS limit like the other rules and show in the rule list in Settings. A short message says when a rule was saved, removed or loaded, and Settings shows which was loaded last. Tried with a game rule for a non-Steam shortcut (power profile and FPS limit switched when it started); the idle rule is covered by tests, not tried on the device.
+- **Non-Steam shortcuts that are games** (Tears of the Kingdom, Moonlight, ...) are recognised as the game in front, so game rules work for them. ES-DE itself is not counted as a game.
+- **The app grid scrolls sideways again**: the page swipe took the drag over (the first fix locked it on touch-down, which came too late). On the Apps page, and on the Game page while nothing runs, a sideways drag now scrolls the grid; pages are switched with the bar there. Checked with a simulated drag (the grid moved 420 px alone, and none with the page swipe around it), not with a finger.
+- **ES-DE games in a folder of their own**: the app picker reads a system from the folder ES-DE's own `es_systems.xml` gives it, not only from `<ROM directory>/<system>`.
 
 ## 0.5.1
 

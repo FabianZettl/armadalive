@@ -69,8 +69,9 @@ Details per page follow.
 - **System** – FPS, a 60/120 FPS limit, quick settings (power profile, fan curve, clear RAM, stick LEDs, Wi-Fi, Bluetooth,
   airplane mode, sound, screenshot, GPU clock, screen off), temperature, fan, and gauges for CPU, GPU, power and RAM. The status line
   shows the battery time left. Two tiles open **Graphs** (FPS, CPU, temperature, power and battery over the last two minutes) and
-  **Tuning**. Two more, *Game rule* and *System rule*, remember the current power profile and FPS limit for the game in front, or for
-  its whole system, and apply them the next time that game starts. *Wi-Fi saver* switches Wi-Fi power saving off or on (it is on by
+  **Tuning**. Four more, *Game rule*, *System rule*, *Base rule* and *Idle rule*, remember the current power profile and FPS limit for the game in front, for
+  its whole system, for every game without a rule, or for when no game runs, and apply them when a game starts or the last one ends
+  (a short message says what was saved or loaded). *Wi-Fi saver* switches Wi-Fi power saving off or on (it is on by
   default; off gives steadier streaming and online play at a little more battery use). For PPSSPP, Dolphin (GameCube, Wii) and
   ARMSX2 (PS2) a *Resolution* tile steps the game's render resolution through off, 1×…5×; it is written to the emulator's
   config when you select the game in ES-DE, and put back for games without a setting.
@@ -107,6 +108,7 @@ Details per page follow.
   missing it creates a private Python environment in `~/.local/share/armadalive/venv` and installs PySide6 and PyMuPDF there
   (several hundred MB, needs internet, once). After a system update that changes Python's version, run `./install.sh` again.
   Without Qt's PDF module, manuals are drawn page by page with PyMuPDF.
+- The bottom screen has to stay switched on in Armada's settings (Decky plugin, *Armada control*): ArmadaLive runs in the bottom Plasma session, and with the screen off there is nothing for it to show on.
 - Optional: [ES-DE](https://es-de.org) with scraped media, for logos and backgrounds of emulated games.
 
 ## Install

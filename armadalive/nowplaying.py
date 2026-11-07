@@ -3,6 +3,7 @@ import glob, json, os, random, re, time
 import xml.etree.ElementTree as ET
 from PySide6.QtCore import Property, QObject, QTimer, QUrl, Signal, Slot
 from .poller import Poller
+from . import steamlib
 
 ES = os.path.expanduser(os.environ.get("ARMADALIVE_ESDE_DIR", "~/ES-DE"))
 MEDIA, GAMELISTS = ES + "/downloaded_media", ES + "/gamelists"
@@ -101,6 +102,28 @@ def running_game():
     return dict(event="game-start", system=system, path=f"{rom_dir}/{system}/{game}", name=os.path.splitext(game)[0], pid=best[0])
 
 
+def steam_running():
+    """True while Steam runs some game of its own (`reaper SteamLaunch AppId=...`): a Steam game or a shortcut, but not ES-DE
+    itself, whose emulators are found by their ROM."""
+    for pid in os.listdir("/proc"):
+        if pid.isdigit():
+            try:
+                args = open(f"/proc/{pid}/cmdline", "rb").read().decode(errors="replace").split("\0")
+            except OSError:
+                continue
+            if "SteamLaunch" in args and any(a.startswith("AppId=") for a in args) and "es-de" not in " ".join(args).lower():
+                return True
+    return False
+
+
+def describe_shortcut(appid):
+    """A running non-Steam shortcut that is not ES-DE (TotK, Moonlight, ...) as a game; None for anything else."""
+    found = steamlib.shortcut(appid)
+    if not found or os.path.basename(found[1].strip('"')).lower().startswith("es-de"):
+        return None
+    return dict(describe_steam_ui(appid, found[0]), playing=True)
+
+
 def esde_running():
     for pid in os.listdir("/proc"):
         if pid.isdigit():
@@ -189,6 +212,8 @@ class NowPlaying(QObject):
         self._event, self._steam, self._proc = {}, "", None
         self._ui_focus, self._ui_app, self._hold, self._esde = False, (0, ""), 0.0, False
         self._pinned = False
+        self.running = False     # a game is really running (a process), even while Steam's UI is in front
+        self._sgame = None       # the non-Steam shortcut in front, if it is a game of its own
         self._shortcut = False   # a non-Steam shortcut (ES-DE itself, or an emulator it started) is in front
         self._steamui = steamui
         steamui.selected.connect(self._ui_selected)
@@ -198,7 +223,7 @@ class NowPlaying(QObject):
         timer = QTimer(self)
         timer.timeout.connect(self._poll)
         timer.start(400)
-        self._procs = Poller(self, lambda: (running_game(), esde_running()), self._scan, 2000)   # /proc walk: a worker thread
+        self._procs = Poller(self, lambda: (running_game(), esde_running(), steam_running()), self._scan, 2000)   # /proc walk: a worker thread
         self._poll()
 
     @Property("QVariant", notify=changed)
@@ -222,9 +247,13 @@ class NowPlaying(QObject):
         self._update()
 
     def _scan(self, found):
-        game, esde = found
-        if game != self._proc or esde != self._esde:
-            self._proc, self._esde = game, esde
+        game, esde, steam = found
+        moved = game != self._proc or esde != self._esde
+        self._proc, self._esde = game, esde
+        running = bool(game or steam)
+        moved = moved or running != self.running
+        self.running = running
+        if moved:
             self._update()
 
     def _ui_selected(self, appid, name):
@@ -241,6 +270,7 @@ class NowPlaying(QObject):
             QTimer.singleShot(26000, self._update)
         # AppIds of non-Steam shortcuts (ES-DE itself) are >= 2**31 and have no manifest, so they fall through to ES-DE
         self._steam = app if app.isdigit() and 0 < int(app) < 2**31 and describe_steam(app) else ""
+        self._sgame = describe_shortcut(app) if self._shortcut else None
         self._update()
 
     def pin(self, event=None, ui=None):
@@ -262,6 +292,8 @@ class NowPlaying(QObject):
             self._path, state, key = "", ui or describe({}), None
         elif self._steam:                   # a Steam game is in front
             self._path, state, key = "", describe_steam(self._steam), self._steam
+        elif self._sgame and not self._proc:   # a shortcut that is a game itself, and no emulator of ES-DE's behind it
+            self._path, state, key = "", dict(self._sgame), "sgame|" + self._sgame["key"]
         elif ui and time.monotonic() < self._hold and not self._shortcut:  # that game is still starting
             self._path, state, key = "", ui, None
         else:                               # ES-DE's own world

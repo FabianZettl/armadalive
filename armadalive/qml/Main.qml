@@ -148,7 +148,9 @@ Window {
         DragHandler {
             target: null
             yAxis.enabled: false
-            enabled: win.current.id !== "manual" && !Gesture.locked
+            // not over the app grid (Apps page, or the Game page while idle): a sideways drag there scrolls the grid, and this handler
+            // would take it over (a lock set on touch-down came too late); the bar still switches pages
+            enabled: win.current.id !== "manual" && !Gesture.locked && win.current.id !== "apps" && !(win.home && win.now.kind === "idle")
             onActiveChanged: {
                 if (active || Gesture.locked) return
                 const dx = centroid.position.x - centroid.pressPosition.x
@@ -287,6 +289,14 @@ Window {
             const text = ({ created: Tr.t("Shortcut created"), exists: Tr.t("Already in Steam"), unknown: Tr.t("Launch the game from ES-DE once first"),
                             unreachable: Tr.t("Steam is not reachable") })[code]
             toast.show(title && code !== "unknown" ? text + ": " + title : text, code !== "created")
+        }
+    }
+    // saving, removing and loading a game rule
+    Connections {
+        target: rules
+        function onNotice(code, detail) {
+            const text = ({ saved: Tr.t("Rule saved"), removed: Tr.t("Rule removed"), loaded: Tr.t("Rule loaded") })[code]
+            toast.show(text + ": " + detail, false)
         }
     }
     Rectangle {

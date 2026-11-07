@@ -54,7 +54,7 @@ def systems():
         for s in root.iter("system"):
             name = s.findtext("name")
             if name:
-                out[name] = dict(fullname=s.findtext("fullname") or name, extensions=set((s.findtext("extension") or "").lower().split()),
+                out[name] = dict(fullname=s.findtext("fullname") or name, path=(s.findtext("path") or "").strip(), extensions=set((s.findtext("extension") or "").lower().split()),
                                  commands=[(c.get("label") or "", (c.text or "").strip()) for c in s.findall("command")])
     return out
 
@@ -138,7 +138,8 @@ def games():
     """{system: [{id: "esde:<system>/<path under the system folder>", name, cover (file path), rom}]} for systems that have games."""
     root, out = _rom_dir(), {}
     for name, s in systems().items():
-        folder = os.path.join(root, name)
+        # the folder ES-DE itself uses: its <path> (with %ROMPATH% and ~ expanded), else <ROM directory>/<system>
+        folder = os.path.expanduser((s.get("path") or "").replace("%ROMPATH%", root.rstrip("/"))) or os.path.join(root, name)
         if not os.path.isdir(folder):
             continue
         titles, hidden = {}, set()

@@ -38,6 +38,8 @@ Item {
         { id: "screenoff", icon: "power", label: Tr.t("Screen off"), on: false, act: () => { Nav.go = "blank" } },
         { id: "gamerule", icon: "star", label: Tr.t("Game rule"), on: rl.gameKey !== "" && rl.rules.some(r => r.key === rl.gameKey), act: () => rules.toggle("game") },
         { id: "systemrule", icon: "star", label: Tr.t("System rule"), on: rl.systemKey !== "" && rl.rules.some(r => r.key === rl.systemKey), act: () => rules.toggle("system") },
+        { id: "idlerule", icon: "star", label: Tr.t("Idle rule"), on: rl.rules.some(r => r.key === rl.idleKey), act: () => rules.toggle("idle") },
+        { id: "baserule", icon: "star", label: Tr.t("Base rule"), on: rl.rules.some(r => r.key === rl.baseKey), act: () => rules.toggle("base") },
         { id: "res", icon: "gauge", label: rl.resOk ? ((rl.rules.find(r => r.key === rl.gameKey) || {}).res ? (rl.rules.find(r => r.key === rl.gameKey)).res + "× " + Tr.t("render") : Tr.t("Resolution")) : Tr.t("Resolution"),
           on: rl.resOk && (rl.rules.find(r => r.key === rl.gameKey) || {}).res > 0, act: () => rules.cycleRes() },
         { id: "keyboard", icon: "edit", label: Tr.t("Keyboard"), on: shell.keyboardPinned, act: () => shell.keyboard() },

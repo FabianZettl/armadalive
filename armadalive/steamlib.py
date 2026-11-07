@@ -79,6 +79,28 @@ def _libraries():
     return {os.path.join(STEAM)} | set(re.findall(r'"path"\s+"([^"]+)"', text))
 
 
+_shortcuts = (None, {})   # shortcuts.vdf mtime, {appid: (name, exe)}
+
+
+def shortcut(appid):
+    """(name, exe) of a non-Steam shortcut by its AppId, None if Steam has no such shortcut."""
+    global _shortcuts
+    files = glob.glob(os.path.join(STEAM, "userdata", "*", "config", "shortcuts.vdf")) if STEAM else []
+    stamp = [(f, os.path.getmtime(f)) for f in files if os.path.exists(f)]
+    if _shortcuts[0] != stamp:
+        found = {}
+        for f, _ in stamp:
+            try:
+                entries = _vdf_map(open(f, "rb").read())[0].get("shortcuts", {})
+            except (OSError, ValueError, struct.error):
+                continue
+            for e in entries.values():
+                if isinstance(e.get("appid"), int):
+                    found[e["appid"]] = (e.get("AppName", ""), e.get("Exe", ""))
+        _shortcuts = (stamp, found)
+    return _shortcuts[1].get(int(appid))
+
+
 def games():
     """[{id: "steam:<gameid>", name, icon (cover url)}]: installed games, then non-Steam shortcuts; the id's number is what RunGame takes."""
     if not STEAM:
