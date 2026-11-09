@@ -7,10 +7,11 @@ Rectangle {
     signal clicked()
     implicitWidth: text.width + 36
     implicitHeight: 42
-    radius: height / 2
+    radius: Theme.pill(height)
     opacity: enabled ? 1 : 0.4
     color: primary ? Theme.accent : Theme.circle
     scale: area.pressed ? 0.96 : 1
+    Behavior on scale { NumberAnimation { duration: Theme.dur(90); easing.type: Theme.ease } }
     Text {
         id: text
         anchors.centerIn: parent

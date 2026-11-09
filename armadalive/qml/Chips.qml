@@ -17,6 +17,7 @@ Flow {
             radius: Theme.radius
             color: on ? Theme.accent : Theme.card
             border.color: on ? Theme.accent : Theme.border
+            border.width: Theme.borderW
             Text {
                 id: label
                 anchors.centerIn: parent

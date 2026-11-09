@@ -13,6 +13,7 @@ Rectangle {
     radius: Theme.radius
     color: mouse.pressed ? Theme.border : Theme.card
     border.color: active ? Theme.accent : Theme.border
+    border.width: Theme.borderW
 
     Column {
         anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 12 }

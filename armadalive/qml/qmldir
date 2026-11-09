@@ -9,6 +9,7 @@ AppPicker 1.0 AppPicker.qml
 Icon 1.0 Icon.qml
 CircleButton 1.0 CircleButton.qml
 BarSlider 1.0 BarSlider.qml
+Backdrop 1.0 Backdrop.qml
 singleton Gesture Gesture.qml
 singleton Tr Tr.qml
 singleton Nav Nav.qml

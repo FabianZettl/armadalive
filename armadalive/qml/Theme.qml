@@ -22,7 +22,59 @@ QtObject {
     readonly property color onAccent: !light ? bg : (0.299 * accent.r + 0.587 * accent.g + 0.114 * accent.b < 0.5 ? "#ffffff" : "#101828")
     readonly property color warm: "#f0a43a"
     readonly property color hot: "#ef5b5b"
-    readonly property int radius: 14
+    // Style: what a theme changes besides its colours. shape: how round the buttons, cards and discs are; pattern: a faint backdrop (Backdrop.qml);
+    // motion: how animations feel; font: a family for all text ("" = the system's); border: the outline width. Set by apply() from `styles`.
+    property string shape: "round"
+    property string pattern: "none"
+    property string fontKey: ""
+    property int borderW: 1
+    property int radius: 14
+    property real speed: 1
+    property int ease: Easing.OutCubic
+    property int popEase: Easing.OutBack
+    property real overshoot: 1.0
+    readonly property string fontFamily: ({ mono: "Hack", serif: "Nimbus Roman" })[fontKey] || ""
+    function dur(ms) { return Math.max(1, Math.round(ms * speed)) }
+    // a pill-shaped control (a button, a chip) and a round one (an icon disc), in the theme's shape
+    function pill(h) { return shape === "round" || shape === "pill" ? h / 2 : shape === "soft" ? h * 0.3 : shape === "cut" ? 5 : 3 }
+    function disc(w) { return shape === "round" || shape === "pill" ? w / 2 : shape === "soft" ? w * 0.3 : shape === "cut" ? 6 : 3 }
+    // the corner of an app tile, as a share of its side
+    readonly property real tileCorner: shape === "pill" ? 0.18 : shape === "soft" ? 0.12 : shape === "cut" ? 0.04 : shape === "square" ? 0.02 : 0.1
+    function radiusFor(shp) { return shp === "pill" ? 18 : shp === "soft" ? 10 : shp === "cut" ? 5 : shp === "square" ? 3 : 14 }
+    readonly property var motions: ({
+        smooth: { speed: 1.0, ease: Easing.OutCubic,  pop: Easing.OutBack,  over: 1.0 },
+        snappy: { speed: 0.6, ease: Easing.OutQuad,   pop: Easing.OutCubic, over: 0.0 },
+        bouncy: { speed: 1.1, ease: Easing.OutBack,   pop: Easing.OutBack,  over: 2.6 },
+        gentle: { speed: 1.7, ease: Easing.InOutSine, pop: Easing.OutCubic, over: 0.0 },
+        steps:  { speed: 0.5, ease: Easing.Linear,    pop: Easing.Linear,   over: 0.0 }
+    })
+    readonly property var styles: ({
+        // general
+        obsidian: { shape: "soft", motion: "gentle", font: "serif" }, emerald: { shape: "square", pattern: "scan", motion: "steps", font: "mono" },
+        neon: { shape: "cut", pattern: "grid", motion: "snappy" }, dracula: { shape: "soft" }, nord: { shape: "soft", motion: "gentle" },
+        gruvbox: { shape: "soft", font: "mono" }, solarized: { shape: "soft", font: "mono" }, amber: { shape: "square", pattern: "scan", motion: "steps", font: "mono" },
+        // consoles
+        snes: { shape: "pill", motion: "bouncy" }, gameboy: { shape: "square", pattern: "grid", motion: "steps", font: "mono", border: 2 },
+        ps2: { pattern: "grid", motion: "gentle" }, famicom: { shape: "square", motion: "snappy", border: 2 }, ds: { shape: "pill", pattern: "dots", motion: "bouncy" },
+        n3ds: { shape: "soft", pattern: "checker", motion: "bouncy" }, dreamcast: { shape: "pill", pattern: "dots" }, saturn: { shape: "cut", pattern: "grid" },
+        megadrive: { shape: "square", pattern: "scan", motion: "snappy" }, n64: { shape: "soft", motion: "bouncy", border: 2 },
+        gamecube: { shape: "soft", pattern: "dots", motion: "gentle" }, wii: { shape: "pill", pattern: "grid" }, switch: { shape: "soft", motion: "snappy", border: 2 },
+        xbox: { shape: "soft", pattern: "diag", motion: "gentle" }, vita: { shape: "pill", pattern: "dots" }, atari: { shape: "square", pattern: "diag", motion: "steps", border: 2 },
+        // operating systems and launchers
+        iisu: { shape: "pill", pattern: "dots", motion: "bouncy" }, iisunight: { shape: "pill", pattern: "stars", motion: "bouncy" }, steamos: { shape: "soft", motion: "snappy" },
+        winxp: { shape: "soft", motion: "smooth", border: 2 }, win11: { shape: "soft", motion: "snappy" }, macos: { shape: "pill" }, android: { shape: "pill", pattern: "dots" },
+        ubuntu: { shape: "soft" }, plasma: { shape: "soft", motion: "snappy" },
+        // games
+        ootime: { shape: "soft", pattern: "diag", motion: "gentle", font: "serif" }, botw: { shape: "soft", pattern: "grid", motion: "gentle", font: "serif" },
+        totk: { shape: "soft", pattern: "grid", motion: "gentle" }, gow: { shape: "cut", motion: "gentle", font: "serif" }, ff7: { shape: "cut", pattern: "scan", motion: "snappy" },
+        mario: { shape: "pill", pattern: "checker", motion: "bouncy", border: 3 }, pokemon: { shape: "pill", pattern: "dots", motion: "bouncy" },
+        sonic: { shape: "pill", pattern: "diag", motion: "snappy" }, metroid: { shape: "cut", pattern: "grid", motion: "snappy", font: "mono" },
+        cyberpunk: { shape: "cut", pattern: "scan", motion: "snappy", font: "mono" }, hollowknight: { shape: "soft", pattern: "stars", motion: "gentle", font: "serif" },
+        celeste: { shape: "square", pattern: "stars", motion: "steps" }, halo: { shape: "cut", pattern: "grid", motion: "snappy" },
+        minecraft: { shape: "square", pattern: "checker", motion: "steps", font: "mono", border: 3 }, acnh: { shape: "pill", pattern: "dots", motion: "bouncy" },
+        splatoon: { shape: "soft", pattern: "diag", motion: "bouncy", border: 3 }, kirby: { shape: "pill", pattern: "dots", motion: "bouncy" },
+        skyrim: { shape: "soft", motion: "gentle", font: "serif" }, stardew: { shape: "square", pattern: "checker", motion: "steps", font: "serif", border: 2 }
+    })
 
     // palettes: stock and Thor Blue follow the colours measured from the stock dual-screen app's screenshot; the console themes
     // are inspired by the machines' own colours; Nintendo DS, 3DS and iiSU are light, and a system logo (white) then gets a dark plate
@@ -93,7 +145,14 @@ QtObject {
     function tinted(a, f) {
         return Qt.rgba(0.03 + (a.r - 0.03) * f, 0.03 + (a.g - 0.03) * f, 0.03 + (a.b - 0.03) * f, 1)
     }
+    function setStyle(name) {
+        const st = styles[name] || ({}), m = motions[st.motion || "smooth"]
+        shape = st.shape || "round"; pattern = st.pattern || "none"; fontKey = st.font || ""; borderW = st.border || 1
+        radius = radiusFor(shape)
+        speed = m.speed; ease = m.ease; popEase = m.pop; overshoot = m.over
+    }
     function apply(name, accentRgb) {
+        setStyle(name)
         if (name === "follow" && accentRgb) {
             const a = Qt.color("#" + accentRgb)
             bg = tinted(a, 0.07); card = tinted(a, 0.14); circle = tinted(a, 0.24); border = tinted(a, 0.32)

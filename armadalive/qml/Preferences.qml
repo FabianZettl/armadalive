@@ -154,9 +154,9 @@ Flickable {
                         readonly property bool on: page.look.theme === modelData
                         width: Math.floor((swatches.width - (swatches.cols - 1) * swatches.spacing) / swatches.cols)
                         height: 62
-                        radius: Theme.radius
+                        radius: Theme.radiusFor((Theme.styles[modelData] || ({})).shape || "round")
                         color: th.bg
-                        border.width: on ? 3 : 1
+                        border.width: on ? 3 : ((Theme.styles[modelData] || ({})).border || 1)
                         border.color: on ? th.accent : th.border
                         Rectangle {
                             id: chip

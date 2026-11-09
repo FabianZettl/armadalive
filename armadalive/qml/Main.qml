@@ -7,6 +7,7 @@ Window {
     width: 620
     height: 540
     color: Theme.bg
+    Backdrop { anchors.fill: parent; z: -1 }
     title: "ArmadaLive"
 
     readonly property var now: nowPlaying.state
@@ -73,6 +74,7 @@ Window {
     readonly property string followColor: ui.state.theme === "follow" ? artwork.dominant(now.fanart || now.logo || "") : ""
     function applyTheme() {
         Theme.apply(ui.state.theme, ui.state.theme === "follow" ? followColor : ui.state.accent)
+        ui.applyFont(Theme.fontFamily)
     }
     onFollowColorChanged: applyTheme()
     Component.onCompleted: { if (dimEnabled) idle.start(); applyVisibility(); applyTheme(); Tr.lang = ui.state.lang; ledSync.start() }
@@ -193,7 +195,7 @@ Window {
         width: parent.width
         height: 34 * win.u
         y: win.chrome ? 0 : -height - 4
-        Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        Behavior on y { NumberAnimation { duration: Theme.dur(180); easing.type: Theme.ease } }
         color: win.home ? Qt.rgba(Theme.bg.r, Theme.bg.g, Theme.bg.b, 0.7) : "transparent"
         Text {
             id: clock
@@ -239,7 +241,7 @@ Window {
         width: parent.width - 36 * win.u
         height: 92 * win.u
         y: win.chrome ? parent.height - height - 16 * win.u : parent.height + 4
-        Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        Behavior on y { NumberAnimation { duration: Theme.dur(180); easing.type: Theme.ease } }
         radius: Theme.radius * win.u
         color: Theme.card
         Row {
@@ -323,7 +325,7 @@ Window {
         y: 10 * win.u
         width: Math.min(toastText.implicitWidth + 40 * win.u, parent.width - 40 * win.u)
         height: 40 * win.u
-        radius: height / 2
+        radius: Theme.pill(height)
         color: bad ? Theme.hot : Theme.accent
         opacity: 0
         visible: opacity > 0.01
@@ -354,7 +356,7 @@ Window {
         y: 58 * win.u
         width: Math.min(ludoText.implicitWidth + 40 * win.u, parent.width - 40 * win.u)
         height: 40 * win.u
-        radius: height / 2
+        radius: Theme.pill(height)
         color: Theme.accent
         opacity: phase ? 1 : 0
         visible: opacity > 0.01

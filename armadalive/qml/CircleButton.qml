@@ -21,14 +21,14 @@ Item {
         spacing: 6
         Rectangle {
             id: disc
-            width: b.size; height: b.size; radius: width / 2
+            width: b.size; height: b.size; radius: Theme.disc(width)
             anchors.horizontalCenter: parent.horizontalCenter
             color: b.on ? Theme.accentSoft : Theme.circle
             scale: area.pressed ? 0.92 : 1
-            Behavior on scale { NumberAnimation { duration: 80 } }
+            Behavior on scale { NumberAnimation { duration: Theme.dur(80); easing.type: Theme.ease; easing.overshoot: Theme.overshoot } }
             Rectangle {
                 anchors.centerIn: parent
-                width: parent.width + 8; height: width; radius: width / 2
+                width: parent.width + 8; height: width; radius: Theme.disc(width)
                 color: "transparent"
                 border.width: 2
                 border.color: Theme.accent

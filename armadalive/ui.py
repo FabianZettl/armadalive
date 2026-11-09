@@ -37,6 +37,19 @@ class UiSettings(QObject):
         self._s["accent"] = ""  # a new theme starts with its own accent
         self._save()
 
+    @Slot(str)
+    def applyFont(self, family):
+        """The app's font for every text that sets no family of its own (the theme's `font`); an empty name goes back to the system's."""
+        from PySide6.QtGui import QFont, QGuiApplication
+        if QGuiApplication.instance() is None:
+            return
+        if not hasattr(self, "_base_font"):
+            self._base_font = QGuiApplication.font()
+        font = QFont(self._base_font)
+        if family:
+            font.setFamily(family)
+        QGuiApplication.setFont(font)
+
     @Slot(bool)
     def setLedFollow(self, on):
         """The stick LEDs take the theme's accent colour (until the user picks a colour of their own)."""

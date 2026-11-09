@@ -40,18 +40,18 @@ Item {
                 id: appear
                 PauseAnimation { duration: Math.min(index, 12) * 30 }
                 ParallelAnimation {
-                    NumberAnimation { target: tile; property: "opacity"; to: 1; duration: 220 }
-                    NumberAnimation { target: tile; property: "scale"; to: 1; duration: 260; easing.type: Easing.OutBack }
+                    NumberAnimation { target: tile; property: "opacity"; to: 1; duration: Theme.dur(220) }
+                    NumberAnimation { target: tile; property: "scale"; to: 1; duration: Theme.dur(260); easing.type: Theme.popEase; easing.overshoot: Theme.overshoot }
                 }
             }
             SequentialAnimation {
                 id: launched
                 ParallelAnimation {
-                    NumberAnimation { target: tile; property: "scale"; to: 1.12; duration: 140; easing.type: Easing.OutQuad }
+                    NumberAnimation { target: tile; property: "scale"; to: 1.12; duration: Theme.dur(140); easing.type: Theme.ease }
                     NumberAnimation { target: flash; property: "opacity"; to: 0.45; duration: 140 }
                 }
                 ParallelAnimation {
-                    NumberAnimation { target: tile; property: "scale"; to: 1; duration: 320; easing.type: Easing.OutBack }
+                    NumberAnimation { target: tile; property: "scale"; to: 1; duration: Theme.dur(320); easing.type: Theme.popEase; easing.overshoot: Theme.overshoot }
                     NumberAnimation { target: flash; property: "opacity"; to: 0; duration: 420 }
                 }
             }
@@ -59,7 +59,7 @@ Item {
                 id: tile
                 width: grid.cell
                 height: grid.cell
-                radius: grid.cell * 0.1
+                radius: grid.cell * Theme.tileCorner
                 color: "transparent"
                 border.color: app.cover ? "transparent" : Theme.border
                 transformOrigin: Item.Center

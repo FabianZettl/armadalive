@@ -9,7 +9,9 @@ def themes():
         src = f.read()
     groups = re.findall(r'\{ id: "(\w+)", name: "[^"]+"[^}]*\}', src)
     found = {}
-    for m in re.finditer(r"^        (\w+):\s*\{(.*)\}[,]?$", src, re.M):
+    block = src[src.index("readonly property var themes"):]
+    block = block[:block.index("\n    })")]
+    for m in re.finditer(r"^        (\w+):\s*\{(.*)\}[,]?$", block, re.M):
         body = m.group(2)
         found[m.group(1)] = dict(re.findall(r'(\w+): "([^"]*)"', body))
     return groups, found
@@ -46,3 +48,21 @@ class Themes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Styles(unittest.TestCase):
+    def test_styles_only_name_known_themes_and_values(self):
+        with open(QML) as f:
+            src = f.read()
+        _, found = themes()
+        block = src[src.index("readonly property var styles"):]
+        block = block[:block.index("\n    })")]
+        entries = re.findall(r"(\w+): \{ ([^}]*) \}", block)
+        self.assertGreater(len(entries), 40)
+        for key, body in entries:
+            self.assertIn(key, found, f"style for unknown theme {key}")
+            d = dict(re.findall(r'(\w+): "?([\w]+)"?', body))
+            self.assertIn(d.get("shape", "round"), ("round", "pill", "soft", "square", "cut"), key)
+            self.assertIn(d.get("pattern", "none"), ("none", "dots", "grid", "scan", "diag", "checker", "stars"), key)
+            self.assertIn(d.get("motion", "smooth"), ("smooth", "snappy", "bouncy", "gentle", "steps"), key)
+            self.assertIn(d.get("font", ""), ("", "mono", "serif"), key)
