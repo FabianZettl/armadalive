@@ -134,11 +134,19 @@ Flickable {
 
         Card {
             Title { text: Tr.t("Appearance") }
-            Chips {
-                width: parent.width
-                model: Object.keys(Theme.themes).map(k => ({ key: k, label: Theme.themes[k].name }))
-                current: page.look.theme
-                onPicked: key => ui.setTheme(key)
+            Repeater {
+                model: Theme.themeGroups
+                delegate: Column {
+                    width: parent.width
+                    spacing: 8
+                    Label { text: Tr.t(modelData.name) }
+                    Chips {
+                        width: parent.width
+                        model: Object.keys(Theme.themes).filter(k => (Theme.themes[k].group || "general") === modelData.id).map(k => ({ key: k, label: Theme.themes[k].name }))
+                        current: page.look.theme
+                        onPicked: key => ui.setTheme(key)
+                    }
+                }
             }
             Row {
                 spacing: 12

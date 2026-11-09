@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Themes in groups, and five game themes**: Settings now lists the themes under *General*, *Consoles*, *Operating systems and launchers* and *Games*. New in *Games*: **Ocarina of Time** (forest green and gold), **Breath of the Wild** (a light theme in pale stone and Sheikah blue), **Tears of the Kingdom** (dark with Zonai teal), **God of War** (ash and blood red) and **Final Fantasy VII** (Shinra navy with Mako green). The colours are my guess at each game's look, not measured; the accent can be changed as for every theme.
+
 ## 0.5.2
 
 - **ArmadaLive now starts on boot in Game mode** (reported again on issue #2 after 0.5.1, with a fresh install): the 0.5.1 wait only applied once the bottom session's marker file existed, but this unit starts before that session is even started, so the script found nothing, exited with success and was never started again (journal: "no bottom session and no desktop display found; nothing to show it on"). The start script now keeps looking for the bottom session or a desktop display for up to 60 seconds and then fails, so the unit retries. Checked with tests for both outcomes and by restarting the service on a Thor; not by a reboot.

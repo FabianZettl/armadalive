@@ -46,7 +46,7 @@ ArmadaLive covers the whole bottom screen of a Thor in Game mode:
 - **Launch things**: a sideways-scrolling grid of covers with desktop apps, Steam games and shortcuts, and ES-DE games by system; trackpads and back buttons L4 L5 R4 R5.
 - **Control the device**: power profile, fan curves, brightness, volume, Wi-Fi, Bluetooth, Tailscale, airplane mode, stick LEDs, FPS limit, render resolution of some emulators, per-game and per-system rules, heat and battery warnings, a charge limit.
 - **Tune it**: CPU governor, underclock, GPU limits and a fan-curve editor with an automatic undo, plus live graphs.
-- **Stay out of the way**: it never draws over the game, closes a game with Start + Select held, dims itself, and the AYN button always brings it up. English and German, fifteen themes (three of them light: Nintendo DS, Nintendo 3DS and iiSU; the dark iiSU Night is the fourth new one), in-app updates, a one-file backup.
+- **Stay out of the way**: it never draws over the game, closes a game with Start + Select held, dims itself, and the AYN button always brings it up. English and German, twenty themes in four groups (general, consoles, operating systems and launchers, games: Ocarina of Time, Breath of the Wild, Tears of the Kingdom, God of War and Final Fantasy VII), several of them light, in-app updates, a one-file backup.
 
 Details per page follow.
 
