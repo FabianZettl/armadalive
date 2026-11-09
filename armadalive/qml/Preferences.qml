@@ -9,6 +9,7 @@ Flickable {
     readonly property var rl: rules.state
     readonly property var bat: battery.state
     readonly property var bk: backup.state
+    property string themeTab: ""   // the theme group shown in Appearance; empty = the current theme's own
     readonly property var accents: ["A97BE0", "68E1FB", "2EE59D", "D4AF37", "FF9F0A", "FF453A", "FF3DF2", "1A9FFF"]
     readonly property real m: 16
     contentHeight: col.height + 2 * m
@@ -134,17 +135,45 @@ Flickable {
 
         Card {
             Title { text: Tr.t("Appearance") }
-            Repeater {
-                model: Theme.themeGroups
-                delegate: Column {
-                    width: parent.width
-                    spacing: 8
-                    Label { text: Tr.t(modelData.name) }
-                    Chips {
-                        width: parent.width
-                        model: Object.keys(Theme.themes).filter(k => (Theme.themes[k].group || "general") === modelData.id).map(k => ({ key: k, label: Theme.themes[k].name }))
-                        current: page.look.theme
-                        onPicked: key => ui.setTheme(key)
+            // the group's tabs, then its themes as small previews: the theme's own background, a card and its accent, and its name in its own colours
+            Chips {
+                width: parent.width
+                model: Theme.themeGroups.map(g => ({ key: g.id, label: Tr.t(g.short || g.name) }))
+                current: page.themeTab || (Theme.themes[page.look.theme] || ({})).group || "general"
+                onPicked: key => page.themeTab = key
+            }
+            Flow {
+                id: swatches
+                width: parent.width
+                spacing: 8
+                readonly property int cols: width > 560 ? 4 : 3
+                Repeater {
+                    model: Object.keys(Theme.themes).filter(k => (Theme.themes[k].group || "general") === (page.themeTab || (Theme.themes[page.look.theme] || ({})).group || "general"))
+                    delegate: Rectangle {
+                        readonly property var th: Theme.themes[modelData]
+                        readonly property bool on: page.look.theme === modelData
+                        width: Math.floor((swatches.width - (swatches.cols - 1) * swatches.spacing) / swatches.cols)
+                        height: 62
+                        radius: Theme.radius
+                        color: th.bg
+                        border.width: on ? 3 : 1
+                        border.color: on ? th.accent : th.border
+                        Rectangle {
+                            id: chip
+                            x: 10; y: 10; width: parent.width - 20; height: 18; radius: 9
+                            color: th.card
+                            Rectangle { x: 4; anchors.verticalCenter: parent.verticalCenter; width: 10; height: 10; radius: 5; color: th.accent }
+                            Rectangle { x: 18; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 24; height: 4; radius: 2; color: th.circle }
+                        }
+                        Text {
+                            anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 9 }
+                            elide: Text.ElideRight
+                            color: th.text
+                            font.pixelSize: 13
+                            font.weight: on ? Font.DemiBold : Font.Normal
+                            text: th.name
+                        }
+                        MouseArea { anchors.fill: parent; onClicked: ui.setTheme(modelData) }
                     }
                 }
             }

@@ -87,7 +87,7 @@ QtObject {
     // the picker lists the themes under these headings, in this order (Preferences.qml); a theme without a group goes under the first
     readonly property var themeGroups: [
         { id: "general", name: "General" }, { id: "consoles", name: "Consoles" },
-        { id: "os", name: "Operating systems and launchers" }, { id: "games", name: "Games" }
+        { id: "os", name: "Operating systems and launchers", short: "Systems" }, { id: "games", name: "Games" }
     ]
     // "Follow game": the whole palette is built from one colour taken from what the top screen shows
     function tinted(a, f) {

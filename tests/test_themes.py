@@ -7,7 +7,7 @@ KEYS = ("bg", "card", "circle", "border", "text", "muted", "accent")
 def themes():
     with open(QML) as f:
         src = f.read()
-    groups = re.findall(r'\{ id: "(\w+)", name: "[^"]+" \}', src)
+    groups = re.findall(r'\{ id: "(\w+)", name: "[^"]+"[^}]*\}', src)
     found = {}
     for m in re.finditer(r"^        (\w+):\s*\{(.*)\}[,]?$", src, re.M):
         body = m.group(2)
