@@ -16,6 +16,11 @@ ArmadaLive stands on other people's work. Thank you.
 - **[libretro database](https://github.com/libretro/libretro-database)** – the cheat files (`.cht`) shown on the Cheats page
   are read from the user's own RetroArch cheats folder; none are bundled here.
 - **[Qt for Python (PySide6)](https://doc.qt.io/qtforpython-6/)** – the toolkit, shipped with Armada OS.
+- **Fonts** (in `armadalive/fonts`, each under the SIL Open Font License 1.1, license texts beside the files): [VT323](https://fonts.google.com/specimen/VT323)
+  by Peter Hull, [Silkscreen](https://fonts.google.com/specimen/Silkscreen) by Jason Kottke, [Rajdhani](https://fonts.google.com/specimen/Rajdhani) by Indian
+  Type Foundry, [Fredoka](https://fonts.google.com/specimen/Fredoka) by the Fredoka Project Authors, [Cinzel](https://fonts.google.com/specimen/Cinzel) by
+  Natanael Gama and [Patrick Hand](https://fonts.google.com/specimen/Patrick+Hand) by Patrick Wagesreiter. Taken from the
+  [Google Fonts repository](https://github.com/google/fonts); the themes that use them are listed in `armadalive/qml/Theme.qml`.
 - **Claude Code** by Anthropic – wrote much of the code, see [AI_DISCLOSURE.md](AI_DISCLOSURE.md).
 
 AYN, AYN Thor, Steam, Valve, ES-DE, RetroArch and the other names mentioned belong to their owners. ArmadaLive is an

@@ -33,7 +33,21 @@ QtObject {
     property int ease: Easing.OutCubic
     property int popEase: Easing.OutBack
     property real overshoot: 1.0
-    readonly property string fontFamily: ({ mono: "Hack", serif: "Nimbus Roman" })[fontKey] || ""
+    property string iconKey: "normal"
+    property real iconW: 1.8
+    property string iconCap: "round"
+    property string iconJoin: "round"
+    property real iconFill: 0
+    // fonts: the system's (Hack, Nimbus Roman) and the ones in armadalive/fonts (SIL Open Font License, see CREDITS.md)
+    readonly property string fontFamily: ({ mono: "Hack", serif: "Nimbus Roman", pixel: "Silkscreen", term: "VT323", tech: "Rajdhani", round: "Fredoka", fantasy: "Cinzel", hand: "Patrick Hand" })[fontKey] || ""
+    readonly property var iconStyles: ({
+        thin:   { w: 1.3, cap: "round",  join: "round", fill: 0 },
+        normal: { w: 1.8, cap: "round",  join: "round", fill: 0 },
+        bold:   { w: 2.6, cap: "round",  join: "round", fill: 0 },
+        block:  { w: 2.4, cap: "square", join: "miter", fill: 0 },
+        line:   { w: 1.5, cap: "butt",   join: "miter", fill: 0 },
+        duo:    { w: 1.8, cap: "round",  join: "round", fill: 0.22 }
+    })
     function dur(ms) { return Math.max(1, Math.round(ms * speed)) }
     // a pill-shaped control (a button, a chip) and a round one (an icon disc), in the theme's shape
     function pill(h) { return shape === "round" || shape === "pill" ? h / 2 : shape === "soft" ? h * 0.3 : shape === "cut" ? 5 : 3 }
@@ -49,31 +63,61 @@ QtObject {
         steps:  { speed: 0.5, ease: Easing.Linear,    pop: Easing.Linear,   over: 0.0 }
     })
     readonly property var styles: ({
-        // general
-        obsidian: { shape: "soft", motion: "gentle", font: "serif" }, emerald: { shape: "square", pattern: "scan", motion: "steps", font: "mono" },
-        neon: { shape: "cut", pattern: "grid", motion: "snappy" }, dracula: { shape: "soft" }, nord: { shape: "soft", motion: "gentle" },
-        gruvbox: { shape: "soft", font: "mono" }, solarized: { shape: "soft", font: "mono" }, amber: { shape: "square", pattern: "scan", motion: "steps", font: "mono" },
-        // consoles
-        snes: { shape: "pill", motion: "bouncy" }, gameboy: { shape: "square", pattern: "grid", motion: "steps", font: "mono", border: 2 },
-        ps2: { pattern: "grid", motion: "gentle" }, famicom: { shape: "square", motion: "snappy", border: 2 }, ds: { shape: "pill", pattern: "dots", motion: "bouncy" },
-        n3ds: { shape: "soft", pattern: "checker", motion: "bouncy" }, dreamcast: { shape: "pill", pattern: "dots" }, saturn: { shape: "cut", pattern: "grid" },
-        megadrive: { shape: "square", pattern: "scan", motion: "snappy" }, n64: { shape: "soft", motion: "bouncy", border: 2 },
-        gamecube: { shape: "soft", pattern: "dots", motion: "gentle" }, wii: { shape: "pill", pattern: "grid" }, switch: { shape: "soft", motion: "snappy", border: 2 },
-        xbox: { shape: "soft", pattern: "diag", motion: "gentle" }, vita: { shape: "pill", pattern: "dots" }, atari: { shape: "square", pattern: "diag", motion: "steps", border: 2 },
-        // operating systems and launchers
-        iisu: { shape: "pill", pattern: "dots", motion: "bouncy" }, iisunight: { shape: "pill", pattern: "stars", motion: "bouncy" }, steamos: { shape: "soft", motion: "snappy" },
-        winxp: { shape: "soft", motion: "smooth", border: 2 }, win11: { shape: "soft", motion: "snappy" }, macos: { shape: "pill" }, android: { shape: "pill", pattern: "dots" },
-        ubuntu: { shape: "soft" }, plasma: { shape: "soft", motion: "snappy" },
-        // games
-        ootime: { shape: "soft", pattern: "diag", motion: "gentle", font: "serif" }, botw: { shape: "soft", pattern: "grid", motion: "gentle", font: "serif" },
-        totk: { shape: "soft", pattern: "grid", motion: "gentle" }, gow: { shape: "cut", motion: "gentle", font: "serif" }, ff7: { shape: "cut", pattern: "scan", motion: "snappy" },
-        mario: { shape: "pill", pattern: "checker", motion: "bouncy", border: 3 }, pokemon: { shape: "pill", pattern: "dots", motion: "bouncy" },
-        sonic: { shape: "pill", pattern: "diag", motion: "snappy" }, metroid: { shape: "cut", pattern: "grid", motion: "snappy", font: "mono" },
-        cyberpunk: { shape: "cut", pattern: "scan", motion: "snappy", font: "mono" }, hollowknight: { shape: "soft", pattern: "stars", motion: "gentle", font: "serif" },
-        celeste: { shape: "square", pattern: "stars", motion: "steps" }, halo: { shape: "cut", pattern: "grid", motion: "snappy" },
-        minecraft: { shape: "square", pattern: "checker", motion: "steps", font: "mono", border: 3 }, acnh: { shape: "pill", pattern: "dots", motion: "bouncy" },
-        splatoon: { shape: "soft", pattern: "diag", motion: "bouncy", border: 3 }, kirby: { shape: "pill", pattern: "dots", motion: "bouncy" },
-        skyrim: { shape: "soft", motion: "gentle", font: "serif" }, stardew: { shape: "square", pattern: "checker", motion: "steps", font: "serif", border: 2 }
+        stock:        { icons: "normal" },
+        thorblue:     { icons: "normal" },
+        obsidian:     { shape: "soft", motion: "gentle", font: "serif", icons: "thin" },
+        emerald:      { shape: "square", pattern: "scan", motion: "steps", font: "term", icons: "line" },
+        neon:         { shape: "cut", pattern: "grid", motion: "snappy", font: "tech", icons: "thin" },
+        follow:       { icons: "normal" },
+        dracula:      { shape: "soft", icons: "duo" },
+        nord:         { shape: "soft", motion: "gentle", icons: "thin" },
+        gruvbox:      { shape: "soft", font: "mono", icons: "bold" },
+        solarized:    { shape: "soft", font: "mono", icons: "thin" },
+        amber:        { shape: "square", pattern: "scan", motion: "steps", font: "term", icons: "line" },
+        snes:         { shape: "pill", motion: "bouncy", font: "round", icons: "bold" },
+        gameboy:      { shape: "square", pattern: "grid", motion: "steps", font: "pixel", icons: "block", border: 2 },
+        ps2:          { pattern: "grid", motion: "gentle", font: "tech", icons: "thin" },
+        famicom:      { shape: "square", motion: "snappy", font: "pixel", icons: "block", border: 2 },
+        ds:           { shape: "pill", pattern: "dots", motion: "bouncy", font: "round", icons: "bold" },
+        n3ds:         { shape: "soft", pattern: "checker", motion: "bouncy", font: "round", icons: "duo" },
+        dreamcast:    { shape: "pill", pattern: "dots", font: "round", icons: "bold" },
+        saturn:       { shape: "cut", pattern: "grid", font: "tech", icons: "line" },
+        megadrive:    { shape: "square", pattern: "scan", motion: "snappy", font: "tech", icons: "block" },
+        n64:          { shape: "soft", motion: "bouncy", font: "round", icons: "bold", border: 2 },
+        gamecube:     { shape: "soft", pattern: "dots", motion: "gentle", font: "round", icons: "duo" },
+        wii:          { shape: "pill", pattern: "grid", font: "round", icons: "thin" },
+        switch:       { shape: "soft", motion: "snappy", icons: "bold", border: 2 },
+        xbox:         { shape: "soft", pattern: "diag", motion: "gentle", icons: "duo" },
+        vita:         { shape: "pill", pattern: "dots", icons: "thin" },
+        atari:        { shape: "square", pattern: "diag", motion: "steps", font: "term", icons: "block", border: 2 },
+        iisu:         { shape: "pill", pattern: "dots", motion: "bouncy", font: "round", icons: "duo" },
+        iisunight:    { shape: "pill", pattern: "stars", motion: "bouncy", font: "round", icons: "duo" },
+        steamos:      { shape: "soft", motion: "snappy", icons: "normal" },
+        winxp:        { shape: "soft", motion: "smooth", icons: "bold", border: 2 },
+        win11:        { shape: "soft", motion: "snappy", icons: "thin" },
+        macos:        { shape: "pill", icons: "normal" },
+        android:      { shape: "pill", pattern: "dots", font: "round", icons: "duo" },
+        ubuntu:       { shape: "soft", icons: "bold" },
+        plasma:       { shape: "soft", motion: "snappy", icons: "normal" },
+        ootime:       { shape: "soft", pattern: "diag", motion: "gentle", font: "fantasy", icons: "thin" },
+        botw:         { shape: "soft", pattern: "grid", motion: "gentle", font: "serif", icons: "thin" },
+        totk:         { shape: "soft", pattern: "grid", motion: "gentle", icons: "line" },
+        gow:          { shape: "cut", motion: "gentle", font: "fantasy", icons: "bold" },
+        ff7:          { shape: "cut", pattern: "scan", motion: "snappy", font: "tech", icons: "line" },
+        mario:        { shape: "pill", pattern: "checker", motion: "bouncy", font: "round", icons: "bold", border: 3 },
+        pokemon:      { shape: "pill", pattern: "dots", motion: "bouncy", font: "round", icons: "bold" },
+        sonic:        { shape: "pill", pattern: "diag", motion: "snappy", font: "tech", icons: "bold" },
+        metroid:      { shape: "cut", pattern: "grid", motion: "snappy", font: "tech", icons: "line" },
+        cyberpunk:    { shape: "cut", pattern: "scan", motion: "snappy", font: "tech", icons: "line" },
+        hollowknight: { shape: "soft", pattern: "stars", motion: "gentle", font: "serif", icons: "thin" },
+        celeste:      { shape: "square", pattern: "stars", motion: "steps", font: "pixel", icons: "block" },
+        halo:         { shape: "cut", pattern: "grid", motion: "snappy", font: "tech", icons: "line" },
+        minecraft:    { shape: "square", pattern: "checker", motion: "steps", font: "pixel", icons: "block", border: 3 },
+        acnh:         { shape: "pill", pattern: "dots", motion: "bouncy", font: "round", icons: "duo" },
+        splatoon:     { shape: "soft", pattern: "diag", motion: "bouncy", font: "round", icons: "bold", border: 3 },
+        kirby:        { shape: "pill", pattern: "dots", motion: "bouncy", font: "round", icons: "bold" },
+        skyrim:       { shape: "soft", motion: "gentle", font: "fantasy", icons: "thin" },
+        stardew:      { shape: "square", pattern: "checker", motion: "steps", font: "hand", icons: "bold", border: 2 }
     })
 
     // palettes: stock and Thor Blue follow the colours measured from the stock dual-screen app's screenshot; the console themes
@@ -149,6 +193,9 @@ QtObject {
         const st = styles[name] || ({}), m = motions[st.motion || "smooth"]
         shape = st.shape || "round"; pattern = st.pattern || "none"; fontKey = st.font || ""; borderW = st.border || 1
         radius = radiusFor(shape)
+        iconKey = st.icons || "normal"
+        const ic = iconStyles[iconKey]
+        iconW = ic.w; iconCap = ic.cap; iconJoin = ic.join; iconFill = ic.fill
         speed = m.speed; ease = m.ease; popEase = m.pop; overshoot = m.over
     }
     function apply(name, accentRgb) {

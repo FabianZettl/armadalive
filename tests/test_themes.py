@@ -57,7 +57,7 @@ class Styles(unittest.TestCase):
         _, found = themes()
         block = src[src.index("readonly property var styles"):]
         block = block[:block.index("\n    })")]
-        entries = re.findall(r"(\w+): \{ ([^}]*) \}", block)
+        entries = re.findall(r"(\w+):\s*\{ ([^}]*) \}", block)
         self.assertGreater(len(entries), 40)
         for key, body in entries:
             self.assertIn(key, found, f"style for unknown theme {key}")
@@ -65,4 +65,5 @@ class Styles(unittest.TestCase):
             self.assertIn(d.get("shape", "round"), ("round", "pill", "soft", "square", "cut"), key)
             self.assertIn(d.get("pattern", "none"), ("none", "dots", "grid", "scan", "diag", "checker", "stars"), key)
             self.assertIn(d.get("motion", "smooth"), ("smooth", "snappy", "bouncy", "gentle", "steps"), key)
-            self.assertIn(d.get("font", ""), ("", "mono", "serif"), key)
+            self.assertIn(d.get("font", ""), ("", "mono", "serif", "pixel", "term", "tech", "round", "fantasy", "hand"), key)
+            self.assertIn(d.get("icons", "normal"), ("thin", "normal", "bold", "block", "line", "duo"), key)

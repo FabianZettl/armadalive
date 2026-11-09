@@ -40,9 +40,12 @@ class UiSettings(QObject):
     @Slot(str)
     def applyFont(self, family):
         """The app's font for every text that sets no family of its own (the theme's `font`); an empty name goes back to the system's."""
-        from PySide6.QtGui import QFont, QGuiApplication
+        import glob
+        from PySide6.QtGui import QFont, QFontDatabase, QGuiApplication
         if QGuiApplication.instance() is None:
             return
+        if not hasattr(self, "_fonts"):    # the fonts that ship with the app (armadalive/fonts)
+            self._fonts = [QFontDatabase.addApplicationFont(f) for f in sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "*.ttf")))]
         if not hasattr(self, "_base_font"):
             self._base_font = QGuiApplication.font()
         font = QFont(self._base_font)

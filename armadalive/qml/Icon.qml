@@ -10,6 +10,7 @@ Canvas {
     onNameChanged: requestPaint()
     onColorChanged: requestPaint()
     onWidthChanged: requestPaint()
+    Connections { target: Theme; function onIconKeyChanged() { ic.requestPaint() } }
 
     function rr(c, x, y, w, h, r) {
         c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r)
@@ -24,9 +25,9 @@ Canvas {
         c.scale(width / 24, height / 24)
         c.strokeStyle = color
         c.fillStyle = color
-        c.lineWidth = 1.8
-        c.lineCap = "round"
-        c.lineJoin = "round"
+        c.lineWidth = Theme.iconW
+        c.lineCap = Theme.iconCap
+        c.lineJoin = Theme.iconJoin
         c.beginPath()
         switch (name) {
         case "play":        // game controller
@@ -104,6 +105,10 @@ Canvas {
             ci(c, 12, 12, 9); ln(c, 12, 11, 12, 17); ci(c, 12, 7.6, 0.5); break
         default:
             ci(c, 12, 12, 8)
+        }
+        // the duotone icons tint the closed shapes; open strokes (the radio arcs, the check mark) stay lines
+        if (Theme.iconFill > 0 && ["play", "apps", "mode", "perf", "book", "shot", "vpn", "info", "add", "done"].indexOf(name) >= 0) {
+            c.save(); c.globalAlpha = Theme.iconFill; c.fill(); c.restore()
         }
         c.stroke()
     }
