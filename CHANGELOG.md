@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 - **Themes change more than colours**: each theme now also has a *shape* (round, pill, soft, square or cut corners for buttons, cards, icon discs and app tiles), a faint *backdrop pattern* (dots, grid, scan lines, diagonal stripes, checkerboard or stars), a *motion* feel (smooth, snappy, bouncy, gentle or stepped animations, used for the app grid and the buttons) a *font* (six fonts ship with the app: pixel, terminal, techno, rounded, fantasy and handwriting, plus the system's monospace and serif) and an *icon style* (thin, normal, bold, blocky with square ends, sharp lines or duotone with a tinted fill), and thicker outlines. For example Game Boy and Minecraft are square, monospace and stepped, Kirby and Mario are pill-shaped and bouncy, Cyberpunk has cut corners and scan lines. The picker previews each theme's shape and outline. Seen in snapshots on a Thor, not on the display; the animations are only described by their timing, not watched.
 - **The stick LEDs follow the theme** by default: they take the theme's accent colour, also when the theme or the accent changes (a moment later, because it fades), as long as the LEDs are on and the root helper is installed. Picking a colour of your own on the Mode page stops that; the *Theme* circle there turns it on again (kept in `ui.json` as `ledFollow`). Tried on a Thor by switching themes: the colour in `/etc/armada/rgb.json` followed.
