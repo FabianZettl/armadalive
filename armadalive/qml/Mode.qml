@@ -17,7 +17,9 @@ Flickable {
     clip: true
 
     function hex(c) { return [c.r, c.g, c.b].map(x => ("0" + Math.round(x * 255).toString(16)).slice(-2)).join("").toUpperCase() }
+    readonly property bool follows: ui.state.ledFollow !== false
     function paint(color) {
+        ui.setLedFollow(false)   // a colour picked here is the user's own: the LEDs stop following the theme
         led = color
         if (helper) settings.setRgb(true, color, rgb.brightness === undefined ? 25 : rgb.brightness)
     }
@@ -123,11 +125,19 @@ Flickable {
                 Rectangle {
                     width: 52; height: 52; radius: 26
                     color: Theme.accent
-                    border.width: page.ledColor === page.hex(Theme.accent) ? 4 : 1
-                    border.color: page.ledColor === page.hex(Theme.accent) ? Theme.text : Theme.border
+                    border.width: page.follows ? 4 : 1
+                    border.color: page.follows ? Theme.text : Theme.border
                     Text { anchors.centerIn: parent; color: Theme.onAccent; font.pixelSize: 11; font.weight: Font.DemiBold; text: Tr.t("Theme") }
-                    MouseArea { anchors.fill: parent; onClicked: page.paint(page.hex(Theme.accent)) }
+                    MouseArea { anchors.fill: parent; onClicked: { page.paint(page.hex(Theme.accent)); ui.setLedFollow(true) } }
                 }
+            }
+            Text {
+                visible: page.follows && page.helper
+                width: parent.width
+                wrapMode: Text.WordWrap
+                color: Theme.muted
+                font.pixelSize: 13
+                text: Tr.t("The LEDs follow the theme until you pick a colour of your own.")
             }
             Text {
                 visible: !page.helper

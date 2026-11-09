@@ -75,7 +75,22 @@ Window {
         Theme.apply(ui.state.theme, ui.state.theme === "follow" ? followColor : ui.state.accent)
     }
     onFollowColorChanged: applyTheme()
-    Component.onCompleted: { if (dimEnabled) idle.start(); applyVisibility(); applyTheme(); Tr.lang = ui.state.lang }
+    Component.onCompleted: { if (dimEnabled) idle.start(); applyVisibility(); applyTheme(); Tr.lang = ui.state.lang; ledSync.start() }
+    // The stick LEDs follow the theme's accent, until the user picks a colour of their own (Mode page). Only while the LEDs are on and the
+    // root helper can set them; a moment after the last change, because the accent fades and "Follow game" changes it with every game.
+    function accentHex() { const c = Theme.accent; return [c.r, c.g, c.b].map(x => ("0" + Math.round(x * 255).toString(16)).slice(-2)).join("").toUpperCase() }
+    Timer {
+        id: ledSync
+        interval: 1500
+        onTriggered: {
+            const d = settings.data, rgb = d.rgb || ({})
+            if (ui.state.ledFollow === false || d.helper !== true || rgb.enabled === false) return
+            if ((rgb.color || "").toUpperCase() !== win.accentHex()) settings.setRgb(true, win.accentHex(), rgb.brightness === undefined ? 25 : rgb.brightness)
+        }
+    }
+    Connections { target: Theme; function onAccentChanged() { ledSync.restart() } }
+    Connections { target: ui; function onChanged() { ledSync.restart() } }
+    Connections { target: settings; function onChanged() { if (!ledSync.running) ledSync.start() } }
     Connections {
         target: ui
         function onChanged() { win.applyTheme(); Tr.lang = ui.state.lang }

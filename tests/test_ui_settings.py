@@ -16,7 +16,7 @@ class Persistence(unittest.TestCase):
     def test_choices_survive_a_restart(self):
         a = ui.UiSettings()
         a.setTheme("famicom"); a.setAccent("68E1FB"); a.setLang("de"); a.setAnimate(False); a.setDim(False)
-        self.assertEqual(ui.UiSettings().state, dict(theme="famicom", accent="68E1FB", lang="de", animate=False, dim=False, close=True, heat=85, apps=True))
+        self.assertEqual(ui.UiSettings().state, dict(theme="famicom", accent="68E1FB", lang="de", animate=False, dim=False, close=True, heat=85, apps=True, ledFollow=True))
 
     def test_a_file_with_every_key_is_read(self):  # this used to raise and silently fall back to the defaults
         write(dict(theme="ps2", accent="", lang="de", animate=False, dim=False, close=True, heat=85, apps=True))

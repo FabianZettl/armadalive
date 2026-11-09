@@ -5,7 +5,7 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 CONFIG = os.path.expanduser("~/.config/armadalive/ui.json")
 
 
-DEFAULTS = dict(theme="stock", accent="", lang="en", animate=True, dim=True, close=True, heat=85, apps=True)
+DEFAULTS = dict(theme="stock", accent="", lang="en", animate=True, dim=True, close=True, heat=85, apps=True, ledFollow=True)
 
 
 class UiSettings(QObject):
@@ -35,6 +35,12 @@ class UiSettings(QObject):
     def setTheme(self, key):
         self._s["theme"] = key
         self._s["accent"] = ""  # a new theme starts with its own accent
+        self._save()
+
+    @Slot(bool)
+    def setLedFollow(self, on):
+        """The stick LEDs take the theme's accent colour (until the user picks a colour of their own)."""
+        self._s["ledFollow"] = bool(on)
         self._save()
 
     @Slot(bool)
