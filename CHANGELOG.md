@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Themes in groups, and five game themes**: Settings now lists the themes under *General*, *Consoles*, *Operating systems and launchers* and *Games*. New in *Games*: **Ocarina of Time** (forest green and gold), **Breath of the Wild** (a light theme in pale stone and Sheikah blue), **Tears of the Kingdom** (dark with Zonai teal), **God of War** (ash and blood red) and **Final Fantasy VII** (Shinra navy with Mako green). The colours are my guess at each game's look, not measured; the accent can be changed as for every theme.
+- **Themes in groups, and 40 new themes**: Settings lists the themes under *General*, *Consoles*, *Operating systems and launchers* and *Games*. *Games* gets Ocarina of Time, Breath of the Wild, Tears of the Kingdom, God of War and Final Fantasy VII, and also Super Mario, Pokémon, Sonic, Metroid, Cyberpunk 2077, Hollow Knight, Celeste, Halo, Minecraft, Animal Crossing, Splatoon, Kirby, Skyrim and Stardew Valley. *Consoles* gets Dreamcast, Sega Saturn, Mega Drive, Nintendo 64, GameCube, Wii, Switch, Xbox, PlayStation Vita and Atari 2600. *Operating systems and launchers* gets Windows XP, Windows 11, macOS, Android, Ubuntu and KDE Plasma. *General* gets Dracula, Nord, Gruvbox, Solarized Dark and an amber terminal. Several are light themes. The colours are my guess at each look, not measured, and a test checks that text stays readable; the accent can be changed as for every theme.
 
 ## 0.5.2
 
