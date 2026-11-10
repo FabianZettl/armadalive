@@ -13,11 +13,13 @@ n=0
 while :; do
     if [ -S "$run/armada-plasma-bottom" ]; then
         break   # the normal case: the bottom Plasma session
-    elif [ -r "$run/armada-bottom-env" ]; then
+    elif [ -r "$run/armada-bottom-env" ] && [ "$n" -ge "${ARMADALIVE_X11_AFTER:-30}" ]; then
+        # the bottom gamescope is there but its Plasma session never came up: show the window on its X11 side. Not before the wait is over: at boot the
+        # gamescope (and this file) come first, and an X11 window is invisible to Plasma's KWin: no activation through it, no on-screen keyboard.
         display=$(sed -n 's/^DISPLAY=//p' "$run/armada-bottom-env" | head -1)
         [ -n "$display" ] && export QT_QPA_PLATFORM=xcb DISPLAY="$display"
         break
-    elif [ ! -e "$run/armada-bottom-screen-active" ]; then
+    elif [ ! -r "$run/armada-bottom-env" ] && [ ! -e "$run/armada-bottom-screen-active" ]; then
         # Desktop mode: there is no bottom session, only the one Plasma session of the desktop. Show a normal window in it
         for sock in "$run"/wayland-[0-9]*; do
             [ -S "$sock" ] && { export QT_QPA_PLATFORM=wayland WAYLAND_DISPLAY="${sock##*/}"; windowed=--windowed; break; }

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **ArmadaLive starts in the bottom Plasma session at boot, not on its X11 side**: the start script used the bottom gamescope's X11 display as soon as that gamescope had written its environment file, which at boot is before the Plasma session is up. An X11 window is invisible to Plasma's KWin, so tapping the AYN button could not bring the window to the front and the on-screen keyboard could not attach to it. It now waits for the Plasma session (up to 30 seconds) before it falls back to X11. Found by a health check after the Armada OS beta update (`scripts/armada-check.sh`, new: checks services, the bottom session, the keyboard, the AYN button route, brightness, power, helper, Steam and ES-DE and prints PASS / FAIL). Tested by restarting the service and by tests for the wait; not by a reboot.
+
 ## 0.6.0
 
 - **Themes change more than colours**: each theme now also has a *shape* (round, pill, soft, square or cut corners for buttons, cards, icon discs and app tiles), a faint *backdrop pattern* (dots, grid, scan lines, diagonal stripes, checkerboard or stars), a *motion* feel (smooth, snappy, bouncy, gentle or stepped animations, used for the app grid and the buttons) a *font* (six fonts ship with the app: pixel, terminal, techno, rounded, fantasy and handwriting, plus the system's monospace and serif) and an *icon style* (thin, normal, bold, blocky with square ends, sharp lines or duotone with a tinted fill), and thicker outlines. For example Game Boy and Minecraft are square, monospace and stepped, Kirby and Mario are pill-shaped and bouncy, Cyberpunk has cut corners and scan lines. The picker previews each theme's shape and outline. Seen in snapshots on a Thor, not on the display; the animations are only described by their timing, not watched.

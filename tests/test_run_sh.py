@@ -34,10 +34,20 @@ class RunSh(unittest.TestCase):
     def test_a_dead_bottom_session_falls_back_to_its_x11_side(self):
         with open(os.path.join(self.dir, "armada-bottom-env"), "w") as f:
             f.write("DISPLAY=:2\n")
-        r = self.run_sh()
+        r = self.run_sh(ARMADALIVE_X11_AFTER="0")
         self.assertIn("platform=xcb", r.stdout)
         self.assertIn("display=:2", r.stdout)
         self.assertNotIn("--windowed", r.stdout)
+
+    def test_at_boot_the_plasma_session_is_waited_for_before_the_x11_side_is_used(self):
+        import threading, time
+        with open(os.path.join(self.dir, "armada-bottom-env"), "w") as f:     # the bottom gamescope is up, its Plasma session is not yet
+            f.write("DISPLAY=:2\n")
+        threading.Thread(target=lambda: (time.sleep(1.5), self.sock("armada-plasma-bottom")), daemon=True).start()
+        r = self.run_sh(ARMADALIVE_X11_AFTER="10", ARMADALIVE_WAIT="20", WAYLAND_DISPLAY="armada-plasma-bottom", QT_QPA_PLATFORM="wayland")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("wayland=armada-plasma-bottom", r.stdout)
+        self.assertNotIn("platform=xcb", r.stdout)
 
     def test_desktop_mode_shows_a_window_in_the_desktops_session(self):
         self.sock("wayland-0")
