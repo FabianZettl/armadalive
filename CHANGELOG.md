@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.6.1
 
 - **ArmadaLive starts in the bottom Plasma session at boot, not on its X11 side**: the start script used the bottom gamescope's X11 display as soon as that gamescope had written its environment file, which at boot is before the Plasma session is up. An X11 window is invisible to Plasma's KWin, so tapping the AYN button could not bring the window to the front and the on-screen keyboard could not attach to it. It now waits for the Plasma session (up to 30 seconds) before it falls back to X11. Found by a health check after the Armada OS beta update (`scripts/armada-check.sh`, new: checks services, the bottom session, the keyboard, the AYN button route, brightness, power, helper, Steam and ES-DE and prints PASS / FAIL). Tested by restarting the service and by tests for the wait; not by a reboot.
+- **Known, not ours: the charge limit on the Armada OS beta `20261109`**: writing the limit now fails with "the battery did not accept the limit (Connection timed out)" (before, the write passed but the battery always read back 0). The battery controller or the image refuses it; ArmadaLive only shows the message.
 
 ## 0.6.0
 

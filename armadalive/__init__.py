@@ -1,3 +1,3 @@
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 # "owner/name" of the GitHub repository: the in-app update check and the source link use it
 REPO = "FabianZettl/armadalive"
