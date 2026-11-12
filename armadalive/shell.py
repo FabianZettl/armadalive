@@ -22,6 +22,13 @@ def _find_bus():
             continue
         if "kwin_wayland" in names:
             return addr
+    # Desktop mode: there is one Plasma session, and its KWin is on the ordinary session bus
+    session = f"unix:path={os.environ.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}'}/bus"
+    try:
+        if "org.kde.KWin" in subprocess.run(["busctl", f"--address={session}", "list"], capture_output=True, text=True, timeout=3).stdout:
+            return session
+    except (OSError, subprocess.TimeoutExpired):
+        pass
     return None
 
 
@@ -96,6 +103,12 @@ class Shell(QObject):
         self._pinned = not self._pinned
         self.keyboardChanged.emit()
         threading.Thread(target=keyboard_show if self._pinned else keyboard_hide, daemon=True).start()
+
+    @Slot(result=bool)
+    def hasKwin(self):
+        """Whether a Plasma KWin can be asked to raise the window. Without one (the bare X11 side of the bottom screen) there is nothing that can hide
+        the window and bring it back, so the AYN tap only ever brings it up."""
+        return _find_bus() is not None
 
     @Slot()
     def activate(self):

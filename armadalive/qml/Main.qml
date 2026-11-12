@@ -121,7 +121,7 @@ Window {
         // Going away waits for the release, because holding the button turns the screen off and must not hide the window first.
         function onPressed() {
             win.pressWasBlanked = win.blanked
-            win.pressWasFront = win.active && win.visible && !win.blanked && win.visibility !== Window.Minimized
+            win.pressWasFront = shell.hasKwin() && win.active && win.visible && !win.blanked && win.visibility !== Window.Minimized
             if (!win.pressWasFront) win.bringUp()
             else win.wake()
             check.restart()
@@ -157,7 +157,7 @@ Window {
     Timer {
         id: check
         interval: 900
-        onTriggered: console.info("AYN: window visible=" + win.visible + " active=" + win.active)
+        onTriggered: console.info("AYN: platform=" + Qt.platform.pluginName + " visible=" + win.visible + " active=" + win.active + " kwin=" + shell.hasKwin())
     }
     Timer { id: hideChrome; interval: 3000; onTriggered: win.peek = false }
 

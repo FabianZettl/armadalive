@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **The AYN tap in desktop mode raises ArmadaLive above other windows** (issue #5): the app looked for the Plasma window manager only on the bottom screen's private bus, so in desktop mode, where Plasma sits on the ordinary session bus, it could not ask Plasma to bring the window forward and the taskbar icon only blinked. It now also looks on the session bus. Not tried in desktop mode on a Thor.
+- **Without a Plasma window manager the AYN tap only brings ArmadaLive up** (it never hides itself there): on the bare X11 side of the bottom screen nothing can bring a hidden window back, so a tap that "sent it to the background" looked like it did nothing. The tap log line now says which platform the app runs on and whether it found Plasma, so the next report shows it.
+
 ## 0.7.1
 
 - **The screen stays bright while you use it** (fixes 0.7.0, where this did not work, issue #4): the 10 second timer is now restarted by every touch, tap, click and key press on the window, however an item takes it (a list that scrolls, a button, the app grid). Before, only touches that reached one particular item restarted it, so tapping or swiping in some places still let it run out. A finger going down or up always counts, movement counts a few times a second. Checked with simulated clicks and a list drag in a real Qt Quick window (they were all seen), not by watching the screen.
