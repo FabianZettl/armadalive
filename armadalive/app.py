@@ -26,6 +26,7 @@ from .settings import Settings
 from .shell import Shell
 from .steamshortcuts import SteamShortcuts
 from .steamui import SteamUi
+from .activity import Activity
 from .tasks import Tasks
 from .thermal import Thermal
 from .tiles import Tiles
@@ -48,7 +49,7 @@ def main():
     now, monitor = NowPlaying(gamescope, steamui), SystemMonitor(fps=lambda: gamescope.state["fps"])
     backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=Apps(), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
                     health=Health(steamui), rules=GameRules(now, gamescope, monitor), tileStore=Tiles(),
-                    battery=Battery(), media=Media(), backup=Backup(), artwork=Palette(), steamShortcuts=SteamShortcuts(now), tasks=Tasks(), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad())
+                    battery=Battery(), media=Media(), backup=Backup(), artwork=Palette(), steamShortcuts=SteamShortcuts(now), tasks=Tasks(), activity=Activity(), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad())
     pad = backends["pad"] = Pad()   # must stay referenced, like the rest
     backends["closer"] = Closer(pad, gamescope, now, backends["ui"])
     backends["thermal"] = Thermal(monitor, backends["ui"])

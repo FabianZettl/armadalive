@@ -53,6 +53,8 @@ Window {
     // sees every touch, takes none; a finger that stays down and moves (a slider, a scroll, the trackpad) is not idle either
     // a finger that lies still on the glass is not idle either: the timer checks `touch.active` before it dims, and lifting the finger starts it again
     PointHandler { id: touch; target: null; onActiveChanged: win.wake(); onPointChanged: if (active && win.dimEnabled) idle.restart() }
+    // every touch, click and key on the window, whichever item takes it (activity.py): the timer starts again for all of them, a finger going down or up included
+    Connections { target: activity; function onSeen() { if (!win.dimmed && win.dimEnabled) idle.restart() } }
     // a new game, logo or background (scrolling in ES-DE or Steam, a game starting) brightens it too
     readonly property string shown: [now.kind, now.title, now.logo, now.fanart].join("|")
     onShownChanged: wake()
@@ -79,7 +81,7 @@ Window {
         ui.applyFont(Theme.fontFamily)
     }
     onFollowColorChanged: applyTheme()
-    Component.onCompleted: { if (dimEnabled) idle.start(); applyVisibility(); applyTheme(); Tr.lang = ui.state.lang; ledSync.start() }
+    Component.onCompleted: { if (dimEnabled) idle.start(); applyVisibility(); applyTheme(); Tr.lang = ui.state.lang; ledSync.start(); activity.watch(win) }
     // The stick LEDs follow the theme's accent, until the user picks a colour of their own (Mode page). Only while the LEDs are on and the
     // root helper can set them; a moment after the last change, because the accent fades and "Follow game" changes it with every game.
     function accentHex() { const c = Theme.accent; return [c.r, c.g, c.b].map(x => ("0" + Math.round(x * 255).toString(16)).slice(-2)).join("").toUpperCase() }

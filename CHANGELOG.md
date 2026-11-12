@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+
+- **The screen stays bright while you use it** (fixes 0.7.0, where this did not work, issue #4): the 10 second timer is now restarted by every touch, tap, click and key press on the window, however an item takes it (a list that scrolls, a button, the app grid). Before, only touches that reached one particular item restarted it, so tapping or swiping in some places still let it run out. A finger going down or up always counts, movement counts a few times a second. Checked with simulated clicks and a list drag in a real Qt Quick window (they were all seen), not by watching the screen.
+
 ## 0.7.0
 
 - **Tasks** (new tile on the System page): a small task manager for the bottom screen. It lists what is open there (a browser, a file manager, ...) with the memory each program uses, one line per program even if it has several windows. Tap a line to go to that window, *Close* asks it to close like its own close button, *End* (two taps) ends the program and everything it started if it hangs. ArmadaLive's own window and Plasma's panels are not listed. It asks the bottom session's KWin through a short script, as kdotool does. Tried on a Thor with Firefox: listed and closed; not tried with several different programs at once. Asked for by users who could only close Firefox with its own X.
