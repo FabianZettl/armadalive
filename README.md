@@ -68,7 +68,7 @@ Details per page follow.
 - **Mode** – brightness of both screens and the stick LEDs, volume.
 - **System** – FPS, a 60/120 FPS limit, quick settings (power profile, fan curve, clear RAM, stick LEDs, Wi-Fi, Bluetooth,
   airplane mode, sound, screenshot, GPU clock, screen off), temperature, fan, and gauges for CPU, GPU, power and RAM. The status line
-  shows the battery time left. Two tiles open **Graphs** (FPS, CPU, temperature, power and battery over the last two minutes) and
+  shows the battery time left. The **Tasks** tile is a small task manager for the bottom screen: it lists what is open there (a browser, a file manager) with the memory each program uses, goes to a window when you tap it, closes it, or ends a program that hangs. Two tiles open **Graphs** (FPS, CPU, temperature, power and battery over the last two minutes) and
   **Tuning**. Four more, *Game rule*, *System rule*, *Base rule* and *Idle rule*, remember the current power profile and FPS limit for the game in front, for
   its whole system, for every game without a rule, or for when no game runs, and apply them when a game starts or the last one ends
   (a short message says what was saved or loaded). *Wi-Fi saver* switches Wi-Fi power saving off or on (it is on by

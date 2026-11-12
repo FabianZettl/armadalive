@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 - **Tasks** (new tile on the System page): a small task manager for the bottom screen. It lists what is open there (a browser, a file manager, ...) with the memory each program uses, one line per program even if it has several windows. Tap a line to go to that window, *Close* asks it to close like its own close button, *End* (two taps) ends the program and everything it started if it hangs. ArmadaLive's own window and Plasma's panels are not listed. It asks the bottom session's KWin through a short script, as kdotool does. Tried on a Thor with Firefox: listed and closed; not tried with several different programs at once. Asked for by users who could only close Firefox with its own X.
 - **The AYN tap works after a boot in Game mode** (issue #5): if the Plasma session was not up within 30 seconds, ArmadaLive started on the X11 side of the bottom screen, where Plasma cannot raise it (no AYN tap, no keyboard) and it stayed there. Now it ends itself as soon as the Plasma session shows up, and the unit starts it again as a Plasma client. That also explains why going to the desktop and back helped: it restarts the app.
