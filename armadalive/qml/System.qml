@@ -34,6 +34,7 @@ Item {
         { id: "shot", icon: "shot", label: "Screenshot", on: false, act: () => controls.screenshot() },
         { id: "tuning", icon: "edit", label: Tr.t("Tuning"), on: false, act: () => { Nav.go = "tuning" } },
         { id: "graphs", icon: "graph", label: Tr.t("Graphs"), on: false, act: () => { Nav.go = "graphs" } },
+        { id: "tasks", icon: "apps", label: Tr.t("Tasks"), on: false, act: () => { Nav.go = "tasks" } },
         { id: "prefs", icon: "gear", label: Tr.t("Settings"), on: false, act: () => { Nav.go = "prefs" } },
         { id: "screenoff", icon: "power", label: Tr.t("Screen off"), on: false, act: () => { Nav.go = "blank" } },
         { id: "gamerule", icon: "star", label: Tr.t("Game rule"), on: rl.gameKey !== "" && rl.rules.some(r => r.key === rl.gameKey), act: () => rules.toggle("game") },

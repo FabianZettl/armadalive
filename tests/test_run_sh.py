@@ -49,6 +49,22 @@ class RunSh(unittest.TestCase):
         self.assertIn("wayland=armada-plasma-bottom", r.stdout)
         self.assertNotIn("platform=xcb", r.stdout)
 
+    def test_on_the_x11_side_the_app_is_ended_when_the_plasma_session_shows_up_so_the_unit_restarts_it(self):
+        import stat, threading, time
+        with open(os.path.join(self.dir, "armada-bottom-env"), "w") as f:
+            f.write("DISPLAY=:2\n")
+        fake = os.path.join(self.dir, "fakepython")        # -c "import ..." succeeds, -m armadalive runs for a long time
+        with open(fake, "w") as f:
+            f.write('#!/bin/sh\n[ "$1" = "-c" ] && exit 0\nexec sleep 30\n')
+        os.chmod(fake, os.stat(fake).st_mode | stat.S_IEXEC)
+        threading.Thread(target=lambda: (time.sleep(1.5), self.sock("armada-plasma-bottom")), daemon=True).start()
+        env = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY", "QT_QPA_PLATFORM", "ARMADALIVE_DRY_RUN")}
+        env.update(XDG_RUNTIME_DIR=self.dir, ARMADALIVE_PYTHON=fake, ARMADALIVE_X11_AFTER="0", ARMADALIVE_WATCH="0.5", ARMADALIVE_WAIT="5")
+        started = time.monotonic()
+        r = subprocess.run(["sh", RUN], env=env, capture_output=True, text=True, timeout=20)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertLess(time.monotonic() - started, 10)
+
     def test_desktop_mode_shows_a_window_in_the_desktops_session(self):
         self.sock("wayland-0")
         r = self.run_sh(WAYLAND_DISPLAY="armada-plasma-bottom", QT_QPA_PLATFORM="wayland")   # what the unit sets

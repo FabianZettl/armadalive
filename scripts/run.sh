@@ -32,8 +32,18 @@ while :; do
 done
 [ -n "${ARMADALIVE_DRY_RUN:-}" ] && { echo "platform=${QT_QPA_PLATFORM:-} wayland=${WAYLAND_DISPLAY:-} display=${DISPLAY:-} windowed=$windowed"; exit 0; }
 need="import PySide6.QtQuick, PySide6.QtWebSockets, PySide6.QtDBus, PySide6.QtTest"
-for py in /usr/bin/python3 "$HOME/.local/share/armadalive/venv/bin/python"; do
-    "$py" -c "$need" 2>/dev/null && exec "$py" -m armadalive $windowed
+for py in ${ARMADALIVE_PYTHON:-/usr/bin/python3 "$HOME/.local/share/armadalive/venv/bin/python"}; do
+    "$py" -c "$need" 2>/dev/null || continue
+    if [ "${QT_QPA_PLATFORM:-}" = xcb ] && [ -z "$windowed" ]; then
+        # On the X11 side of the bottom gamescope only until the Plasma session is up: an X11 window is invisible to Plasma's KWin (no AYN tap, no keyboard).
+        # When its socket shows up the app is ended with a failure, so the unit starts it again, and this time as a Plasma client.
+        "$py" -m armadalive $windowed &
+        app=$!
+        ( while kill -0 "$app" 2>/dev/null; do [ -S "$run/armada-plasma-bottom" ] && { kill -TERM "$app"; break; }; sleep "${ARMADALIVE_WATCH:-2}"; done ) &
+        wait "$app"
+        exit $?
+    fi
+    exec "$py" -m armadalive $windowed
 done
 echo "ArmadaLive: no Python with PySide6 found; run install.sh again (it fetches a private copy)" >&2
 exit 1

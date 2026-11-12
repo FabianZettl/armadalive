@@ -22,7 +22,8 @@ Window {
         { id: "system", label: Tr.t("System"), icon: "gear", file: "System.qml", has: true },
         { id: "prefs", label: Tr.t("Settings"), icon: "info", file: "Preferences.qml", has: true, under: "system" },
         { id: "tuning", label: Tr.t("Tuning"), icon: "perf", file: "Tuning.qml", has: true, under: "system" },
-        { id: "graphs", label: Tr.t("Graphs"), icon: "graph", file: "Graphs.qml", has: true, under: "system" }
+        { id: "graphs", label: Tr.t("Graphs"), icon: "graph", file: "Graphs.qml", has: true, under: "system" },
+        { id: "tasks", label: Tr.t("Tasks"), icon: "apps", file: "Tasks.qml", has: true, under: "system" }
     ]
     readonly property var pages: all.filter(p => p.has && !p.under)
     property string page: "now"
@@ -47,10 +48,11 @@ Window {
     Timer {
         id: idle
         interval: 10000
-        onTriggered: { if (!win.dimEnabled) return; if (Auth.ask === "" && !Gesture.locked) win.dimmed = true; else idle.restart() }   // not while the password prompt is open
+        onTriggered: { if (!win.dimEnabled) return; if (Auth.ask === "" && !Gesture.locked && !touch.active) win.dimmed = true; else idle.restart() }   // not while the password prompt is open
     }
     // sees every touch, takes none; a finger that stays down and moves (a slider, a scroll, the trackpad) is not idle either
-    PointHandler { target: null; onActiveChanged: if (active) win.wake(); onPointChanged: if (active && win.dimEnabled) idle.restart() }
+    // a finger that lies still on the glass is not idle either: the timer checks `touch.active` before it dims, and lifting the finger starts it again
+    PointHandler { id: touch; target: null; onActiveChanged: win.wake(); onPointChanged: if (active && win.dimEnabled) idle.restart() }
     // a new game, logo or background (scrolling in ES-DE or Steam, a game starting) brightens it too
     readonly property string shown: [now.kind, now.title, now.logo, now.fanart].join("|")
     onShownChanged: wake()
@@ -141,6 +143,10 @@ Window {
     Connections {
         target: closer
         function onBegun() { win.bringUp() }
+    }
+    Connections {
+        target: tasks
+        function onSwitched() { win.showMinimized() }   // a window was picked in Tasks: step back so it shows
     }
     Connections {
         target: battery

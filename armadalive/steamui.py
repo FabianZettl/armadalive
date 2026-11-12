@@ -1,6 +1,7 @@
 """The app highlighted in Steam's Big Picture UI, read from Steam's own browser through its local debug port.
 
-Steam only opens that port while ~/.steam/steam/.cef-enable-remote-debugging exists (Decky Loader creates it). Read-only:
+Steam only opens that port while remote debugging is on: the file ~/.steam/steam/.cef-enable-remote-debugging (Decky Loader creates it) or
+the switch in Steam's developer settings. Read-only:
 the script only looks at which element has the gamepad focus and which app that element belongs to.
 """
 import json, urllib.request
@@ -30,7 +31,7 @@ def _target(shared=False):
     try:
         for t in json.load(urllib.request.urlopen(LIST_URL, timeout=0.6)):
             title = t.get("title", "").lower()
-            if t.get("type") == "page" and (title == "sharedjscontext" if shared else title.startswith("big") and "picture" in title):
+            if t.get("type") == "page" and (title == "sharedjscontext" if shared else "big" in title and "picture" in title):
                 return t.get("webSocketDebuggerUrl")
     except (OSError, ValueError):
         pass

@@ -26,6 +26,7 @@ from .settings import Settings
 from .shell import Shell
 from .steamshortcuts import SteamShortcuts
 from .steamui import SteamUi
+from .tasks import Tasks
 from .thermal import Thermal
 from .tiles import Tiles
 from .trackpad import Trackpad
@@ -47,7 +48,7 @@ def main():
     now, monitor = NowPlaying(gamescope, steamui), SystemMonitor(fps=lambda: gamescope.state["fps"])
     backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=Apps(), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
                     health=Health(steamui), rules=GameRules(now, gamescope, monitor), tileStore=Tiles(),
-                    battery=Battery(), media=Media(), backup=Backup(), artwork=Palette(), steamShortcuts=SteamShortcuts(now), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad())
+                    battery=Battery(), media=Media(), backup=Backup(), artwork=Palette(), steamShortcuts=SteamShortcuts(now), tasks=Tasks(), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad())
     pad = backends["pad"] = Pad()   # must stay referenced, like the rest
     backends["closer"] = Closer(pad, gamescope, now, backends["ui"])
     backends["thermal"] = Thermal(monitor, backends["ui"])
@@ -73,7 +74,7 @@ def main():
         # back to "Game": {"event": {...}} like ES-DE sends, or {"ui": [appid, "name"]} for Steam's UI; none means idle
         demo = json.loads(sys.argv[sys.argv.index("--demo") + 1]) if "--demo" in sys.argv else {}
         backends["nowPlaying"].pin(demo.get("event"), demo.get("ui"))
-        window.setProperty("page", ["now", "apps", "mode", "system", "prefs", "tuning", "cheats", "manual", "graphs", "controls"][page] if page < 10 else "now")
+        window.setProperty("page", ["now", "apps", "mode", "system", "prefs", "tuning", "cheats", "manual", "graphs", "controls", "tasks"][page] if page < 11 else "now")
         if "--theme" in sys.argv:  # for screenshots too: not written to the settings file
             backends["ui"]._s["theme"], backends["ui"]._s["accent"] = sys.argv[sys.argv.index("--theme") + 1], ""
             backends["ui"].changed.emit()

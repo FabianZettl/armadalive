@@ -5,7 +5,6 @@ from PySide6.QtCore import Property, QObject, QTimer, Signal
 from . import nowplaying, privileged
 
 EVENTS = ("startup", "quit", "system-select", "game-select", "game-start", "game-end")
-CEF_FLAG = os.path.expanduser("~/.steam/steam/.cef-enable-remote-debugging")
 
 
 def _esde_setting(name):
@@ -37,8 +36,8 @@ class Health(QObject):
             dict(id="events", ok=_esde_setting("CustomEventScripts") and _esde_setting("CustomEventScriptsBrowsing"),
                  hint="ES-DE: START > Other Settings > Custom Event Scripts and Browsing Custom Event Scripts"),
             dict(id="media", ok=bool(glob.glob(nowplaying.MEDIA + "/*/marquees/*")), hint="Scrape media in ES-DE (logos and backgrounds)"),
-            dict(id="steam", ok=os.path.exists(CEF_FLAG) and self._steamui.connected,
-                 hint="Steam Big Picture selection needs ~/.steam/steam/.cef-enable-remote-debugging (Decky Loader) and a Steam restart"),
+            dict(id="steam", ok=self._steamui.connected,   # the connection is the test: the marker file is only one way to switch debugging on
+                 hint="Steam Big Picture selection needs Steam's remote debugging: turn on CEF Remote Debugging in Steam's developer settings, or install Decky Loader (it creates ~/.steam/steam/.cef-enable-remote-debugging), then restart Steam"),
             dict(id="gamescope", ok=os.path.exists(f"/run/user/{os.getuid()}/gamescope-stats/stats.pipe"), hint="gamescope's stats pipe is missing: FPS cannot be read"),
         ]
         self.changed.emit()
