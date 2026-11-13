@@ -8,6 +8,9 @@ from PySide6.QtTest import QTest
 from . import __version__
 from .admin import Admin
 from .apps import Apps
+from .gameinfo import GameInfo
+from .history import History
+from . import steamlib
 from .ayn import AynButton
 from .backup import Backup
 from .battery import Battery
@@ -34,6 +37,9 @@ from .trackpad import Trackpad
 from .ui import UiSettings
 from .updater import Updater
 from .system import SystemMonitor
+from .cheats import Cheats
+from .controls_layout import ControlsLayout
+from .emulator_control import EmulatorControl
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -47,12 +53,17 @@ def main():
     # the context does not own these objects: keep them referenced for the life of the app
     gamescope, steamui = Gamescope(), SteamUi()
     now, monitor = NowPlaying(gamescope, steamui), SystemMonitor(fps=lambda: gamescope.state["fps"])
-    backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=Apps(), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
+    layout = ControlsLayout()
+    emulator_ctrl = EmulatorControl()
+    history = History(now, steam_titles=lambda: {g["id"]: g["name"] for g in steamlib.games()})
+    now.history = history
+    backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=Apps(history), history=history, gameinfo=GameInfo(history), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
                     health=Health(steamui), rules=GameRules(now, gamescope, monitor), tileStore=Tiles(),
-                    battery=Battery(), media=Media(), backup=Backup(), artwork=Palette(), steamShortcuts=SteamShortcuts(now), tasks=Tasks(), activity=Activity(), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad())
+                    battery=Battery(), media=Media(), backup=Backup(), artwork=Palette(), steamShortcuts=SteamShortcuts(now), tasks=Tasks(), activity=Activity(), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad(), cheats=Cheats(), layout=layout, emulatorControl=emulator_ctrl)
     pad = backends["pad"] = Pad()   # must stay referenced, like the rest
     backends["closer"] = Closer(pad, gamescope, now, backends["ui"])
     backends["thermal"] = Thermal(monitor, backends["ui"])
+    backends["rules"].history = history
     for name, obj in backends.items():
         engine.rootContext().setContextProperty(name, obj)
     # closing the window only hides it: the app keeps listening for the AYN button and can bring itself back
@@ -75,7 +86,7 @@ def main():
         # back to "Game": {"event": {...}} like ES-DE sends, or {"ui": [appid, "name"]} for Steam's UI; none means idle
         demo = json.loads(sys.argv[sys.argv.index("--demo") + 1]) if "--demo" in sys.argv else {}
         backends["nowPlaying"].pin(demo.get("event"), demo.get("ui"))
-        window.setProperty("page", ["now", "apps", "mode", "system", "prefs", "tuning", "cheats", "manual", "graphs", "controls", "tasks"][page] if page < 11 else "now")
+        window.setProperty("page", ["now", "apps", "mode", "system", "prefs", "tuning", "cheats", "manual", "graphs", "controls", "tasks", "stats", "info", "rules"][page] if page < 14 else "now")
         if "--theme" in sys.argv:  # for screenshots too: not written to the settings file
             backends["ui"]._s["theme"], backends["ui"]._s["accent"] = sys.argv[sys.argv.index("--theme") + 1], ""
             backends["ui"].changed.emit()

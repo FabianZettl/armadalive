@@ -218,6 +218,7 @@ class NowPlaying(QObject):
         self._steamui = steamui
         steamui.selected.connect(self._ui_selected)
         self._state, self._mtime, self._key, self._path = describe({}), 0, "", ""
+        self.history = None      # set by the app: the one playtime record (history.py)
         gamescope.focusChanged.connect(self._focus)
         self._focus(gamescope.state["focus"])  # the first reading happened before we were listening
         timer = QTimer(self)
@@ -304,6 +305,8 @@ class NowPlaying(QObject):
             state = describe(shown)
             key = ("run|" + shown["path"]) if shown is self._proc else (shown.get("event", "") + "|" + (shown.get("path") or shown.get("system") or ""))
         self._state = state
+        # the playtime of this game, for the Now page; History does the counting
+        self._state["playtime"] = self.history.total_for(state.get("key")) if self.history else 0
         self.changed.emit()
         if key is not None and key != self._key:  # browsing Steam's library must not throw the user back to the first page
             self._key = key

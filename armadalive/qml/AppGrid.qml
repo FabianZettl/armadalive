@@ -5,6 +5,8 @@ import QtQuick.Window
 Item {
     id: grid
     property int picking: -1
+    property string opened: ""      // the folder whose view is open
+    onOpenedChanged: Gesture.hold(opened !== "")
     readonly property var win: Window.window || ({ width: width, height: height })
     readonly property var slots: apps.slots
     // Touching the grid or the picker locks the page swipe from touch-down, as the dashboard's cards do; while the picker is open
@@ -72,14 +74,77 @@ Item {
                     yScale: xScale
                     Behavior on xScale { NumberAnimation { duration: 90 } }
                 }
-                gradient: app.cover ? null : cardGradient
+                gradient: app.cover && !app.folder ? null : cardGradient
                 Gradient {
                     id: cardGradient
                     GradientStop { position: 0; color: Theme.accentSoft }
                     GradientStop { position: 1; color: Theme.card }
                 }
+                // a folder: up to four of its covers, a sign for the smart ones, its name below
+                Grid {
+                    visible: !!app.folder && !app.art
+                    anchors { top: parent.top; topMargin: parent.height * 0.07; horizontalCenter: parent.horizontalCenter }
+                    columns: 2
+                    spacing: parent.width * 0.04
+                    Repeater {
+                        model: app.folder ? Math.max(1, (app.preview || []).length) : 0
+                        delegate: Rectangle {
+                            width: tile.width * 0.32
+                            height: width
+                            radius: width * Theme.tileCorner
+                            color: Theme.circle
+                            Image {
+                                anchors.fill: parent
+                                source: ((app.preview || [])[index]) || ""
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                            }
+                        }
+                    }
+                }
+                Item {   // an ES-DE system: its picture from the theme in use, over the whole tile with the tile's corners
+                    visible: !!app.art
+                    anchors.fill: parent
+                    Canvas {   // Canvas clips to the rounded corners on every render backend, unlike a mask effect
+                        id: art
+                        anchors.fill: parent
+                        property url src: app.art || ""
+                        onSrcChanged: if (src != "") loadImage(src)
+                        Component.onCompleted: if (src != "") loadImage(src)
+                        onImageLoaded: requestPaint()
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.reset()
+                            if (!isImageLoaded(src)) return
+                            var r = tile.radius, w = width, h = height
+                            ctx.beginPath()
+                            ctx.moveTo(r, 0); ctx.arcTo(w, 0, w, h, r); ctx.arcTo(w, h, 0, h, r); ctx.arcTo(0, h, 0, 0, r); ctx.arcTo(0, 0, w, 0, r)
+                            ctx.closePath()
+                            ctx.clip()
+                            // like PreserveAspectCrop: scale to cover, centred
+                            ctx.drawImage(src, 0, 0, w, h)
+                        }
+                    }
+                    Rectangle {   // keeps the name readable on a bright picture
+                        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                        height: parent.height * 0.34
+                        radius: tile.radius
+                        gradient: Gradient {
+                            GradientStop { position: 0; color: "transparent" }
+                            GradientStop { position: 1; color: "#cc000000" }
+                        }
+                    }
+                }
+                Text {
+                    visible: !!app.glyph
+                    anchors.centerIn: parent
+                    anchors.verticalCenterOffset: -parent.height * 0.06
+                    font.pixelSize: parent.width * 0.42
+                    color: Theme.accent
+                    text: app.glyph || ""
+                }
                 Image {
-                    visible: !!app.icon
+                    visible: !!app.icon && !app.folder
                     anchors.centerIn: parent
                     anchors.verticalCenterOffset: app.cover ? 0 : -parent.height * 0.06
                     width: app.cover ? parent.width : parent.width * 0.5
@@ -90,7 +155,7 @@ Item {
                     asynchronous: true
                 }
                 Text {
-                    visible: !app.icon && !!app.name
+                    visible: !app.icon && !!app.name && !app.folder && !app.glyph
                     anchors.centerIn: parent
                     color: Theme.accent
                     font.pixelSize: parent.width * 0.4
@@ -98,14 +163,14 @@ Item {
                     text: app.name ? app.name[0] : ""
                 }
                 Text {
-                    visible: !!app.name && !app.cover
+                    visible: !!app.name && (!app.cover || !!app.folder)
                     anchors { bottom: parent.bottom; bottomMargin: 10; horizontalCenter: parent.horizontalCenter }
                     width: parent.width - 16
                     horizontalAlignment: Text.AlignHCenter
                     elide: Text.ElideRight
-                    color: Theme.muted
+                    color: app.art ? "#ffffff" : Theme.muted
                     font.pixelSize: Math.max(11, parent.width * 0.095)
-                    text: app.name || ""
+                    text: (app.folder || app.glyph) ? Tr.t(app.name || "") : (app.name || "")
                 }
                 Text {
                     visible: !app.name
@@ -124,13 +189,23 @@ Item {
                 MouseArea {
                     id: area
                     anchors.fill: parent
-                    onClicked: { if (app.id) { launched.start(); apps.launch(index) } else grid.picking = index }
+                    onClicked: { if (app.folder) grid.opened = app.id; else if (app.id) { launched.start(); apps.launch(index) } else grid.picking = index }
                     onPressAndHold: grid.picking = index
                 }
             }
         }
     }
 
+    FolderView {
+        anchors.fill: parent
+        opacity: grid.opened !== "" ? 1 : 0
+        scale: grid.opened !== "" ? 1 : 0.96
+        visible: opacity > 0.01
+        folder: grid.opened
+        onClosed: grid.opened = ""
+        Behavior on opacity { NumberAnimation { duration: Theme.dur(180) } }
+        Behavior on scale { NumberAnimation { duration: Theme.dur(220); easing.type: Theme.ease } }
+    }
     AppPicker {
         anchors.fill: parent
         opacity: grid.picking >= 0 ? 1 : 0

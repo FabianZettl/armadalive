@@ -6,7 +6,7 @@ Flickable {
     readonly property var look: ui.state
     readonly property var up: updater.state
     readonly property var adm: admin.state
-    readonly property var rl: rules.state
+    readonly property var cc: controls.state
     readonly property var bat: battery.state
     readonly property var bk: backup.state
     property string themeTab: ""   // the theme group shown in Appearance; empty = the current theme's own
@@ -270,43 +270,6 @@ Flickable {
         }
 
         Card {
-            Label { text: Tr.t("Game rules") }
-            Chips {
-                width: parent.width
-                model: [{ key: "on", label: Tr.t("Apply automatically") }, { key: "off", label: Tr.t("Off") }]
-                current: page.rl.enabled ? "on" : "off"
-                onPicked: key => rules.setEnabled(key === "on")
-            }
-            Body {
-                visible: page.rl.loaded !== ""
-                color: Theme.accent
-                font.pixelSize: 13
-                text: Tr.t("Loaded last") + ": " + page.rl.loaded
-            }
-            Body {
-                visible: page.rl.rules.length === 0
-                color: Theme.muted
-                font.pixelSize: 13
-                text: Tr.t("While a game is in front, tap Game rule or System rule on the System page to save its power profile and FPS limit here. Base rule applies to every game without a rule of its own, Idle rule when no game runs any more.")
-            }
-            Repeater {
-                model: page.rl.rules
-                delegate: Item {
-                    width: parent.width
-                    height: 44
-                    Text {
-                        anchors { left: parent.left; right: del.left; rightMargin: 10; verticalCenter: parent.verticalCenter }
-                        elide: Text.ElideRight
-                        color: Theme.text
-                        font.pixelSize: 14
-                        text: modelData.key === page.rl.idleKey ? Tr.t("Idle rule") : modelData.key === page.rl.baseKey ? Tr.t("Base rule") : (modelData.key.indexOf("system:") === 0 ? Tr.t("System") + " " : "") + modelData.key.replace(/^(game|system):/, "") + "  ·  " + (modelData.profile || "–") + (modelData.fps ? ", " + modelData.fps + " FPS" : "") + (modelData.res ? ", " + modelData.res + "×" : "")
-                    }
-                    PillButton { id: del; anchors { right: parent.right; verticalCenter: parent.verticalCenter } label: "✕"; onClicked: rules.remove(modelData.key) }
-                }
-            }
-        }
-
-        Card {
             Label { text: Tr.t("Battery and heat") }
             Label { text: Tr.t("Warn when it gets hot") }
             Chips {
@@ -330,7 +293,26 @@ Flickable {
                 current: String(page.bat.limit)
                 onPicked: key => battery.setLimit(parseInt(key))
             }
+            Body { visible: page.bat.refused === true; color: Theme.muted; font.pixelSize: 13
+                   text: Tr.t("This battery does not accept a charge limit (its firmware refuses it), so there is none to set.") }
             Body { visible: page.bat.error !== ""; color: Theme.hot; font.pixelSize: 13; text: page.bat.error }
+        }
+
+        Card {
+            Label { text: Tr.t("Wi-Fi saver") }
+            Chips {
+                width: parent.width
+                model: [{ key: "on", label: Tr.t("On") }, { key: "off", label: Tr.t("Off") }]
+                current: page.cc.wifips === true ? "on" : "off"
+                onPicked: key => { if ((key === "on") !== (page.cc.wifips === true)) controls.toggleWifiSaver() }
+            }
+            Label { text: Tr.t("Airplane") }
+            Chips {
+                width: parent.width
+                model: [{ key: "on", label: Tr.t("On") }, { key: "off", label: Tr.t("Off") }]
+                current: page.cc.airplane === true ? "on" : "off"
+                onPicked: key => { if ((key === "on") !== (page.cc.airplane === true)) controls.toggleAirplane() }
+            }
         }
 
         Card {

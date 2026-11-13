@@ -34,9 +34,18 @@ class Rules(unittest.TestCase):
         self.now, self.gs = FakeNow(), FakeGs()
         self.rules = gamerules.GameRules(self.now, self.gs, FakeSys())
 
+    def test_a_rule_shows_the_name_of_its_game(self):
+        class H:
+            def title_of(self, key):
+                return "Hades" if key == "steam/1145360" else ""
+        self.rules.history = H()
+        self.rules._rules = {"game:steam/1145360": dict(profile="Eco", fps=30), "game:snes/X": dict(profile="Eco", fps=0, title="Kept Title"), "system:snes": dict(profile="Eco", fps=0)}
+        names = {r["key"]: (r["kind"], r["name"]) for r in self.rules.state["rules"]}
+        self.assertEqual(names, {"game:steam/1145360": ("game", "Hades"), "game:snes/X": ("game", "Kept Title"), "system:snes": ("system", "snes")})
+
     def test_save_apply_and_forget(self):
         self.rules.toggle("game")
-        self.assertEqual(self.rules.state["rules"], [dict(key="game:snes/Super Game (EU)", profile="Eco", fps=60)])
+        self.assertEqual(self.rules.state["rules"], [dict(key="game:snes/Super Game (EU)", profile="Eco", fps=60, kind="game", name="snes/Super Game (EU)")])
         with mock.patch("subprocess.Popen") as popen:
             self.now.state = dict(GAME, playing=False); self.now.changed.emit()   # a game exits...
             self.now.state = dict(GAME); self.now.changed.emit()                  # ...and starts again

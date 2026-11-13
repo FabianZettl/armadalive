@@ -8,6 +8,8 @@ from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 BACKLIGHTS = dict(bottom=os.environ.get("ARMADALIVE_BOTTOM_BACKLIGHT", "ae94000.dsi.0"),
                   top=os.environ.get("ARMADALIVE_TOP_BACKLIGHT", "ae96000.dsi.0"))
 SINK = "@DEFAULT_AUDIO_SINK@"
+# Frame generation of Eglantine, Eden and TotK (MAKO): the launchers skip it while this file exists, see mako-thor/env.sh
+FRAMEGEN_OFF = os.environ.get("ARMADALIVE_FRAMEGEN_OFF", os.path.expanduser("~/.config/mako-thor/off"))
 MIN_PERCENT = 3  # never black out a screen: the bottom one is the one these sliders live on
 
 
@@ -92,6 +94,7 @@ class Controls(QObject):
             self._ts = tailscale_state(_out("tailscale", "status", "--json"))
         self._n += 1
         return dict(wifi=wifi, wifips=saver, tailscale=self._ts, bluetooth=bluetooth, airplane=not wifi and not bluetooth,
+                    framegen=not os.path.exists(FRAMEGEN_OFF),
                     volume=min(1.0, float(vol.group(1))) if vol else 0.0, muted="[MUTED]" in volume_text,
                     brightness=bright)
 
@@ -129,6 +132,19 @@ class Controls(QObject):
                 privileged.run("wifi-powersave", mode)   # sudo: not on the UI thread
                 self._poller.kick()
             threading.Thread(target=run, daemon=True).start()
+
+    @Slot()
+    def toggleFrameGen(self):
+        # shortcut: only games started afterwards see it; a running game keeps the setting it started with
+        try:
+            if os.path.exists(FRAMEGEN_OFF):
+                os.remove(FRAMEGEN_OFF)
+            else:
+                os.makedirs(os.path.dirname(FRAMEGEN_OFF), exist_ok=True)
+                open(FRAMEGEN_OFF, "w").close()
+        except OSError:
+            return
+        self._poller.kick()
 
     @Slot()
     def toggleWifi(self):

@@ -24,6 +24,7 @@ Item {
                 radius: Theme.radius
                 color: Theme.card
                 border.color: Theme.border
+                border.width: cheats.is_active(nowPlaying.state.key, index) ? 2 : 1
                 Column {
                     id: col
                     x: 14
@@ -32,6 +33,7 @@ Item {
                     Text { width: parent.width; wrapMode: Text.WordWrap; color: Theme.text; font.pixelSize: 18; text: modelData.desc }
                     Text { width: parent.width; wrapMode: Text.WrapAnywhere; color: Theme.accent; font.pixelSize: 14; font.family: "monospace"; text: modelData.code }
                 }
+                TapHandler { onTapped: cheats.toggle_cheat(nowPlaying.state.key, index) }
             }
         }
     }

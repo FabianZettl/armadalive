@@ -17,7 +17,7 @@ Item {
     readonly property var curve: prof ? curves.find(c => c.id === prof.fanCurve) : undefined
     property int qsPage: 0
 
-    readonly property var rawTiles: [
+    readonly property var allTiles: [
         { id: "perf", icon: "perf", label: st.profile, on: st.profile === "Performance",
           act: () => { const p = st.profiles; system.setProfile(p[(p.indexOf(st.profile) + 1) % p.length]) } },
         { id: "fan", icon: "fan", label: curve ? curve.label : "–", on: curve !== undefined && curve.id === "aggressive",
@@ -26,28 +26,22 @@ Item {
         { id: "led", icon: "led", label: Tr.t("Stick LEDs"), on: rgb.enabled === true,
           act: () => { if (cfg.helper) settings.setRgb(!rgb.enabled, rgb.color || "FFFFFF", rgb.brightness === undefined ? 25 : rgb.brightness) } },
         { id: "wifi", icon: "wifi", label: Tr.t("Wi-Fi"), on: cc.wifi === true, act: () => controls.toggleWifi() },
-        { id: "wifips", icon: "wifi", label: Tr.t("Wi-Fi saver"), on: cc.wifips === true, act: () => controls.toggleWifiSaver() },
+        { id: "framegen", icon: "perf", label: Tr.t("Frame gen"), on: cc.framegen === true, act: () => controls.toggleFrameGen() },
         { id: "tailscale", icon: "vpn", label: "Tailscale", on: (cc.tailscale || ({})).state === "on", act: () => controls.toggleTailscale() },
         { id: "bluetooth", icon: "bluetooth", label: "Bluetooth", on: cc.bluetooth === true, act: () => controls.toggleBluetooth() },
-        { id: "plane", icon: "plane", label: Tr.t("Airplane"), on: cc.airplane === true, act: () => controls.toggleAirplane() },
         { id: "sound", icon: cc.muted ? "mute" : "sound", label: cc.muted ? Tr.t("Muted") : Tr.t("Sound"), on: cc.muted !== true, act: () => controls.toggleMute() },
         { id: "shot", icon: "shot", label: "Screenshot", on: false, act: () => controls.screenshot() },
+        { id: "rules", icon: "star", label: Tr.t("Rules"), on: rl.rules.some(r => r.key === rl.gameKey || r.key === rl.systemKey), act: () => { Nav.go = "rules" } },
         { id: "tuning", icon: "edit", label: Tr.t("Tuning"), on: false, act: () => { Nav.go = "tuning" } },
         { id: "graphs", icon: "graph", label: Tr.t("Graphs"), on: false, act: () => { Nav.go = "graphs" } },
         { id: "tasks", icon: "apps", label: Tr.t("Tasks"), on: false, act: () => { Nav.go = "tasks" } },
+        { id: "stats", icon: "graph", label: Tr.t("Playtime"), on: false, act: () => { Nav.go = "stats" } },
         { id: "prefs", icon: "gear", label: Tr.t("Settings"), on: false, act: () => { Nav.go = "prefs" } },
         { id: "screenoff", icon: "power", label: Tr.t("Screen off"), on: false, act: () => { Nav.go = "blank" } },
-        { id: "gamerule", icon: "star", label: Tr.t("Game rule"), on: rl.gameKey !== "" && rl.rules.some(r => r.key === rl.gameKey), act: () => rules.toggle("game") },
-        { id: "systemrule", icon: "star", label: Tr.t("System rule"), on: rl.systemKey !== "" && rl.rules.some(r => r.key === rl.systemKey), act: () => rules.toggle("system") },
-        { id: "idlerule", icon: "star", label: Tr.t("Idle rule"), on: rl.rules.some(r => r.key === rl.idleKey), act: () => rules.toggle("idle") },
-        { id: "baserule", icon: "star", label: Tr.t("Base rule"), on: rl.rules.some(r => r.key === rl.baseKey), act: () => rules.toggle("base") },
-        { id: "res", icon: "gauge", label: rl.resOk ? ((rl.rules.find(r => r.key === rl.gameKey) || {}).res ? (rl.rules.find(r => r.key === rl.gameKey)).res + "× " + Tr.t("render") : Tr.t("Resolution")) : Tr.t("Resolution"),
-          on: rl.resOk && (rl.rules.find(r => r.key === rl.gameKey) || {}).res > 0, act: () => rules.cycleRes() },
         { id: "keyboard", icon: "edit", label: Tr.t("Keyboard"), on: shell.keyboardPinned, act: () => shell.keyboard() },
         { id: "steam", icon: ss.exists ? "done" : "add", label: ss.exists ? Tr.t("In Steam") : Tr.t("Add to Steam"), on: ss.exists === true, act: () => steamShortcuts.add() },
-        { id: "gpu", icon: "gauge", label: st.gpuLevel === "auto" ? Tr.t("Auto") : st.gpuManual + " MHz", on: st.gpuLevel !== "auto",
-          act: () => st.gpuLevel === "auto" ? system.setGpuManual(st.gpuManual) : system.setGpuAuto() }
     ]
+    readonly property var rawTiles: allTiles.filter(t => t.id !== "tailscale" || (cc.tailscale || ({})).state !== "missing")
     // the tiles in the order the user chose (Tiles keeps it); a long press on a tile starts moving, a tap on a second one swaps
     readonly property var tiles: { tileStore.order; return tileStore.arrange(rawTiles.map(t => t.id)).map(id => rawTiles.find(t => t.id === id)) }
     readonly property int pageCount: Math.ceil(tiles.length / 8)
@@ -81,9 +75,9 @@ Item {
                 color: Theme.accent
                 font.pixelSize: 13 * page.u
                 font.letterSpacing: 0.6
-                text: (page.gs.limit > 0 ? page.gs.limit : "–") + " FPS MODE"
+                text: (page.gs.hz > 0 ? page.gs.hz : "–") + " Hz " + Tr.t("MODE")
             }
-            MouseArea { anchors.fill: parent; onClicked: gamescope.setFpsLimit(page.gs.limit === 120 ? 60 : 120) }
+            MouseArea { anchors.fill: parent; onClicked: gamescope.setFpsLimit(page.gs.hz === 120 ? 60 : 120) }
         }
         Row {
             anchors.centerIn: parent
@@ -95,7 +89,8 @@ Item {
             anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 16 * page.u }
             color: Theme.muted
             font.pixelSize: 13 * page.u
-            text: Tr.t("CURRENT FPS")
+            // above the screen mode it is no longer the game's own rate: frame generation adds frames
+            text: Tr.t("CURRENT FPS") + (page.gs.hz > 0 && page.cc.framegen === true && page.gs.fps > page.gs.hz * 1.15 ? " · " + Tr.t("with frame gen") : "")
         }
     }
     Rectangle {

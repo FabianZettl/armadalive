@@ -23,7 +23,10 @@ Window {
         { id: "prefs", label: Tr.t("Settings"), icon: "info", file: "Preferences.qml", has: true, under: "system" },
         { id: "tuning", label: Tr.t("Tuning"), icon: "perf", file: "Tuning.qml", has: true, under: "system" },
         { id: "graphs", label: Tr.t("Graphs"), icon: "graph", file: "Graphs.qml", has: true, under: "system" },
-        { id: "tasks", label: Tr.t("Tasks"), icon: "apps", file: "Tasks.qml", has: true, under: "system" }
+        { id: "rules", label: Tr.t("Rules"), icon: "star", file: "Rules.qml", has: true, under: "system" },
+        { id: "tasks", label: Tr.t("Tasks"), icon: "apps", file: "Tasks.qml", has: true, under: "system" },
+        { id: "stats", label: Tr.t("Playtime"), icon: "graph", file: "Stats.qml", has: true, under: "system" },
+        { id: "info", label: Tr.t("Info"), icon: "info", file: "GameInfo.qml", has: now.kind === "game", under: "now" }
     ]
     readonly property var pages: all.filter(p => p.has && !p.under)
     property string page: "now"

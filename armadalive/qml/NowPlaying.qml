@@ -118,10 +118,22 @@ Item {
         cur = next
     }
 
-    // a tap on the artwork shows Manual and Cheats for a few seconds, if this game has them
+    // a tap on the artwork shows Manual and Cheats (or Playtime) for a few seconds
     property bool extras: false
-    TapHandler { enabled: !root.idle; onTapped: { root.extras = !root.extras; hideExtras.restart() } }
-    Timer { id: hideExtras; interval: 4000; onTriggered: root.extras = false }
+    property bool showPlaytime: false
+    function formatPlaytime(seconds) {
+        if (seconds < 60) return seconds + " min"
+        if (seconds < 3600) return Math.round(seconds / 60) + " min"
+        const hours = Math.floor(seconds / 3600)
+        const mins = Math.round((seconds % 3600) / 60)
+        return mins > 0 ? hours + "h " + mins + "m" : hours + "h"
+    }
+    TapHandler { enabled: !root.idle; onTapped: {
+        root.showPlaytime = !root.showPlaytime
+        if (root.showPlaytime) root.extras = false
+        hideExtras.restart()
+    } }
+    Timer { id: hideExtras; interval: 4000; onTriggered: { root.extras = false; root.showPlaytime = false } }
     Row {
         anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 130 }
         spacing: 12
@@ -130,6 +142,18 @@ Item {
         Behavior on opacity { NumberAnimation { duration: 180 } }
         PillButton { visible: root.s.manual !== ""; label: Tr.t("Manual"); onClicked: { root.extras = false; Nav.go = "manual" } }
         PillButton { visible: root.s.hasCheats === true; label: Tr.t("Cheats"); onClicked: { root.extras = false; Nav.go = "cheats" } }
+        PillButton { visible: root.s.kind === "game"; label: Tr.t("Info"); onClicked: { root.extras = false; Nav.go = "info" } }
+    }
+
+    Text {
+        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 130 }
+        opacity: root.showPlaytime && root.s.playtime !== undefined ? 1 : 0
+        visible: opacity > 0.01
+        Behavior on opacity { NumberAnimation { duration: 180 } }
+        color: Theme.accent
+        font.pixelSize: 28
+        font.weight: Font.DemiBold
+        text: "▶ " + root.formatPlaytime(root.s.playtime || 0)
     }
 
     AppGrid {

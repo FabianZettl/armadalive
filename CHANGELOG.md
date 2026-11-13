@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0
+
+- **The mode pill is the screen's refresh rate** ("120 Hz MODE"): a tap sets the display's dynamic refresh rate and the frame limit to 60 or 120 together, and the pill shows the rate that is set. With frame generation on, FPS above the mode say "with frame gen". Not checked with a game running.
+- **Rules page** (System > Rules): the game rules moved out of Settings. One Rules tile replaces the four rule tiles, the resolution tile and the GPU tile (GPU limits are in Tuning). The list names each game (from its saved title, the play history or Steam), not only its Steam id. Wi-Fi saver and Airplane moved to Settings, and the Tailscale tile only shows when Tailscale is installed.
+- **Favorites**: a heart on the Game info page; the smart folder "Favorites" lists them. Every folder has a Random button that starts a random game from it.
+- **Search in the app picker**, across all tabs.
+- **Charge limit**: if the battery's firmware refuses the limit (the Thor's does), the setting says so and goes away instead of failing silently.
+- **One playtime record**: the Game page's play time now uses the same history as the Playtime page (the old separate `playtime.json` counter is no longer used).
+- **ES-DE system folders** show the system picture from the ES-DE theme in use.
+- **Folders in the Apps grid**: manual folders (long-press a slot, "Add to folder") and smart folders: Recently played, Steam, and one per ES-DE system. Folder tiles show a cover mosaic. A dice tile launches a random game. Not tried with real touch input.
+- **Game info page** (Game page, "Info" button): ES-DE description, genre, developer, year, rating, playtime, times started, last played and screenshots.
+- **Playtime page** (System page): bars for the last 7 days, total and most played. Playtime is recorded while a game runs; the first start imports Steam and ES-DE last-played data.
+- **Frame gen tile** (System page): switches frame generation for Eglantine, Eden and TotK on or off. It only creates or removes `~/.config/mako-thor/off`, which the launchers read at start, so a running game keeps the setting it started with.
+- **Controls page: Esc is always there**, left of the emulator buttons, whichever emulator is running (it opens the menu of recompiled PC ports such as Savage Wind and TotK).
+
 ## 0.7.2
 
 - **The AYN tap in desktop mode raises ArmadaLive above other windows** (issue #5): the app looked for the Plasma window manager only on the bottom screen's private bus, so in desktop mode, where Plasma sits on the ordinary session bus, it could not ask Plasma to bring the window forward and the taskbar icon only blinked. It now also looks on the session bus. Not tried in desktop mode on a Thor.

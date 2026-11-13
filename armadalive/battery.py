@@ -6,7 +6,7 @@ from . import privileged
 BATTERY = "/sys/class/power_supply/battery"
 LIMIT_FILE = BATTERY + "/charge_control_end_threshold"
 CONFIG = os.path.expanduser("~/.config/armadalive/battery.json")
-DEFAULTS = dict(warn=20, limit=100)   # warn: percent, 0 = off
+DEFAULTS = dict(warn=20, limit=100, refused=False)   # warn: percent, 0 = off
 
 
 def _read(path, default=""):
@@ -33,18 +33,21 @@ class Battery(QObject):
         except (OSError, ValueError):
             saved = {}
         self._s = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}} if isinstance(saved, dict) else dict(DEFAULTS)
-        self._done, self.error = set(), ""
+        self._done, self.error = set(), ""   # _s["refused"]: the battery's firmware rejected a limit (the Thor's does)
         self.supported = os.path.exists(LIMIT_FILE)
         # the kernel forgets the limit on reboot, so it is applied again at start
         if self.supported and self._s["limit"] < 100 and privileged.available():
             self.error = privileged.run("charge-limit", self._s["limit"])
+            if self.error:   # do not try again at every start
+                self._s["refused"], self.error, self._s["limit"] = True, "", 100
+                self._save()
         timer = QTimer(self)
         timer.timeout.connect(lambda: self.check(int(_read(BATTERY + "/capacity", "100")), _read(BATTERY + "/status")))
         timer.start(30000)
 
     @Property("QVariant", notify=changed)
     def state(self):
-        return dict(self._s, supported=self.supported, error=self.error)
+        return dict(self._s, supported=self.supported and not self._s["refused"], error=self.error)
 
     def _save(self):
         os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
@@ -76,6 +79,8 @@ class Battery(QObject):
         self.error = privileged.run("charge-limit", percent) if privileged.available() else "root helper missing"
         if not self.error and _read(LIMIT_FILE) not in (str(percent), ""):   # accepted, but the battery kept its old value
             self.error = "the battery did not keep the limit"
-        if not self.error:
+        if self.error and percent < 100 and self.error != "root helper missing":   # the battery refused: say so once instead of showing a broken setting
+            self._s["refused"], self.error = True, ""
+        elif not self.error:
             self._s["limit"] = percent
         self._save()

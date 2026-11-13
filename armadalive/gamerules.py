@@ -25,14 +25,24 @@ class GameRules(QObject):
         except (OSError, ValueError, AttributeError):
             self._rules, self._on, self._base = {}, True, {}
         self._applied, self._loaded = "", ""
+        self.history = None      # set by the app: lets a rule show the name of its game, not only the key
         nowplaying.changed.connect(self._check)
 
     @Property("QVariant", notify=changed)
     def state(self):
         cur = self._np.state
-        return dict(enabled=self._on, rules=[dict(key=k, **v) for k, v in sorted(self._rules.items())],
+        return dict(enabled=self._on, rules=sorted((dict(v, key=k, **self._describe(k, v)) for k, v in self._rules.items()), key=lambda r: (r["kind"], r["name"].lower())),
                     gameKey=self._game_key(cur), systemKey=self._system_key(cur), resOk=cur.get("system") in emusettings.SPECS,
                     idleKey=IDLE, baseKey=BASE, loaded=self._loaded)
+
+    def _describe(self, key, rule):
+        """What the rules list shows for a key: its kind and the name of the game or system, never only the Steam id."""
+        if key in (IDLE, BASE):
+            return dict(kind="idle" if key == IDLE else "base", name="")
+        kind, _, rest = key.partition(":")
+        if kind == "game":
+            return dict(kind="game", name=rule.get("title") or (self.history.title_of(rest) if self.history else "") or rest)
+        return dict(kind="system", name=rest)
 
     @staticmethod
     def _game_key(state):
@@ -68,6 +78,8 @@ class GameRules(QObject):
             code = "removed"
         else:
             self._rules[key] = dict(profile=self._sys.stats.get("profile", ""), fps=self._gs.state.get("limit", 0))
+            if scope == "game" and cur.get("title"):
+                self._rules[key]["title"] = cur["title"]
             code = "saved"
         self._save()
         self.notice.emit(code, self._label(key, cur) + (f" · {self._summary(self._rules[key])}" if code == "saved" else ""))
@@ -83,6 +95,8 @@ class GameRules(QObject):
         if not key or self._np.state.get("system") not in emusettings.SPECS:
             return
         rule = self._rules.setdefault(key, dict(profile="", fps=0))
+        if self._np.state.get("title"):
+            rule["title"] = self._np.state["title"]
         rule["res"] = (rule.get("res", 0) + 1) % (emusettings.MAX + 1)
         self._save()
 

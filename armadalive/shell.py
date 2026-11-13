@@ -104,6 +104,14 @@ class Shell(QObject):
         self.keyboardChanged.emit()
         threading.Thread(target=keyboard_show if self._pinned else keyboard_hide, daemon=True).start()
 
+    @Slot(bool)
+    def textFocus(self, on):
+        """A text field got or lost focus: show the on-screen keyboard (Plasma does not do it for this window) and hide it again, unless the Keyboard tile holds it."""
+        if on:
+            threading.Thread(target=keyboard_show, daemon=True).start()
+        elif not self._pinned:
+            threading.Thread(target=keyboard_hide, daemon=True).start()
+
     @Slot(result=bool)
     def hasKwin(self):
         """Whether a Plasma KWin can be asked to raise the window. Without one (the bare X11 side of the bottom screen) there is nothing that can hide

@@ -68,11 +68,12 @@ Details per page follow.
 - **Mode** – brightness of both screens and the stick LEDs, volume.
 - **System** – FPS, a 60/120 FPS limit, quick settings (power profile, fan curve, clear RAM, stick LEDs, Wi-Fi, Bluetooth,
   airplane mode, sound, screenshot, GPU clock, screen off), temperature, fan, and gauges for CPU, GPU, power and RAM. The status line
-  shows the battery time left. The **Tasks** tile is a small task manager for the bottom screen: it lists what is open there (a browser, a file manager) with the memory each program uses, goes to a window when you tap it, closes it, or ends a program that hangs. Two tiles open **Graphs** (FPS, CPU, temperature, power and battery over the last two minutes) and
+  shows the battery time left. The **Rules** tile holds the game rules (power profile, FPS limit and render resolution per game, per system, idle and base). The **Playtime** tile shows the last week as bars and your most played games; the Apps page has **folders** (your own, plus Recently played, Steam and ES-DE systems) and a random-game tile; the Game page has an **Info** page with description and screenshots. The **Tasks** tile is a small task manager for the bottom screen: it lists what is open there (a browser, a file manager) with the memory each program uses, goes to a window when you tap it, closes it, or ends a program that hangs. Two tiles open **Graphs** (FPS, CPU, temperature, power and battery over the last two minutes) and
   **Tuning**. Four more, *Game rule*, *System rule*, *Base rule* and *Idle rule*, remember the current power profile and FPS limit for the game in front, for
   its whole system, for every game without a rule, or for when no game runs, and apply them when a game starts or the last one ends
   (a short message says what was saved or loaded). *Wi-Fi saver* switches Wi-Fi power saving off or on (it is on by
-  default; off gives steadier streaming and online play at a little more battery use). For PPSSPP, Dolphin (GameCube, Wii) and
+  default; off gives steadier streaming and online play at a little more battery use). *Frame gen* turns the
+  frame generation of Eglantine, Eden and TotK on or off for the next game you start (the launchers look for `~/.config/mako-thor/off`). For PPSSPP, Dolphin (GameCube, Wii) and
   ARMSX2 (PS2) a *Resolution* tile steps the game's render resolution through off, 1×…5×; it is written to the emulator's
   config when you select the game in ES-DE, and put back for games without a setting.
 - **Add to Steam** – a tile on System that adds the game in front to Steam's library as a shortcut with its ES-DE artwork. It copies the
@@ -167,7 +168,7 @@ nothing else, and greys out once it is done. The terminal commands below do the 
 | Hold a tile on *System* | move tiles: tap a second tile to swap the two (also across the two pages), *Done* to finish, *Reset* for the original order; the order is saved |
 | Hold Start + Select for 2 s | close the program in front (emulator, ES-DE, Steam game; not Steam itself), with a countdown |
 | Hold the AYN button | screen off (black, touches ignored); press the button again, or hold a finger on the screen, to wake it |
-| Tap the *120 FPS MODE* pill | switch the frame limit between 60 and 120 |
+| Tap the *120 Hz MODE* pill | switch the screen between 60 and 120 Hz (and the frame limit with it) |
 | *Settings → Setup* | install the root helper and route the AYN button, no terminal needed |
 
 Settings are stored in `~/.config/armadalive/` (`ui.json`, `apps.json`, `game_rules.json`, `tiles.json`, `battery.json`); Settings → Backup

@@ -22,13 +22,13 @@ class Gamescope(QObject):
 
     def __init__(self):
         super().__init__()
-        self._fps, self._seen, self._focus, self._limit, self._refresh, self._n = 0.0, 0.0, "", 0, 0, 0
+        self._fps, self._seen, self._focus, self._limit, self._refresh, self._hz, self._n = 0.0, 0.0, "", 0, 0, 0, 0
         threading.Thread(target=self._read, daemon=True).start()
         self._poller = Poller(self, self._read_x, self._apply, 1000)   # xprop runs here: not on the UI thread
 
     @Property("QVariant", notify=changed)
     def state(self):
-        return dict(fps=round(self._fps), focus=self._focus, limit=self._limit, refresh=self._refresh)
+        return dict(fps=round(self._fps), focus=self._focus, limit=self._limit, refresh=self._refresh, hz=self._hz)
 
     def _read(self):
         # blocks until gamescope writes "fps=<n>" lines (the pipe is shared: every reader takes lines away from the others)
@@ -51,7 +51,7 @@ class Gamescope(QObject):
         app = _xprop("GAMESCOPE_FOCUSED_APP")
         x = dict(focus=str(app) if app else "")
         if self._n % 3 == 0:  # X properties change rarely
-            x.update(limit=_xprop("GAMESCOPE_FPS_LIMIT"), refresh=_xprop("GAMESCOPE_DISPLAY_REFRESH_RATE_FEEDBACK"))
+            x.update(limit=_xprop("GAMESCOPE_FPS_LIMIT"), refresh=_xprop("GAMESCOPE_DISPLAY_REFRESH_RATE_FEEDBACK"), hz=_xprop("GAMESCOPE_DYNAMIC_REFRESH"))
         self._n += 1
         return x
 
@@ -61,12 +61,14 @@ class Gamescope(QObject):
         if x["focus"] != self._focus:
             self._focus = x["focus"]
             self.focusChanged.emit(self._focus)
-        self._limit, self._refresh = x.get("limit", self._limit), x.get("refresh", self._refresh)
+        self._limit, self._refresh, self._hz = x.get("limit", self._limit), x.get("refresh", self._refresh), x.get("hz", self._hz)
         self.changed.emit()
 
     @Slot(int)
     def setFpsLimit(self, fps):
-        subprocess.Popen(["xprop", "-root", "-f", "GAMESCOPE_FPS_LIMIT", "32c", "-set", "GAMESCOPE_FPS_LIMIT", str(int(fps))],
-                         env=ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self._limit = int(fps)
+        # the screen mode: the display's refresh rate while a game runs (dynamic refresh) and the frame limit that goes with it
+        for atom in ("GAMESCOPE_DYNAMIC_REFRESH", "GAMESCOPE_FPS_LIMIT"):
+            subprocess.Popen(["xprop", "-root", "-f", atom, "32c", "-set", atom, str(int(fps))],
+                             env=ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self._limit = self._hz = int(fps)
         self.changed.emit()

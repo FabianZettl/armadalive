@@ -37,6 +37,16 @@ class Battery(unittest.TestCase):
         b.alert.connect(b.alerts.append)
         return b
 
+    def test_a_refused_limit_is_remembered_and_hides_the_setting(self):
+        b = self.make()
+        b.supported = True
+        with mock.patch.object(battery.privileged, "available", return_value=True), mock.patch.object(battery.privileged, "run", return_value="the battery did not accept the limit"), \
+                mock.patch.object(battery, "CONFIG", "/tmp/armadalive-test-battery.json"):
+            b.setLimit(80)
+        self.assertTrue(b.state["refused"])
+        self.assertFalse(b.state["supported"])
+        self.assertEqual(b.state["limit"], 100)
+
     def test_each_level_is_told_once_and_rearms_when_charging(self):
         b = self.make()
         b.check(25, "Discharging")
@@ -195,6 +205,18 @@ class Tailscale(unittest.TestCase):
         self.assertEqual(controls.tailscale_retry(err), ["--operator=deck"])
         self.assertIsNone(controls.tailscale_retry("tailscale up --operator=deck; rm -rf /"))
         self.assertIsNone(controls.tailscale_retry("nothing useful here"))
+
+
+class FrameGenSwitch(unittest.TestCase):
+    def test_the_tile_creates_and_removes_the_off_file(self):
+        path = os.path.join(tempfile.mkdtemp(), "mako-thor", "off")
+        with mock.patch.object(controls, "FRAMEGEN_OFF", path), mock.patch.object(controls.Controls, "_read", return_value={}):
+            c = controls.Controls()
+            c._poller = mock.Mock()
+            c.toggleFrameGen()
+            self.assertTrue(os.path.exists(path))
+            c.toggleFrameGen()
+            self.assertFalse(os.path.exists(path))
 
 
 if __name__ == "__main__":

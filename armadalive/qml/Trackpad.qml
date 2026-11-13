@@ -2,9 +2,34 @@ import QtQuick
 
 // A Steam Deck's trackpads and back buttons. The right pad moves the pointer, the left one scrolls; a tap clicks (left pad:
 // right click) and holding a moment before moving drags. L4 L5 R4 R5 are buttons of a virtual pad; each touch buzzes the haptic motor.
+// Also shows emulator-specific hotkey buttons at the top when available.
 Item {
     id: page
     readonly property real gap: 14
+    readonly property string system: nowPlaying.state.system || ""
+    // DEBUG: show hotkeys for any emulated system
+    readonly property var hotkeys: {
+        const s = system
+        if (s.match(/^(snes|nes|genesis|n64|ps1)$/)) return [
+            {id: "save_state", label: "🔒 Save"},
+            {id: "load_state", label: "🔓 Load"},
+            {id: "toggle_cheats", label: "🎮 Cheats"},
+            {id: "fast_forward", label: "⏩ Fast"}
+        ]
+        if (s.match(/^(gamecube|wii)$/)) return [
+            {id: "toggle_widescreen", label: "📐 Wide"},
+            {id: "increase_resolution", label: "⬆️ Res"},
+            {id: "decrease_resolution", label: "⬇️ Res"},
+            {id: "toggle_fullscreen", label: "🖥️ Full"}
+        ]
+        if (s === "ps2") return [
+            {id: "toggle_widescreen", label: "📐 Wide"},
+            {id: "increase_upscaling", label: "⬆️ Scale"},
+            {id: "decrease_upscaling", label: "⬇️ Scale"},
+            {id: "toggle_interlace", label: "🔄 Interlace"}
+        ]
+        return []
+    }
 
     component Pad: Rectangle {
         id: pad
@@ -118,24 +143,71 @@ Item {
             Key { required property string modelData; label: modelData; width: (keys.width - 3 * page.gap) / 4; height: keys.height }
         }
     }
+    // Emulator-specific buttons (replace standard keys)
+    readonly property var emulatorButtons: {
+        const s = page.system
+        if (s.match(/^(snes|nes|genesis|n64|ps1)$/)) return [
+            {label: "📸 Shot", id: "screenshot"},
+            {label: "🎮 Cheats", id: "toggle_cheats"},
+            {label: "⏩ Fast", id: "fast_forward"},
+            {label: "💾 Save", id: "save_state"},
+            {label: "📂 Load", id: "load_state"},
+            {label: "🔄 Glide", id: "glide"}
+        ]
+        if (s.match(/^(gamecube|wii)$/)) return [
+            {label: "📸 Shot", id: "screenshot"},
+            {label: "📐 Wide", id: "toggle_widescreen"},
+            {label: "⬆️ Res", id: "increase_resolution"},
+            {label: "⬇️ Res", id: "decrease_resolution"},
+            {label: "🔄 Ratio", id: "toggle_aspect"},
+            {label: "🔄 Glide", id: "glide"}
+        ]
+        if (s === "ps2") return [
+            {label: "📸 Shot", id: "screenshot"},
+            {label: "📐 Wide", id: "toggle_widescreen"},
+            {label: "⬆️ Scale", id: "increase_upscaling"},
+            {label: "⬇️ Scale", id: "decrease_upscaling"},
+            {label: "🔄 Interlace", id: "toggle_interlace"},
+            {label: "🔄 Glide", id: "glide"}
+        ]
+        return [{label: "🔄 Glide", id: "glide"}]
+    }
+
     Row {
         id: shortcuts
         x: page.gap; y: keys.y + keys.height + page.gap
         width: parent.width - 2 * page.gap
         height: 48
         spacing: page.gap
+        // Esc is always here, whatever the emulator buttons are: it opens the menu of recompiled PC ports (Savage Wind, TotK)
+        Key { label: "Esc"; name: "esc"; width: 72; height: shortcuts.height }
         Repeater {
-            model: [{ l: "Esc", n: "esc" }, { l: "Tab", n: "tab" }, { l: "Enter", n: "enter" }, { l: "Space", n: "space" }, { l: "⌫", n: "backspace" }]
-            Key { required property var modelData; label: modelData.l; name: modelData.n; width: (shortcuts.width - 5 * page.gap) / 6; height: shortcuts.height }
-        }
-        Rectangle {     // trackball: the pointer glides on after a flick
-            width: (shortcuts.width - 5 * page.gap) / 6; height: shortcuts.height
-            radius: height / 2
-            color: trackpad.trackball ? Theme.accent : Theme.circle
-            Text { anchors.centerIn: parent; color: trackpad.trackball ? Theme.onAccent : Theme.text; font.pixelSize: 16; font.weight: Font.Medium; text: Tr.t("Glide") }
-            MouseArea { anchors.fill: parent; onClicked: trackpad.setTrackball(!trackpad.trackball) }
+            model: page.emulatorButtons
+            Rectangle {
+                width: (shortcuts.width - 72 - page.emulatorButtons.length * page.gap) / page.emulatorButtons.length
+                height: shortcuts.height
+                radius: Theme.radius
+                color: modelData.id === "glide" && trackpad.trackball ? Theme.accent : Theme.card
+                border.color: Theme.border
+                border.width: 1
+                Text {
+                    anchors.centerIn: parent
+                    color: modelData.id === "glide" && trackpad.trackball ? Theme.onAccent : Theme.text
+                    font.pixelSize: 12
+                    font.weight: Font.Medium
+                    text: modelData.label
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (modelData.id === "glide") trackpad.setTrackball(!trackpad.trackball)
+                        else emulatorControl.execute(page.system, modelData.id, nowPlaying.state.path)
+                    }
+                }
+            }
         }
     }
+    // Trackpads (always show)
     Row {
         x: page.gap
         y: shortcuts.y + shortcuts.height + page.gap
