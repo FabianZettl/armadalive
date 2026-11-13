@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0
+
+ArmadaLive 1.0: the bottom screen of the Thor as a companion with a game page, game info, an app and game launcher with folders, a System page with rules, tuning, graphs, tasks and play time, a first-run setup and 55 themes. The README and its screenshots are new.
+
+
+- **First-run setup** on a fresh install (an install that already has settings does not get it; Settings, Setup, "Run setup again" shows it any time): one step each for the root helper, the AYN button, ES-DE and Steam. Each says what it is for and how to set it up, has a button where the app can help (install, set up, open ES-DE), and when skipped says what is lost. Then a theme and the first eight tiles of the System page, then a summary. Every step can be skipped. Not tried with touch or on a real fresh install.
+- **The backup also holds the app grid with its folders and the play history** (`apps.json`, `history.json`).
+- **Settings has a menu on the left** (General, Appearance, Battery and heat, Updates, Setup, Backup, About) and the chosen section on the right. The burger button folds the menu to icons.
+
 ## 0.9.0
 
 - **The Mode page moved into System.** A **Brightness** tile opens a popup with the brightness of both screens (no volume slider: the device has volume keys), the **Stick LEDs** tile opens a popup with on/off, brightness and colour (a single tap no longer switches the LEDs). The bottom bar has four entries now: Game, Apps, Controls, System.

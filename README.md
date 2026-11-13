@@ -1,115 +1,98 @@
 # ArmadaLive
 
-**A companion app for the AYN Thor's bottom screen on [Armada OS](https://github.com/armada-os/armada)**, for **ES-DE** and
-**Steam / Big Picture**.
+**The bottom-screen companion for the AYN Thor on [Armada OS](https://github.com/armada-os/armada).** It shows the game you are in
+on the lower screen and puts the Thor's controls, your games and your stats within reach of your thumb.
 
-Whatever you scroll through or play on the top screen, the bottom screen shows it: the game's logo and background, its manual
-and cheats. Next to that it holds the Thor's controls: power profiles, fan curves, brightness, volume, quick settings and an app
-grid. It is a native Qt app that runs full screen in the bottom Plasma session, never draws over your game, and the AYN button
-always brings it to the front.
-
-## The goal
-
-On AYN's Android version of the Thor the bottom screen is a dual-screen assistant: it shows the game that is running, and next to it
-a panel of quick settings, FPS, temperature and power controls. On Armada OS there was nothing like it, so the second screen sat
-unused. **ArmadaLive brings that dual-screen experience to Armada OS**: the running game on the bottom screen (with its logo and
-background, from ES-DE or Steam) and the quick settings beside it.
-
-It is an independent re-creation that follows the idea and the look of the Android app. It uses none of its code or assets.
+Whatever you scroll through or play on the top screen, the bottom screen follows it: the game's logo and background, its info,
+manual and cheats. Next to that it holds the quick settings, an app and game launcher with folders, per-game power rules,
+play time statistics, a task manager and trackpads. It is a native Qt app that runs full screen in the bottom Plasma session,
+never draws over your game, and the AYN button always brings it to the front.
 
 | ES-DE: a game | ES-DE: a system | Steam: highlighted in Big Picture |
 |---|---|---|
-| ![Donkey Kong Country](docs/images/game-dkc.png) | ![Super Nintendo](docs/images/game-snes.png) | ![Ori and the Blind Forest](docs/images/steam-ori.png) |
+| ![Chrono Trigger](docs/images/game-chrono.jpg) | ![Super Nintendo](docs/images/game-snes.jpg) | ![Hades](docs/images/steam-hades.jpg) |
 
-| System | Apps |
-|---|---|
-| ![System](docs/images/system.png) | ![Apps](docs/images/apps.png) |
-
-| Cheats | Settings | Tuning |
+| System | Apps | A folder |
 |---|---|---|
-| ![Cheats](docs/images/cheats.png) | ![Settings](docs/images/settings.png) | ![Tuning](docs/images/tuning.png) |
+| ![System](docs/images/system.png) | ![Apps](docs/images/apps.png) | ![A folder](docs/images/folder.png) |
+
+| Game info | Play time | Rules |
+|---|---|---|
+| ![Game info](docs/images/info.png) | ![Play time](docs/images/stats.png) | ![Rules](docs/images/rules.png) |
+
+| Settings | Themes | First-run setup |
+|---|---|---|
+| ![Settings](docs/images/settings-appearance.png) | ![Dracula](docs/images/theme-dracula.png) | ![First-run setup](docs/images/onboarding-6.png) |
 
 Screenshots were taken on the author's own Thor. The game artwork in them comes from his ES-DE collection and Steam library and
-belongs to its owners; ArmadaLive does not ship any of it.
+belongs to its owners; ArmadaLive does not ship any of it. The play time, folders and rules in the screenshots are sample data.
 
 > **Not affiliated.** ArmadaLive is an independent project. It is not made, endorsed or supported by AYN, the Armada OS
-> project, Valve, ES-DE or anyone else mentioned here. See [CREDITS.md](CREDITS.md).
+> project, Valve, ES-DE or anyone else mentioned here. It follows the idea and the look of AYN's Android dual-screen app and
+> uses none of its code or assets. See [CREDITS.md](CREDITS.md).
 >
 > **Made with AI.** A large part of this code was written by an AI assistant (Claude Code). Read
 > [AI_DISCLOSURE.md](AI_DISCLOSURE.md) before you install it, especially the optional root helper.
 
-## In short
-
-ArmadaLive covers the whole bottom screen of a Thor in Game mode:
-
-- **See what plays**: logo and background of the game in front (ES-DE, emulators, Steam, Ludo), its manual and cheats, a Ludo start banner and a media bar for what plays on the main screen.
-- **Launch things**: a sideways-scrolling grid of covers with desktop apps, Steam games and shortcuts, and ES-DE games by system; trackpads and back buttons L4 L5 R4 R5.
-- **Control the device**: power profile, fan curves, brightness, volume, Wi-Fi, Bluetooth, Tailscale, airplane mode, stick LEDs, FPS limit, render resolution of some emulators, per-game and per-system rules, heat and battery warnings, a charge limit.
-- **Tune it**: CPU governor, underclock, GPU limits and a fan-curve editor with an automatic undo, plus live graphs.
-- **Stay out of the way**: it never draws over the game, closes a game with Start + Select held, dims itself, and the AYN button always brings it up. English and German, 55 themes in four groups (general, consoles, operating systems and launchers, games), light and dark: Dracula, Nord, Dreamcast, Wii, Switch, Windows XP, macOS, KDE Plasma, Zelda, Mario, Pokémon, Sonic, Cyberpunk 2077 and many more. A theme sets more than colours: the shape of buttons and tiles, a faint backdrop pattern, how animations feel, the font and the style of the icons, in-app updates, a one-file backup.
-
-Details per page follow.
-
 ## What it does
 
-- **Game** – the game in front, with logo and background. The logo moves gently (it can be switched off in Settings), and
-  the picture cross-fades when the game changes. It knows about
-  - the game ES-DE has selected or started,
-  - emulators that are running (it looks for the ROM they were started with: RetroArch, Eden, Azahar, Cemu, ARMSX2, Dolphin,
-    PPSSPP, RPCS3, xemu, DuckStation, Vita3K and more),
-  - Steam games, and the app you are highlighting in Steam Big Picture.
+**The game in front**
+- Logo and background of the game ES-DE has selected or started, of emulators that are running (it finds the ROM they were
+  started with: RetroArch, Eden, Azahar, Cemu, ARMSX2, Dolphin, PPSSPP, RPCS3, xemu, DuckStation, Vita3K and more), of Steam games,
+  of non-Steam shortcuts that are games, of the app you highlight in Steam Big Picture, and of games in the Ludo plugin (RomM).
+  Artwork comes from ES-DE's scraped media and Steam's library cache.
+- Tap the artwork: **Info**, **Manual** and **Cheats** buttons and your play time appear. *Info* shows the description, genre,
+  developer, year, rating, play time, times started, last played and screenshots, from ES-DE or, for Steam games, from Steam's
+  store (needs internet once, then it is cached). A heart makes the game a favourite.
+- A media bar for whatever plays on the main screen, and a status line with the battery time left. The page is full screen; swipe
+  up for the bar.
 
-  Artwork comes from ES-DE's `downloaded_media` (so scrape once in ES-DE) and from Steam's own library cache.
-  This page is full screen; **swipe up** to show the status line and the bar, swipe down to hide them again.
-- **Manual** and **Cheats** – the game's PDF manual from ES-DE's media, and cheats from your RetroArch cheats folder. Tap the Game
-  page and two buttons appear for a few seconds, each only if the current game has it. They are not in the bar.
-- **Apps** – a grid of apps you choose, three rows that scroll sideways (press and hold, or tap the empty tile at the end). It takes desktop apps (they open on the bottom screen) and Steam games and shortcuts and ES-DE games (the picker has a tab per ES-DE system), shown as rounded square covers. Steam and ES-DE tiles start the game on the main screen (an ES-DE game gets a Steam shortcut on its first tap).
-  The grid also shows on the Game page when nothing is running. The page can be switched off in Settings (it then leaves the bar).
-- **System** – FPS, a 60/120 FPS limit, quick settings (power profile, fan curve, clear RAM, stick LEDs, Wi-Fi, Bluetooth,
-  airplane mode, sound, screenshot, GPU clock, screen off), temperature, fan, and gauges for CPU, GPU, power and RAM. The status line
-  shows the battery time left. The **Brightness** tile sets the brightness of both screens, the **Stick LEDs** tile for the LEDs (on/off, brightness, colour). The **Rules** tile holds the game rules (power profile, FPS limit and render resolution per game, per system, idle and base). The **Playtime** tile shows the last week as bars and your most played games; the Apps page has **folders** (your own, plus Recently played, Steam and ES-DE systems) and a random-game tile; the Game page has an **Info** page with description and screenshots. The **Tasks** tile is a small task manager for the bottom screen: it lists what is open there (a browser, a file manager) with the memory each program uses, goes to a window when you tap it, closes it, or ends a program that hangs. Two tiles open **Graphs** (FPS, CPU, temperature, power and battery over the last two minutes) and
-  **Tuning**. Four more, *Game rule*, *System rule*, *Base rule* and *Idle rule*, remember the current power profile and FPS limit for the game in front, for
-  its whole system, for every game without a rule, or for when no game runs, and apply them when a game starts or the last one ends
-  (a short message says what was saved or loaded). *Wi-Fi saver* switches Wi-Fi power saving off or on (it is on by
-  default; off gives steadier streaming and online play at a little more battery use). *Frame gen* turns the
-  frame generation of Eglantine, Eden and TotK on or off for the next game you start (the launchers look for `~/.config/mako-thor/off`). For PPSSPP, Dolphin (GameCube, Wii) and
-  ARMSX2 (PS2) a *Resolution* tile steps the game's render resolution through off, 1×…5×; it is written to the emulator's
-  config when you select the game in ES-DE, and put back for games without a setting.
-- **Add to Steam** – a tile on System that adds the game in front to Steam's library as a shortcut with its ES-DE artwork. It copies the
-  launch command ES-DE wrote to its log when it started the game, so the game must have been started from ES-DE once. If the same
-  command is already a shortcut the tile shows *In Steam* and a tap only says so. Each action ends in a short popup. Needs the Steam
-  debug port like the Big Picture selection (see optional step 4); shortcuts are not removed again by ArmadaLive.
-- **Keyboard** – a tile that shows the on-screen keyboard of the bottom screen and keeps it up until you tap it again (it normally appears by itself in text fields; this is for dialogs that do not ask for it, such as the wallet password).
-- **Ludo start banner** – with the Ludo plugin (RomM) installed, the bottom screen shows what Ludo is doing before a game starts (checking saves, syncing, starting, uploading after a game closed). It reads Ludo's log in `~/homebrew/logs/ludo`.
-- **Ludo games** – the game highlighted in Ludo shows its logo and background on the bottom screen, like in ES-DE (ES-DE media for downloaded games, the server's screenshot for the rest).
-- **Controls** – two trackpads and the back buttons L4 L5 R4 R5 on the bottom screen, with a buzz for every touch (virtual mouse and pad through `/dev/uinput`; the back buttons are a second controller to Steam and are mapped in Steam Input).
-- **Tailscale** – a tile switches Tailscale on or off (a shield shows in the status line while it is connected). The tile can only do that
-  if your user is Tailscale's operator: run `sudo tailscale set --operator=$USER` once.
-- **Heat warning** – a popup when the device reaches 80, 85 or 90 °C (or never), with the power profile that is running; at most every five minutes.
-- **Media bar** – when something plays on the main screen (music, video, a browser: anything that speaks MPRIS) a bar with title,
-  previous, play/pause and next shows above the page bar.
-- **Close game** – hold **Start + Select for two seconds** to close the program in front: an emulator, ES-DE or a Steam game (never
-  Steam itself). ArmadaLive comes to the front with a countdown; let go early and nothing happens. It asks the program to quit
-  and kills it after three seconds if it does not. Can be switched off in Settings.
-- **Tuning** – reached from the *Tuning* tile on System: CPU governor, underclock, GPU limits and a draggable fan-curve
-  editor for each power profile, plus three presets (Cool, Quiet, Fast) fitted to the device. Needs the root helper. A change here
-  is taken back after 15 seconds unless you tap *Keep*, so a bad fan curve or limit cannot stick; if the app is closed before you
-  confirm, the change is undone at the next start.
-- **Settings** (a tile on the System page) – a health check (what is missing so that ArmadaLive can see your games, with a hint for each), English or German, fifteen themes (three of them light: Nintendo DS, Nintendo 3DS and iiSU; the dark iiSU Night is the fourth new one) (SteamOS, SNES, Game Boy, PS2, Famicom and more) with accent colours, one of them **Follow game** whose whole palette takes its colour from the artwork of the game in front,
-  a low-battery warning and an optional charge limit (80 or 90 %), a one-file **backup** of settings, game rules and tile order, logo animation on or off, in-app updates, and **Setup**: install the
-  root helper and route the AYN button with one tap each (password prompt, greyed out once done). About and AI disclosure.
+**Launch things**
+- An **Apps** page with a grid of covers that scrolls sideways: desktop apps (they open on the bottom screen), Steam games and
+  shortcuts, and ES-DE games, which start on the main screen. The picker has a search and a tab per ES-DE system.
+- **Folders**: your own (press and hold, *Add to folder*), plus smart folders that fill themselves: *Recently played*,
+  *Favorites*, *Steam* and one per ES-DE system, with the system's picture from your current ES-DE theme. Every folder has a
+  *Random* button; a dice tile starts any game.
+- **Add to Steam**: puts the game in front into Steam's library as a shortcut, with its ES-DE artwork.
+
+**Control the device** (the System page)
+- A card with the live FPS and a **60/120 Hz mode** switch, quick-setting tiles you can rearrange and which scroll in pages: power
+  profile, fan curve, stick LEDs (on/off, brightness, colour), brightness of both screens, Wi-Fi, Bluetooth, Tailscale, sound, screenshot,
+  clear RAM, frame generation (Eglantine, Eden, TotK), on-screen keyboard, screen off, Tuning, Graphs, Tasks, Playtime, Rules and Settings.
+  Temperature, fan and gauges for CPU, GPU, power and RAM.
+- **Rules**: remember the power profile and FPS limit (and the render resolution of PPSSPP, Dolphin and ARMSX2) for one game, one
+  system, for idle, or as the base for everything else. They are applied when a game starts or the last one ends. The list names
+  each game.
+- **Tuning**: CPU governor, underclock, GPU limits and a draggable fan-curve editor per power profile, with Cool, Quiet and Fast
+  presets. Every change is taken back after 15 seconds unless you keep it, so a bad curve cannot stick.
+- **Graphs**: FPS, CPU, temperature, power and battery over the last two minutes.
+- **Tasks**: a small task manager for the bottom screen. It lists what is open there with its memory, goes to a window, closes it, or
+  ends a program that hangs.
+- **Play time**: bars for the last week, the total and your most played games. It counts what runs on the main screen and imports
+  the dates and times Steam and ES-DE already have.
+- **Controls**: two trackpads, the back buttons L4, L5, R4 and R5 as a second controller to Steam, an Esc button and buttons for the
+  running emulator's hotkeys (virtual mouse and pad through `/dev/uinput`).
+
+**Stay out of the way**
+- It never draws over the game. It dims itself after 10 seconds, closes a game when you hold Start and Select for two seconds, and
+  warns about heat and a low battery. The AYN button brings it to the front or sends it away; holding it switches the screen off.
+- **55 themes** in four groups (general, consoles, operating systems and launchers, games), light and dark, from Dracula and Nord to
+  Dreamcast, Switch, Windows XP, macOS, Zelda, Mario and Cyberpunk 2077. A theme sets the colours, the shape of buttons and tiles,
+  a faint backdrop, how animations feel, the font and the icon style, and the stick LEDs follow its accent. English and German.
+- A **first-run setup** that explains what ArmadaLive needs and why, lets you skip what you do not need, and lets you pick a theme and
+  your first eight tiles. A health check, in-app updates (checked against a SHA-256) and a one-file **backup** of settings, rules,
+  tile order, apps with folders and play history.
 
 ## Requirements
 
-- An AYN Thor running Armada OS. Developed and tested on build `20261010`.
-- Nothing to install from a package manager: `armada-power`, `armada-rgb`, `nmcli`, `rfkill`, `wpctl` and `spectacle` are part
-  of Armada OS.
+- An AYN Thor running Armada OS. Developed on the Preview and Beta images, last on beta `20261109`.
+- Nothing to install from a package manager: `armada-power`, `armada-rgb`, `nmcli`, `rfkill`, `wpctl` and `spectacle` are part of
+  Armada OS.
 - Qt for Python (PySide6) comes with some Armada images but not all (a system update once removed it). `install.sh` checks, and if it is
-  missing it creates a private Python environment in `~/.local/share/armadalive/venv` and installs PySide6 and PyMuPDF there
-  (several hundred MB, needs internet, once). After a system update that changes Python's version, run `./install.sh` again.
-  Without Qt's PDF module, manuals are drawn page by page with PyMuPDF.
-- The bottom screen has to stay switched on in Armada's settings (Decky plugin, *Armada control*): ArmadaLive runs in the bottom Plasma session, and with the screen off there is nothing for it to show on.
-- Optional: [ES-DE](https://es-de.org) with scraped media, for logos and backgrounds of emulated games.
+  missing it creates a private Python environment in `~/.local/share/armadalive/venv` and installs PySide6 and PyMuPDF there (several
+  hundred MB, needs internet, once). After a system update that changes Python's version, run `./install.sh` again.
+- The bottom screen has to stay switched on in Armada's settings (Decky plugin, *Armada control*): ArmadaLive runs in the bottom Plasma session.
+- Optional: [ES-DE](https://es-de.org) with scraped media, for logos, backgrounds and game info of emulated games.
 
 ## Install
 
@@ -121,106 +104,94 @@ cd armadalive
 ./install.sh
 ```
 
-That installs ArmadaLive for your user only, no root needed, and starts it. It runs as a user service, starts at login and
-adds an **ArmadaLive** entry to the app menu.
+That installs ArmadaLive for your user only, no root needed, and starts it. It runs as a user service, starts at login and adds an
+**ArmadaLive** entry to the app menu.
 
-**Then open ArmadaLive → Settings → Setup.** The *root helper* (fan curves, profile tuning, stick LEDs, *Clear RAM*) and the *AYN button*
-are installed and activated right there: tap *Install* or *Set up*, type your password, done. You do not need a terminal for this.
+**The first start opens the setup.** It walks you through the four things ArmadaLive can use, each with what it is for, a button where
+the app can do it for you, and a note on what you lose if you skip it:
 
-### Optional steps
+1. **Root helper**: fan curves, profile tuning, stick LEDs, clear RAM and the charge-limit attempt. It installs
+   `/etc/armadalive/armadalive-helper` and a sudoers rule that lets *your user* run that one program without a password. The helper
+   accepts only a short list of actions and checks every value. Read it; it is short. Undo with
+   `sudo ~/.local/share/armadalive/scripts/install-helper.sh --remove`.
+2. **AYN button opens ArmadaLive**: adds a copy of InputPlumber's AYN capability map under `/etc/inputplumber` and restarts
+   InputPlumber, so the controllers reconnect for a moment. The override lives in `/etc`, so after an OS rollback run it again. Undo with
+   `sudo ~/.local/share/armadalive/scripts/ayn-button.sh --remove`.
+3. **ES-DE**: in ES-DE press START, open *Other Settings* and turn on **Custom Event Scripts** and **Browsing Custom Event
+   Scripts**, and scrape media. `install.sh` has already put its hooks in `~/ES-DE/scripts`. Without this, ArmadaLive still sees running
+   emulators and Steam, but not what you scroll through in ES-DE.
+4. **Steam**: the highlighted app in Big Picture is read through Steam's local debug port. Turn on *CEF Remote Debugging* in Steam's
+   developer settings, or install Decky Loader, then restart Steam. Without it, Steam games are still followed while they run.
 
-Steps 2 and 3 are the two buttons under **Settings → Setup** in the app. Each asks for your password, passes it to `sudo` and
-nothing else, and greys out once it is done. The terminal commands below do the same thing and are listed for SSH users.
-
-1. **ES-DE events.** In ES-DE press START, open *Other Settings* and turn on **Custom Event Scripts** and **Browsing Custom
-   Event Scripts**, then leave the menu so ES-DE saves. `install.sh` has already put its hooks in `~/ES-DE/scripts`.
-   Without this, ArmadaLive still sees running emulators and Steam, but not what you scroll through in ES-DE.
-2. **AYN button opens ArmadaLive** (*Setup → AYN button*, or `sudo ~/.local/share/armadalive/scripts/ayn-button.sh`).
-   This adds a copy of InputPlumber's AYN capability map under `/etc/inputplumber` and restarts InputPlumber, so the
-   controllers reconnect for a moment. The override lives in `/etc`, so after an OS rollback run it again. Undo with `--remove`.
-   It is the same override ThorHUD uses.
-3. **Root helper** for fan curves, profile tuning, stick LEDs and *Clear RAM* (*Setup → Root helper*, or
-   `sudo ~/.local/share/armadalive/scripts/install-helper.sh`). This installs `/etc/armadalive/armadalive-helper` and a sudoers
-   rule that lets *your user* run that one program without a password. The helper accepts only a short list of actions and checks
-   every value (known governors, real GPU steps, temperature and PWM ranges, colours). It is about 170 lines; read it. Undo with
-   `--remove`. After an update that changes the helper, Setup shows *Needs update*.
-4. **Highlighted app in Steam Big Picture.** ArmadaLive reads which app is highlighted from Steam's own browser through its
-   local debug port. Steam only opens that port while `~/.steam/steam/.cef-enable-remote-debugging` exists; Decky Loader
-   creates it. Without it, ArmadaLive still follows Steam games that are running.
+Then a theme and the first eight tiles of the System page. Everything can be skipped, and it can be started again in
+**Settings → Setup → Run setup again**. The password for the first two is typed into the app and passed to `sudo` and nothing else.
 
 ### Update and uninstall
 
-- **Update:** *Settings* → *Check for updates* → *Install update*. It downloads the newest GitHub release and runs its
-  `install.sh`. The root helper is a separate copy: if a release changes it, *Setup* shows *Needs update* and you tap *Update*.
-- **Uninstall:** `./install.sh --uninstall`, plus `sudo scripts/install-helper.sh --remove` and
-  `sudo scripts/ayn-button.sh --remove` if you installed those.
+- **Update:** *Settings → Updates → Check for updates → Install update*. It downloads the newest GitHub release, checks it against its
+  published SHA-256 and runs its `install.sh`. The root helper is a separate copy: if a release changes it, *Setup* shows *Needs update*.
+- **Uninstall:** `./install.sh --uninstall`, plus the two `--remove` commands above if you installed those.
 
 ## Using it
 
 | | |
 |---|---|
-| Swipe left or right | next or previous page (not while you drag a slider, the fan curve or the quick-setting pages) |
+| Swipe left or right | next or previous page (not while you drag a slider, the fan curve or the tile pages) |
 | Swipe up on *Game* | show the status line and the bar for three seconds |
-| Leave it alone for 10 s | the screen dims a little; a touch, or a new game or logo, brightens it (can be switched off in Settings) |
-| AYN button | tap: bring ArmadaLive to the front, or send it to the background if it already is in front (so a dual-screen game like Azahar shows through) |
-| Press and hold an app tile | choose another app for that slot |
-| Hold a tile on *System* | move tiles: tap a second tile to swap the two (also across the two pages), *Done* to finish, *Reset* for the original order; the order is saved |
+| Tap the artwork on *Game* | Info, Manual and Cheats, and your play time |
+| Tap the *Hz MODE* pill | switch the screen between 60 and 120 Hz (and the frame limit with it) |
+| Hold a tile on *System* | move tiles: tap a second tile to swap, *Done* to finish, *Reset* for the standard order |
+| Press and hold an app tile | choose another app, game or folder for that slot |
+| AYN button | tap: bring ArmadaLive to the front, or send it away if it is in front; hold: screen off |
 | Hold Start + Select for 2 s | close the program in front (emulator, ES-DE, Steam game; not Steam itself), with a countdown |
-| Hold the AYN button | screen off (black, touches ignored); press the button again, or hold a finger on the screen, to wake it |
-| Tap the *120 Hz MODE* pill | switch the screen between 60 and 120 Hz (and the frame limit with it) |
-| *Settings → Setup* | install the root helper and route the AYN button, no terminal needed |
+| Leave it alone for 10 s | the screen dims a little; a touch brightens it (can be switched off in Settings) |
 
-Settings are stored in `~/.config/armadalive/` (`ui.json`, `apps.json`, `game_rules.json`, `tiles.json`, `battery.json`); Settings → Backup
-saves them as one file, `~/ArmadaLive-backup.json`.
+Settings are kept in `~/.config/armadalive/`. *Settings → Backup* saves them as one file, `~/ArmadaLive-backup.json`.
 
 ## How it works
 
-- `scripts/esde-event.py` is linked into ES-DE's event folders and writes the latest event to
-  `/run/user/<uid>/armadalive/state.json`.
-- The app (`armadalive/`, Python and QML) combines that file with a scan of running emulators, gamescope's focused app and
-  stats pipe, and Steam's UI selection.
+- `scripts/esde-event.py` is linked into ES-DE's event folders and writes the latest event to `/run/user/<uid>/armadalive/state.json`.
+- The app (`armadalive/`, Python and QML) combines that file with a scan of running emulators, gamescope's focused app and stats pipe,
+  and Steam's UI selection. Game info comes from ES-DE's gamelists and, for Steam games, from Steam's store.
 - Power profiles come from `armada-power`, brightness from logind, radios and volume from `nmcli`, `rfkill` and `wpctl`.
 - Things that need root go through the helper above and nothing else.
 
 ## Known limits
 
-Honest list of what has *not* been verified or does not work yet:
+An honest list of what has *not* been verified or does not work yet:
 
-- The **60/120 FPS pill** sets gamescope's frame limit. The panel's refresh rate stays at 120 Hz.
-- Which **brightness slider belongs to which screen** is an assumption (DSI-1 is the bottom panel, DSI-2 the top one).
-  If they are swapped, set `ARMADALIVE_BOTTOM_BACKLIGHT` and `ARMADALIVE_TOP_BACKLIGHT` in the service.
-- The **Wi-Fi, Bluetooth and airplane** tiles were not switched during development (that would cut the SSH link).
-- Staying **full screen** relies on Plasma Mobile hiding its panels; its swipe-up gesture should bring them back.
+- **The Hz mode** sets gamescope's dynamic refresh rate and the frame limit. It was accepted by gamescope, but not checked with a
+  running game on every setup.
+- **The charge limit** does not work on the Thor: the battery controller refuses it. ArmadaLive says so and hides the setting.
+- Which **brightness slider belongs to which screen** is an assumption (DSI-1 is the bottom panel, DSI-2 the top one). If they are
+  swapped, set `ARMADALIVE_BOTTOM_BACKLIGHT` and `ARMADALIVE_TOP_BACKLIGHT` in the service.
+- The **Wi-Fi, Bluetooth and airplane** switches were not used during development (that would cut the SSH link).
 - **Steam Big Picture selection** depends on Steam's internals and can break with a Steam update.
-- A window that you close is only hidden; the AYN button brings it back. This path has not been tried on hardware.
-- No screen-mode switching (dual, top only, bottom only, swap): not needed here and not implemented.
-- **Close game** reads the controller directly, and only works while ArmadaLive is running. It was not tried against every
-  emulator: ones that ignore the polite quit are killed after three seconds, unsaved progress is lost.
-- The **Wi-Fi saver** setting is dropped by the kernel when Wi-Fi reconnects. The **charge limit** and **Wi-Fi saver** need the
-  root helper to be updated (Settings → Setup).
-- The **resolution tile** edits the emulators' own config files; Azahar is not supported (its config repeats every key).
-  Start the game from ES-DE so the file is written before the emulator reads it.
-- **Follow game** uses the game's artwork, not the theme of the top screen (ES-DE themes cannot be read as colours).
+- **Close game** reads the controller directly. Emulators that ignore the polite quit are killed after three seconds, unsaved progress
+  is lost.
+- The **resolution** setting edits the emulators' own config files; Azahar is not supported. Start the game from ES-DE so the file is
+  written before the emulator reads it.
+- **Folders, the settings menu and the first-run setup** were checked with screenshots and on one Thor, less with every kind of touch.
+- **Game info for Steam games** needs an internet connection the first time.
 
 ## Development
 
 ```sh
 PYTHONPATH=. QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
-    python3 -m armadalive --snapshot out.png --page 3 --lang en
+    python3 -m armadalive --snapshot out.png --page 2 --lang en
 ```
 
-renders a page to an image (pages: 0 game, 1 apps, 2 mode, 3 system, 4 settings, 5 tuning). The interface is plain QML in
-`armadalive/qml`; the English text is the key and German lives in `Tr.qml`.
-
-### Tests and releases
+renders a page to an image (pages: 0 game, 1 apps, 2 system, 3 settings, 4 tuning, 5 cheats, 6 manual, 7 graphs, 8 controls, 9 tasks,
+10 play time, 11 info, 12 rules). `--demo` pins a game, `--theme` and `--lang` set the look, `--click x,y,ms` taps and `--step N`
+shows a step of the first-run setup. The interface is plain QML in `armadalive/qml`; the English text is the key and German lives in `Tr.qml`.
 
 ```sh
 QT_QPA_PLATFORM=offscreen python3 -m unittest discover -s tests -t . -v
 ```
 
-runs the tests (a fake ES-DE folder, the root helper against a temp folder, settings, game rules, all QML files, German texts).
-GitHub runs them on every push. `scripts/make-release.sh <version> <notes.md>` runs them, builds `armadalive.tar.gz` with its
-`.sha256` and publishes the release; the in-app updater checks the download against that checksum and refuses a release without one.
+runs the tests (a fake ES-DE folder, the root helper against a temp folder, settings, rules, folders, all QML files, German
+texts). GitHub runs them on every push. `scripts/make-release.sh <version> <notes.md>` runs them, builds `armadalive.tar.gz`
+with its `.sha256` and publishes the release; the in-app updater refuses a release without a checksum.
 
 ## License
 

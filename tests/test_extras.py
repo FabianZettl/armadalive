@@ -76,6 +76,12 @@ class Backup(unittest.TestCase):
             with self.assertRaises(ValueError):
                 backup.apply(["not", "a", "backup"])
 
+    def test_the_app_grid_with_its_folders_and_the_play_history_are_in_the_backup(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(backup, "CONFIG_DIR", d):
+            data = {"files": {"apps.json": {"slots": [], "folders": {"1": {"name": "Tools", "items": []}}}, "history.json": {"games": {}, "sessions": [["x", 1, 2]]}}}
+            self.assertEqual(backup.apply(data), 2)
+            self.assertEqual(backup.collect()["files"], data["files"])
+
 
 class EmuSettings(unittest.TestCase):
     def ini(self, text):

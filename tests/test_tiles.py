@@ -15,6 +15,11 @@ class Order(unittest.TestCase):
     def test_unmoved_tiles_keep_their_order(self):
         self.assertEqual(self.t.arrange(IDS), IDS)
 
+    def test_the_chosen_tiles_come_first(self):
+        self.t.setOrder(["c", "a"])
+        self.assertEqual(self.t.arrange(IDS), ["c", "a", "b", "d"])
+        self.assertEqual(tiles.Tiles().arrange(IDS), ["c", "a", "b", "d"])
+
     def test_swap_and_remember(self):
         self.t.swap("a", "c", IDS)
         self.assertEqual(self.t.arrange(IDS), ["c", "b", "a", "d"])

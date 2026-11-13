@@ -52,6 +52,12 @@ class Tiles(QObject):
             self._order = ids
             self._save()
 
+    @Slot("QVariant")
+    def setOrder(self, ids):
+        """The tiles in `ids` come first, in that order; every other tile follows in its usual place."""
+        self._order = _ids(ids)
+        self._save()
+
     @Slot()
     def reset(self):
         self._order = []

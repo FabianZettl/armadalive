@@ -448,6 +448,12 @@ Window {
         }
     }
 
+    Onboarding {
+        objectName: "onboarding"
+        anchors.fill: parent
+        visible: ui.state.onboarded === false
+    }
+
     PasswordDialog {
         anchors.fill: parent
         visible: Auth.ask !== ""

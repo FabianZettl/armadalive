@@ -5,7 +5,7 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 CONFIG = os.path.expanduser("~/.config/armadalive/ui.json")
 
 
-DEFAULTS = dict(theme="stock", accent="", lang="en", animate=True, dim=True, close=True, heat=85, apps=True, ledFollow=True)
+DEFAULTS = dict(theme="stock", accent="", lang="en", animate=True, dim=True, close=True, heat=85, apps=True, ledFollow=True, onboarded=True)
 
 
 class UiSettings(QObject):
@@ -20,6 +20,8 @@ class UiSettings(QObject):
             saved = {}
         # saved values win over the defaults; keys we do not know are dropped
         self._s = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}} if isinstance(saved, dict) else dict(DEFAULTS)
+        if not saved:      # a fresh install (no settings yet) gets the first-run setup; an install that already has settings does not
+            self._s["onboarded"] = False
 
     @Property("QVariant", notify=changed)
     def state(self):
@@ -52,6 +54,12 @@ class UiSettings(QObject):
         if family:
             font.setFamily(family)
         QGuiApplication.setFont(font)
+
+    @Slot(bool)
+    def setOnboarded(self, done):
+        """Whether the first-run setup has been gone through (false shows it again)."""
+        self._s["onboarded"] = bool(done)
+        self._save()
 
     @Slot(bool)
     def setLedFollow(self, on):

@@ -1,11 +1,11 @@
-"""One file with ArmadaLive's settings, rules and tile order, to keep or to move to another device."""
+"""One file with ArmadaLive's settings, rules, tile order, app grid with folders and play history, to keep or to move to another device."""
 import json, os, sys
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 from . import __version__
 
 CONFIG_DIR = os.path.expanduser("~/.config/armadalive")
 FILE = os.path.expanduser("~/ArmadaLive-backup.json")
-NAMES = ("ui.json", "game_rules.json", "tiles.json", "battery.json")   # nothing else is ever read or written
+NAMES = ("ui.json", "game_rules.json", "tiles.json", "battery.json", "apps.json", "history.json")   # nothing else is ever read or written
 
 
 def collect():

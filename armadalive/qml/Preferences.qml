@@ -1,7 +1,7 @@
 import QtQuick
 
-// App settings: language, look, updates, and who made this.
-Flickable {
+// App settings: a menu on the left (the burger button folds it to icons) and the chosen section on the right.
+Item {
     id: page
     readonly property var look: ui.state
     readonly property var up: updater.state
@@ -9,13 +9,20 @@ Flickable {
     readonly property var cc: controls.state
     readonly property var bat: battery.state
     readonly property var bk: backup.state
-    property string themeTab: ""   // the theme group shown in Appearance; empty = the current theme's own
     readonly property var accents: ["A97BE0", "68E1FB", "2EE59D", "D4AF37", "FF9F0A", "FF453A", "FF3DF2", "1A9FFF"]
     readonly property real m: 16
-    contentHeight: col.height + 2 * m
-    clip: true
+    property string section: "general"
+    property bool menuOpen: true
+    readonly property var sections: [
+        { id: "general", label: Tr.t("General"), icon: "gear" }, { id: "appearance", label: Tr.t("Appearance"), icon: "sun" },
+        { id: "power", label: Tr.t("Battery and heat"), icon: "gauge" }, { id: "updates", label: Tr.t("Updates"), icon: "add" },
+        { id: "setup", label: Tr.t("Setup"), icon: "perf" }, { id: "backup", label: Tr.t("Backup"), icon: "book" },
+        { id: "about", label: Tr.t("About"), icon: "info" }
+    ]
 
     component Card: Rectangle {
+        property string sec: ""
+        visible: page.section === sec
         default property alias content: inner.data
         width: parent.width
         height: inner.height + 36
@@ -87,13 +94,59 @@ Flickable {
     }
     component Body: Text { color: Theme.text; font.pixelSize: 15; width: parent.width; wrapMode: Text.WordWrap }
 
+    Rectangle {
+        id: menu
+        anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+        width: page.menuOpen ? 210 : 64
+        color: Theme.card
+        clip: true
+        Behavior on width { NumberAnimation { duration: Theme.dur(160) } }
+        Item {
+            id: burger
+            x: 0; y: 0; width: 64; height: 56
+            Text { anchors.centerIn: parent; color: Theme.text; font.pixelSize: 26; text: "\u2630" }
+            MouseArea { anchors.fill: parent; onClicked: page.menuOpen = !page.menuOpen }
+        }
+        Column {
+            anchors { top: burger.bottom; left: parent.left; right: parent.right }
+            Repeater {
+                model: page.sections
+                delegate: Item {
+                    width: menu.width
+                    height: 54
+                    Rectangle {
+                        anchors { fill: parent; leftMargin: 6; rightMargin: 6; topMargin: 2; bottomMargin: 2 }
+                        radius: Theme.radius
+                        color: page.section === modelData.id ? Theme.accentSoft : "transparent"
+                    }
+                    Icon { x: 18; anchors.verticalCenter: parent.verticalCenter; width: 28; height: 28; name: modelData.icon; color: page.section === modelData.id ? Theme.accent : Theme.text }
+                    Text {
+                        x: 60; width: parent.width - 66
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: page.menuOpen
+                        elide: Text.ElideRight
+                        color: Theme.text
+                        font.pixelSize: 16
+                        text: modelData.label
+                    }
+                    MouseArea { anchors.fill: parent; onClicked: { page.section = modelData.id; flick.contentY = 0 } }
+                }
+            }
+        }
+    }
+    Flickable {
+        id: flick
+        anchors { left: menu.right; right: parent.right; top: parent.top; bottom: parent.bottom }
+        contentHeight: col.height + 2 * page.m
+        clip: true
     Column {
         id: col
         x: page.m; y: page.m
-        width: page.width - 2 * page.m
+        width: flick.width - 2 * page.m
         spacing: page.m
 
         Card {
+            sec: "general"
             Title { text: Tr.t("General") }
             Column {
                 width: parent.width
@@ -134,49 +187,10 @@ Flickable {
         }
 
         Card {
+            sec: "appearance"
             Title { text: Tr.t("Appearance") }
             // the group's tabs, then its themes as small previews: the theme's own background, a card and its accent, and its name in its own colours
-            Chips {
-                width: parent.width
-                model: Theme.themeGroups.map(g => ({ key: g.id, label: Tr.t(g.short || g.name) }))
-                current: page.themeTab || (Theme.themes[page.look.theme] || ({})).group || "general"
-                onPicked: key => page.themeTab = key
-            }
-            Flow {
-                id: swatches
-                width: parent.width
-                spacing: 8
-                readonly property int cols: width > 560 ? 4 : 3
-                Repeater {
-                    model: Object.keys(Theme.themes).filter(k => (Theme.themes[k].group || "general") === (page.themeTab || (Theme.themes[page.look.theme] || ({})).group || "general"))
-                    delegate: Rectangle {
-                        readonly property var th: Theme.themes[modelData]
-                        readonly property bool on: page.look.theme === modelData
-                        width: Math.floor((swatches.width - (swatches.cols - 1) * swatches.spacing) / swatches.cols)
-                        height: 62
-                        radius: Theme.radiusFor((Theme.styles[modelData] || ({})).shape || "round")
-                        color: th.bg
-                        border.width: on ? 3 : ((Theme.styles[modelData] || ({})).border || 1)
-                        border.color: on ? th.accent : th.border
-                        Rectangle {
-                            id: chip
-                            x: 10; y: 10; width: parent.width - 20; height: 18; radius: 9
-                            color: th.card
-                            Rectangle { x: 4; anchors.verticalCenter: parent.verticalCenter; width: 10; height: 10; radius: 5; color: th.accent }
-                            Rectangle { x: 18; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 24; height: 4; radius: 2; color: th.circle }
-                        }
-                        Text {
-                            anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 9 }
-                            elide: Text.ElideRight
-                            color: th.text
-                            font.pixelSize: 13
-                            font.weight: on ? Font.DemiBold : Font.Normal
-                            text: th.name
-                        }
-                        MouseArea { anchors.fill: parent; onClicked: ui.setTheme(modelData) }
-                    }
-                }
-            }
+            ThemePicker { width: parent.width }
             Row {
                 spacing: 12
                 Repeater {
@@ -193,6 +207,7 @@ Flickable {
         }
 
         Card {
+            sec: "updates"
             Label { text: Tr.t("Updates") }
             Body { text: "ArmadaLive " + page.up.version + (page.up.latest ? "  →  " + page.up.latest : "") }
             Body {
@@ -224,6 +239,7 @@ Flickable {
         }
 
         Card {
+            sec: "setup"
             Label { text: Tr.t("Health check") }
             Repeater {
                 model: health.checks
@@ -241,6 +257,7 @@ Flickable {
         }
 
         Card {
+            sec: "setup"
             Label { text: Tr.t("Setup") }
             Setup {
                 width: parent.width
@@ -262,6 +279,7 @@ Flickable {
                 busy: page.adm.busy === "ayn"
                 onTriggered: Auth.ask = "ayn"
             }
+            PillButton { label: Tr.t("Run setup again"); onClicked: ui.setOnboarded(false) }
             Body {
                 visible: page.adm.message !== ""
                 color: Theme.hot
@@ -270,6 +288,7 @@ Flickable {
         }
 
         Card {
+            sec: "power"
             Label { text: Tr.t("Battery and heat") }
             Label { text: Tr.t("Warn when it gets hot") }
             Chips {
@@ -299,6 +318,7 @@ Flickable {
         }
 
         Card {
+            sec: "power"
             Label { text: Tr.t("Wi-Fi saver") }
             Chips {
                 width: parent.width
@@ -316,8 +336,9 @@ Flickable {
         }
 
         Card {
+            sec: "backup"
             Label { text: Tr.t("Backup") }
-            Body { color: Theme.muted; font.pixelSize: 13; text: Tr.t("Settings, game rules and tile order in one file:") + " " + page.bk.path }
+            Body { color: Theme.muted; font.pixelSize: 13; text: Tr.t("Settings, game rules, tile order, apps, folders and play time in one file:") + " " + page.bk.path }
             Row {
                 spacing: 10
                 PillButton { label: Tr.t("Save backup"); onClicked: backup.save() }
@@ -328,6 +349,7 @@ Flickable {
         }
 
         Card {
+            sec: "about"
             Label { text: Tr.t("About") }
             Body { text: "ArmadaLive " + page.up.version }
             Body { text: "© 2026 Fabian Zettl, Stuttgart" }
@@ -345,5 +367,6 @@ Flickable {
                 text: Tr.t("ArmadaLive was developed with the help of AI (Claude Code by Anthropic). A large part of the code and the texts was written by the AI. Mistakes are possible; use at your own risk.")
             }
         }
+    }
     }
 }
