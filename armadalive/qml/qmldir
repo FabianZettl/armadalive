@@ -16,3 +16,6 @@ singleton Nav Nav.qml
 PillButton 1.0 PillButton.qml
 singleton Auth Auth.qml
 PasswordDialog 1.0 PasswordDialog.qml
+Sheet 1.0 Sheet.qml
+ScreensSheet 1.0 ScreensSheet.qml
+LedSheet 1.0 LedSheet.qml

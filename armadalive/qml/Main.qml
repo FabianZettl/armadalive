@@ -17,7 +17,6 @@ Window {
         { id: "manual", label: Tr.t("Manual"), icon: "book", file: "Manual.qml", has: now.manual !== "", under: "now" },
         { id: "cheats", label: Tr.t("Cheats"), icon: "cheats", file: "Cheats.qml", has: now.hasCheats, under: "now" },
         { id: "apps", label: Tr.t("Apps"), icon: "apps", file: "Apps.qml", has: ui.state.apps !== false },
-        { id: "mode", label: Tr.t("Mode"), icon: "mode", file: "Mode.qml", has: true },
         { id: "controls", label: Tr.t("Controls"), icon: "pad", file: "Trackpad.qml", has: true },
         { id: "system", label: Tr.t("System"), icon: "gear", file: "System.qml", has: true },
         { id: "prefs", label: Tr.t("Settings"), icon: "info", file: "Preferences.qml", has: true, under: "system" },
@@ -85,7 +84,7 @@ Window {
     }
     onFollowColorChanged: applyTheme()
     Component.onCompleted: { if (dimEnabled) idle.start(); applyVisibility(); applyTheme(); Tr.lang = ui.state.lang; ledSync.start(); activity.watch(win) }
-    // The stick LEDs follow the theme's accent, until the user picks a colour of their own (Mode page). Only while the LEDs are on and the
+    // The stick LEDs follow the theme's accent, until the user picks a colour of their own (Stick LEDs tile on System). Only while the LEDs are on and the
     // root helper can set them; a moment after the last change, because the accent fades and "Follow game" changes it with every game.
     function accentHex() { const c = Theme.accent; return [c.r, c.g, c.b].map(x => ("0" + Math.round(x * 255).toString(16)).slice(-2)).join("").toUpperCase() }
     Timer {

@@ -118,7 +118,7 @@ Item {
         cur = next
     }
 
-    // a tap on the artwork shows Manual and Cheats (or Playtime) for a few seconds
+    // a tap on the artwork shows Info, Manual and Cheats and the play time for a few seconds
     property bool extras: false
     property bool showPlaytime: false
     function formatPlaytime(seconds) {
@@ -129,8 +129,8 @@ Item {
         return mins > 0 ? hours + "h " + mins + "m" : hours + "h"
     }
     TapHandler { enabled: !root.idle; onTapped: {
-        root.showPlaytime = !root.showPlaytime
-        if (root.showPlaytime) root.extras = false
+        root.extras = !root.extras
+        root.showPlaytime = root.extras
         hideExtras.restart()
     } }
     Timer { id: hideExtras; interval: 4000; onTriggered: { root.extras = false; root.showPlaytime = false } }
@@ -146,7 +146,7 @@ Item {
     }
 
     Text {
-        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 130 }
+        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 190 }
         opacity: root.showPlaytime && root.s.playtime !== undefined ? 1 : 0
         visible: opacity > 0.01
         Behavior on opacity { NumberAnimation { duration: 180 } }

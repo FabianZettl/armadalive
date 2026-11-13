@@ -55,7 +55,7 @@ QtObject {
         "Run once: sudo tailscale set --operator=armada": "Einmalig: sudo tailscale set --operator=armada",
         "Wi-Fi saver": "WLAN sparen", "Frame gen": "Frame-Gen", "Resolution": "Auflösung", "render": "Render", "Battery low": "Akku niedrig", "Battery": "Akku",
         "Warn when the battery drops to": "Warnen, wenn der Akku fällt auf", "This battery does not accept a charge limit (its firmware refuses it), so there is none to set.": "Dieser Akku nimmt kein Ladelimit an (die Firmware lehnt es ab), deshalb lässt sich keins setzen.",
-    "Search": "Suchen", "MODE": "MODUS", "with frame gen": "mit Frame-Gen", "Rules": "Regeln", "Saved rules": "Gespeicherte Regeln", "Nothing saved yet.": "Noch nichts gespeichert.",
+    "Search": "Suchen", "Steam has not sent this game's data yet. It needs an internet connection and shows up here after a moment.": "Steam hat die Daten zu diesem Spiel noch nicht geschickt. Es braucht Internet und erscheint hier nach einem Moment.", "MODE": "MODUS", "with frame gen": "mit Frame-Gen", "Rules": "Regeln", "Saved rules": "Gespeicherte Regeln", "Nothing saved yet.": "Noch nichts gespeichert.",
     "Save the current profile and FPS limit for": "Aktuelles Profil und FPS-Limit speichern für",
     "The game and system buttons appear while a game is in front. Base applies to every game without a rule of its own, Idle when no game runs any more.": "Die Knöpfe für Spiel und System erscheinen, solange ein Spiel läuft. Basis gilt für jedes Spiel ohne eigene Regel, Leerlauf wenn kein Spiel mehr läuft.",
     "Favorites": "Favoriten", "Favorite": "Favorit", "Random": "Zufall",

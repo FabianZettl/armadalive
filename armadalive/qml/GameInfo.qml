@@ -5,9 +5,10 @@ import QtQuick
 Flickable {
     id: page
     readonly property var s: nowPlaying.state
-    property var d: gameinfo.of(s.system || "", s.path || "", s.key || "")
-    onSChanged: d = gameinfo.of(s.system || "", s.path || "", s.key || "")
-    Connections { target: history; function onChanged() { page.d = gameinfo.of(page.s.system || "", page.s.path || "", page.s.key || "") } }
+    property var d: gameinfo.of(s.system || "", s.path || "", s.key || "", s.title || "")
+    onSChanged: d = gameinfo.of(s.system || "", s.path || "", s.key || "", s.title || "")
+    Connections { target: gameinfo; function onUpdated() { page.d = gameinfo.of(page.s.system || "", page.s.path || "", page.s.key || "", page.s.title || "") } }
+    Connections { target: history; function onChanged() { page.d = gameinfo.of(page.s.system || "", page.s.path || "", page.s.key || "", page.s.title || "") } }
     readonly property real m: 16
     contentHeight: col.height + 2 * m
     clip: true
@@ -92,12 +93,15 @@ Flickable {
             text: page.d.desc || ""
         }
         Text {
-            visible: !page.d.desc && !page.d.name && (page.s.system || "") !== "steam"
+            readonly property bool steamGame: /^steam\/\d+$/.test(page.s.key || "") && parseInt((page.s.key || "").slice(6)) < 2147483648
+            visible: !page.d.desc
             width: parent.width
             wrapMode: Text.WordWrap
             color: Theme.muted
             font.pixelSize: 14
-            text: Tr.t("ES-DE has no description for this game. Scrape it there (media and metadata) and it shows up here.")
+            text: (steamGame ? Tr.t("Steam has not sent this game's data yet. It needs an internet connection and shows up here after a moment.")
+                             : Tr.t("ES-DE has no description for this game. Scrape it there (media and metadata) and it shows up here."))
+                  + "\n\n" + (page.s.system || "?") + "  ·  " + (page.s.path || page.s.key || "?")
         }
         Flow {
             width: parent.width

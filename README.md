@@ -21,9 +21,9 @@ It is an independent re-creation that follows the idea and the look of the Andro
 |---|---|---|
 | ![Donkey Kong Country](docs/images/game-dkc.png) | ![Super Nintendo](docs/images/game-snes.png) | ![Ori and the Blind Forest](docs/images/steam-ori.png) |
 
-| System | Mode | Apps |
-|---|---|---|
-| ![System](docs/images/system.png) | ![Mode](docs/images/mode.png) | ![Apps](docs/images/apps.png) |
+| System | Apps |
+|---|---|
+| ![System](docs/images/system.png) | ![Apps](docs/images/apps.png) |
 
 | Cheats | Settings | Tuning |
 |---|---|---|
@@ -65,10 +65,9 @@ Details per page follow.
   page and two buttons appear for a few seconds, each only if the current game has it. They are not in the bar.
 - **Apps** – a grid of apps you choose, three rows that scroll sideways (press and hold, or tap the empty tile at the end). It takes desktop apps (they open on the bottom screen) and Steam games and shortcuts and ES-DE games (the picker has a tab per ES-DE system), shown as rounded square covers. Steam and ES-DE tiles start the game on the main screen (an ES-DE game gets a Steam shortcut on its first tap).
   The grid also shows on the Game page when nothing is running. The page can be switched off in Settings (it then leaves the bar).
-- **Mode** – brightness of both screens and the stick LEDs, volume.
 - **System** – FPS, a 60/120 FPS limit, quick settings (power profile, fan curve, clear RAM, stick LEDs, Wi-Fi, Bluetooth,
   airplane mode, sound, screenshot, GPU clock, screen off), temperature, fan, and gauges for CPU, GPU, power and RAM. The status line
-  shows the battery time left. The **Rules** tile holds the game rules (power profile, FPS limit and render resolution per game, per system, idle and base). The **Playtime** tile shows the last week as bars and your most played games; the Apps page has **folders** (your own, plus Recently played, Steam and ES-DE systems) and a random-game tile; the Game page has an **Info** page with description and screenshots. The **Tasks** tile is a small task manager for the bottom screen: it lists what is open there (a browser, a file manager) with the memory each program uses, goes to a window when you tap it, closes it, or ends a program that hangs. Two tiles open **Graphs** (FPS, CPU, temperature, power and battery over the last two minutes) and
+  shows the battery time left. The **Brightness** tile sets the brightness of both screens, the **Stick LEDs** tile for the LEDs (on/off, brightness, colour). The **Rules** tile holds the game rules (power profile, FPS limit and render resolution per game, per system, idle and base). The **Playtime** tile shows the last week as bars and your most played games; the Apps page has **folders** (your own, plus Recently played, Steam and ES-DE systems) and a random-game tile; the Game page has an **Info** page with description and screenshots. The **Tasks** tile is a small task manager for the bottom screen: it lists what is open there (a browser, a file manager) with the memory each program uses, goes to a window when you tap it, closes it, or ends a program that hangs. Two tiles open **Graphs** (FPS, CPU, temperature, power and battery over the last two minutes) and
   **Tuning**. Four more, *Game rule*, *System rule*, *Base rule* and *Idle rule*, remember the current power profile and FPS limit for the game in front, for
   its whole system, for every game without a rule, or for when no game runs, and apply them when a game starts or the last one ends
   (a short message says what was saved or loaded). *Wi-Fi saver* switches Wi-Fi power saving off or on (it is on by

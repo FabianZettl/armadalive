@@ -17,29 +17,31 @@ Item {
     readonly property var curve: prof ? curves.find(c => c.id === prof.fanCurve) : undefined
     property int qsPage: 0
 
+    // the order a fresh install shows: the first page is Performance, Fan, Stick LEDs, Brightness, Wi-Fi, Rules, Graphs, Settings
     readonly property var allTiles: [
         { id: "perf", icon: "perf", label: st.profile, on: st.profile === "Performance",
           act: () => { const p = st.profiles; system.setProfile(p[(p.indexOf(st.profile) + 1) % p.length]) } },
         { id: "fan", icon: "fan", label: curve ? curve.label : "–", on: curve !== undefined && curve.id === "aggressive",
           act: () => { if (cfg.helper && prof && curves.length) settings.setProfileOption(prof.id, "fan_curve", curves[(curves.indexOf(curve) + 1) % curves.length].id) } },
-        { id: "clean", icon: "clean", label: Tr.t("Clear RAM"), on: false, act: () => { if (cfg.helper) settings.dropCaches() } },
         { id: "led", icon: "led", label: Tr.t("Stick LEDs"), on: rgb.enabled === true,
-          act: () => { if (cfg.helper) settings.setRgb(!rgb.enabled, rgb.color || "FFFFFF", rgb.brightness === undefined ? 25 : rgb.brightness) } },
+          act: () => { ledSheet.shown = true } },
+        { id: "brightness", icon: "sun", label: Tr.t("Brightness"), on: false, act: () => { screensSheet.shown = true } },
         { id: "wifi", icon: "wifi", label: Tr.t("Wi-Fi"), on: cc.wifi === true, act: () => controls.toggleWifi() },
+        { id: "rules", icon: "star", label: Tr.t("Rules"), on: rl.rules.some(r => r.key === rl.gameKey || r.key === rl.systemKey), act: () => { Nav.go = "rules" } },
+        { id: "graphs", icon: "graph", label: Tr.t("Graphs"), on: false, act: () => { Nav.go = "graphs" } },
+        { id: "prefs", icon: "gear", label: Tr.t("Settings"), on: false, act: () => { Nav.go = "prefs" } },
+        { id: "clean", icon: "clean", label: Tr.t("Clear RAM"), on: false, act: () => { if (cfg.helper) settings.dropCaches() } },
         { id: "framegen", icon: "perf", label: Tr.t("Frame gen"), on: cc.framegen === true, act: () => controls.toggleFrameGen() },
         { id: "tailscale", icon: "vpn", label: "Tailscale", on: (cc.tailscale || ({})).state === "on", act: () => controls.toggleTailscale() },
         { id: "bluetooth", icon: "bluetooth", label: "Bluetooth", on: cc.bluetooth === true, act: () => controls.toggleBluetooth() },
         { id: "sound", icon: cc.muted ? "mute" : "sound", label: cc.muted ? Tr.t("Muted") : Tr.t("Sound"), on: cc.muted !== true, act: () => controls.toggleMute() },
         { id: "shot", icon: "shot", label: "Screenshot", on: false, act: () => controls.screenshot() },
-        { id: "rules", icon: "star", label: Tr.t("Rules"), on: rl.rules.some(r => r.key === rl.gameKey || r.key === rl.systemKey), act: () => { Nav.go = "rules" } },
         { id: "tuning", icon: "edit", label: Tr.t("Tuning"), on: false, act: () => { Nav.go = "tuning" } },
-        { id: "graphs", icon: "graph", label: Tr.t("Graphs"), on: false, act: () => { Nav.go = "graphs" } },
         { id: "tasks", icon: "apps", label: Tr.t("Tasks"), on: false, act: () => { Nav.go = "tasks" } },
         { id: "stats", icon: "graph", label: Tr.t("Playtime"), on: false, act: () => { Nav.go = "stats" } },
-        { id: "prefs", icon: "gear", label: Tr.t("Settings"), on: false, act: () => { Nav.go = "prefs" } },
         { id: "screenoff", icon: "power", label: Tr.t("Screen off"), on: false, act: () => { Nav.go = "blank" } },
         { id: "keyboard", icon: "edit", label: Tr.t("Keyboard"), on: shell.keyboardPinned, act: () => shell.keyboard() },
-        { id: "steam", icon: ss.exists ? "done" : "add", label: ss.exists ? Tr.t("In Steam") : Tr.t("Add to Steam"), on: ss.exists === true, act: () => steamShortcuts.add() },
+        { id: "steam", icon: ss.exists ? "done" : "add", label: ss.exists ? Tr.t("In Steam") : Tr.t("Add to Steam"), on: ss.exists === true, act: () => steamShortcuts.add() }
     ]
     readonly property var rawTiles: allTiles.filter(t => t.id !== "tailscale" || (cc.tailscale || ({})).state !== "missing")
     // the tiles in the order the user chose (Tiles keeps it); a long press on a tile starts moving, a tap on a second one swaps
@@ -132,7 +134,7 @@ Item {
                     icon: tile ? tile.icon : ""
                     label: tile ? tile.label : ""
                     on: tile ? tile.on : false
-                    marked: page.editing && page.picked === tile.id
+                    marked: page.editing && tile !== undefined && page.picked === tile.id
                     onClicked: page.editing ? page.tap(tile.id) : tile.act()
                     onHeld: { page.editing = true; page.picked = tile.id }
                 }
@@ -207,4 +209,6 @@ Item {
             Ring { width: parent.cell; height: parent.height; value: page.st.ramUsed / page.st.ramTotal; text: page.st.ramUsed.toFixed(1); unit: "GB"; label: "RAM"; tint: Theme.heat(page.st.ramUsed / page.st.ramTotal * 100, 40, 95) }
         }
     }
+    ScreensSheet { id: screensSheet }
+    LedSheet { id: ledSheet }
 }

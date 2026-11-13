@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.0
+
+- **The Mode page moved into System.** A **Brightness** tile opens a popup with the brightness of both screens (no volume slider: the device has volume keys), the **Stick LEDs** tile opens a popup with on/off, brightness and colour (a single tap no longer switches the LEDs). The bottom bar has four entries now: Game, Apps, Controls, System.
+- **New first tile page** on a fresh install: Performance, Fan, Stick LEDs, Brightness, Wi-Fi, Rules, Graphs, Settings. An existing tile order is kept; "Reset" in the tile editor applies the new one.
+- **Fixes the Game page buttons** (0.8.0 broke them): a tap on the artwork showed only the play time, so Info, Manual and Cheats could not be reached. A tap shows all of them and the play time again.
+- **Game info for Steam games comes from Steam itself**: description, genre, developer, year, rating and screenshots from Steam's store (needs internet, kept for a month in `~/.cache/armadalive/steam-info`), the cover from Steam's local library cache.
+- **Game info for games started through a Steam shortcut** (ES-DE games from the Apps grid or Steam): the game is looked up in ES-DE by its name.
+- **When there is no description, the Info page says why** and shows the system and path it got, so a report can tell what went wrong. Not found why some ES-DE games showed nothing in 0.8.0; with the same data the page works here.
+- A System page error (`marked` on a tile that is not there) is gone.
+
 ## 0.8.0
 
 - **The mode pill is the screen's refresh rate** ("120 Hz MODE"): a tap sets the display's dynamic refresh rate and the frame limit to 60 or 120 together, and the pill shows the rate that is set. With frame generation on, FPS above the mode say "with frame gen". Not checked with a game running.
