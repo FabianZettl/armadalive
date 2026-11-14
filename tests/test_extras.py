@@ -150,7 +150,8 @@ class Closer(unittest.TestCase):
         return c
 
     def test_releasing_early_cancels_and_nothing_to_close_does_nothing(self):
-        with mock.patch.object(closer, "terminate") as kill:
+        with mock.patch.object(closer, "terminate") as kill, \
+                mock.patch.object(closer, "process_start", return_value=42):
             c = self.make(([5], "Game"))
             c._combo(True)
             self.assertEqual(c.state["phase"], "holding")
@@ -160,7 +161,7 @@ class Closer(unittest.TestCase):
             c._combo(True)
             c._since -= 3
             c._step()
-            kill.assert_called_once_with([5])
+            kill.assert_called_once_with([5], {5: 42})
             self.assertEqual(c.state["phase"], "closed")
             idle = self.make(None)
             idle._combo(True)
