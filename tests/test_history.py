@@ -4,7 +4,7 @@ from unittest import mock
 from tests.common import app, touch  # noqa: F401
 from PySide6.QtCore import QEvent, QObject, QTimer, Signal
 
-from armadalive import history
+from armadalive import backup, history
 
 
 class FakeNow(QObject):
@@ -201,6 +201,255 @@ class Sessions(unittest.TestCase):
             app.processEvents()
             time.sleep(0.001)
         self.assertTrue(predicate())
+
+    def test_restart_during_import_reuses_baseline_without_counting_live_time_twice(self):
+        entered, release = threading.Event(), threading.Event()
+        path = self.dir + "/interrupted.json"
+
+        def titles():
+            entered.set()
+            release.wait(5)
+            return {"steam:42": "Game"}
+
+        with mock.patch.object(history, "_read_steam", return_value={"42": (100, 300)}):
+            h = history.History(self.now, path, steam_titles=titles, gamelists=self.dir)
+            self.addCleanup(self.close_history, h)
+            try:
+                self.assertTrue(entered.wait(1))
+                self.now.play(key="steam/42", title="Game", system="steam")
+                h._open[3] -= 60
+                self.now.stop()
+                h.flush()
+                with open(path) as source:
+                    snapshot = source.read()
+                h._import_timer.stop()  # Simulate a process disappearing before consuming its import.
+                restarted_path = self.dir + "/restarted.json"
+                touch(restarted_path, snapshot)
+                with mock.patch.object(history, "_read_steam", return_value={"42": (200, 360)}):
+                    again = history.History(FakeNow(), restarted_path, steam_titles=lambda: {"steam:42": "Game"}, gamelists=self.dir)
+                    self.addCleanup(self.close_history, again)
+                    self.wait_for_import(again)
+                self.assertEqual(again.info("steam/42")["total"], 360)
+                self.assertEqual(again.totalSeconds(), 60)
+            finally:
+                release.set()
+                h._import_job.result()
+
+    def test_blocked_baseline_defers_saves_without_blocking_events(self):
+        entered, release = threading.Event(), threading.Event()
+        path = self.dir + "/blocked-source.json"
+
+        def steam():
+            entered.set()
+            release.wait(5)
+            return {"42": (100, 300)}
+
+        with mock.patch.object(history, "_read_steam", side_effect=steam):
+            h = history.History(self.now, path, steam_titles=lambda: {"steam:42": "Game"}, gamelists=self.dir)
+            self.addCleanup(self.close_history, h)
+            try:
+                self.assertTrue(entered.wait(1))
+                h.toggleFavorite("steam/42", "Game", "steam", "")
+                fired = []
+                QTimer.singleShot(0, lambda: fired.append(True))
+                app.processEvents()
+                self.assertTrue(fired)
+                h._drain_saves()
+                self.assertFalse(os.path.exists(path))
+            finally:
+                release.set()
+            self.wait_for_import(h)
+        self.assertEqual(h.info("steam/42")["total"], 300)
+        self.assertTrue(h.info("steam/42")["favorite"])
+
+    def test_game_finished_before_delayed_source_is_not_added_to_newer_steam_total(self):
+        entered, release = threading.Event(), threading.Event()
+        steam_dir = self.dir + "/steam"
+        source = steam_dir + "/userdata/1/config/localconfig.vdf"
+        touch(source, '"42" { "LastPlayed" "100" "Playtime" "5" }')
+        glob = history.glob.glob
+
+        def delayed_glob(pattern, *args, **kwargs):
+            if pattern.endswith("/localconfig.vdf"):
+                entered.set()
+                release.wait(5)
+            return glob(pattern, *args, **kwargs)
+
+        now = FakeNow()
+        with mock.patch.object(history, "STEAM", steam_dir), mock.patch.object(history.glob, "glob", side_effect=delayed_glob):
+            h = history.History(now, self.dir + "/slow-source.json", steam_titles=lambda: {"steam:42": "Game"}, gamelists=self.dir)
+            self.addCleanup(self.close_history, h)
+            try:
+                self.assertTrue(entered.wait(1))
+                clock = [100.0]
+                with mock.patch.object(history.time, "monotonic", side_effect=lambda: clock[0]):
+                    now.play(key="steam/42", title="Game", system="steam")
+                    clock[0] += 60
+                    now.stop()
+                touch(source, '"42" { "LastPlayed" "200" "Playtime" "6" }')
+            finally:
+                release.set()
+            self.wait_for_import(h)
+        self.assertEqual(h.info("steam/42")["total"], 360)
+        self.assertEqual(h.totalSeconds(), 0)
+
+    def test_latest_running_game_starts_when_source_finishes_before_titles(self):
+        source_entered, source_release = threading.Event(), threading.Event()
+        titles_entered, titles_release = threading.Event(), threading.Event()
+
+        def steam():
+            source_entered.set()
+            source_release.wait(5)
+            return {"42": (100, 300)}
+
+        def titles():
+            titles_entered.set()
+            titles_release.wait(5)
+            return {"steam:42": "First", "steam:43": "Latest"}
+
+        now = FakeNow()
+        with mock.patch.object(history, "_read_steam", side_effect=steam):
+            h = history.History(now, self.dir + "/source-then-titles.json", steam_titles=titles, gamelists=self.dir)
+            self.addCleanup(self.close_history, h)
+            try:
+                self.assertTrue(source_entered.wait(1))
+                now.play(key="steam/42", title="First", system="steam")
+                now.play(key="steam/43", title="Latest", system="steam")
+                self.assertIsNone(h._open)
+                source_release.set()
+                self.assertTrue(titles_entered.wait(1))
+                self.wait_for(lambda: h._open is not None)
+                self.assertEqual(h._open[0], "steam/43")
+                h._open[3] -= 30
+                now.stop()
+                h.flush()
+                self.assertEqual(h.info("steam/43")["total"], 30)
+                self.assertFalse(h._imported)
+            finally:
+                source_release.set()
+                titles_release.set()
+            self.wait_for_import(h)
+        self.assertEqual(h.info("steam/42")["total"], 300)
+        self.assertEqual(h.info("steam/43")["total"], 30)
+
+    def test_legacy_unfinished_import_keeps_larger_known_total(self):
+        for cumulative, expected in ((360, 360), (30, 60)):
+            with self.subTest(cumulative=cumulative):
+                path = self.dir + f"/legacy-{cumulative}.json"
+                touch(path, json.dumps(dict(imported=False, games={"steam/42": dict(total=60, plays=1, favorite=True)}, sessions=[])))
+                with mock.patch.object(history, "_read_steam", return_value={"42": (100, cumulative)}):
+                    h = history.History(FakeNow(), path, steam_titles=lambda: {"steam:42": "Game"}, gamelists=self.dir)
+                    self.addCleanup(self.close_history, h)
+                    self.wait_for_import(h)
+                self.assertEqual(h.info("steam/42")["total"], expected)
+                self.assertTrue(h.info("steam/42")["favorite"])
+
+    def test_unreadable_baseline_does_not_prevent_new_history_saves(self):
+        path = self.dir + "/bad-steam.json"
+        with mock.patch.object(history, "_read_steam", side_effect=ValueError("invalid Steam time")):
+            with self.assertLogs(history.LOG, "WARNING"):
+                h = history.History(FakeNow(), path, gamelists=self.dir)
+                self.addCleanup(self.close_history, h)
+                self.wait_for_import(h)
+        h.toggleFavorite("steam/42", "Game", "steam", "")
+        h.flush()
+        with open(path) as saved:
+            self.assertTrue(json.load(saved)["games"]["steam/42"]["favorite"])
+
+    def test_malformed_baseline_loads_valid_backup(self):
+        for i, malformed in enumerate(({"42": "bad"}, {"42": [100, -10]}, {"42": [100, float("nan")]}, None)):
+            with self.subTest(baseline=malformed):
+                path = self.dir + f"/bad-baseline-{i}.json"
+                saved = dict(imported=False, games={"steam/42": dict(total=60, plays=1)}, sessions=[],
+                             steam_baseline={"42": [100, 300]})
+                touch(path + ".bak", json.dumps(saved))
+                saved["steam_baseline"] = malformed
+                touch(path, json.dumps(saved))
+                with mock.patch.object(history, "_read_steam", return_value={"42": (200, 999)}):
+                    h = history.History(FakeNow(), path, steam_titles=lambda: {"steam:42": "Game"}, gamelists=self.dir)
+                    self.addCleanup(self.close_history, h)
+                    self.wait_for_import(h)
+                self.assertEqual(h.info("steam/42")["total"], 360)
+
+    def test_backup_export_drains_latest_history_without_blocking_events(self):
+        entered, release = threading.Event(), threading.Event()
+        write_json = history.persistence.write_json
+        archive = self.dir + "/backup.json"
+
+        def write(*args, **kwargs):
+            entered.set()
+            release.wait(5)
+            write_json(*args, **kwargs)
+
+        with mock.patch.object(history.persistence, "write_json", side_effect=write), \
+                mock.patch.object(backup, "CONFIG_DIR", self.dir), mock.patch.object(backup, "FILE", archive):
+            try:
+                self.h.toggleFavorite("steam/42", "First", "steam", "")
+                self.assertTrue(entered.wait(1))
+                self.h.toggleFavorite("steam/43", "Latest", "steam", "")
+                b = backup.Backup((self.h,))
+                b.save()
+                fired = []
+                QTimer.singleShot(0, lambda: fired.append(True))
+                app.processEvents()
+                self.assertTrue(fired)
+                self.assertTrue(b.state["busy"])
+                self.assertFalse(os.path.exists(archive))
+                self.h.toggleFavorite("steam/44", "After export started", "steam", "")
+            finally:
+                release.set()
+            self.wait_for(lambda: b.state["message"] == "saved")
+            self.h.flush()
+        with open(archive) as saved:
+            self.assertEqual(set(json.load(saved)["files"]["history.json"]["games"]), {"steam/42", "steam/43"})
+        with open(self.path) as saved:
+            self.assertIn("steam/44", json.load(saved)["games"])
+
+    def test_backup_restore_keeps_history_paused_until_restart(self):
+        entered, release = threading.Event(), threading.Event()
+        write_json = history.persistence.write_json
+        archive = self.dir + "/restore.json"
+        restored = dict(imported=True, games={"steam/99": dict(total=900, plays=2)}, sessions=[])
+        touch(archive, json.dumps(dict(files={"history.json": restored})))
+
+        def write(*args, **kwargs):
+            entered.set()
+            release.wait(5)
+            write_json(*args, **kwargs)
+
+        with mock.patch.object(history.persistence, "write_json", side_effect=write), \
+                mock.patch.object(backup, "CONFIG_DIR", self.dir), mock.patch.object(backup, "FILE", archive), \
+                mock.patch.object(backup.QTimer, "singleShot"):
+            try:
+                self.h.toggleFavorite("steam/42", "Old", "steam", "")
+                self.assertTrue(entered.wait(1))
+                b = backup.Backup((self.h,))
+                b.restore()
+                self.assertTrue(b.state["busy"])
+            finally:
+                release.set()
+            self.wait_for(lambda: b.state["message"] == "restored")
+            self.h.toggleFavorite("steam/44", "While restarting", "steam", "")
+            self.h.flush()
+        with open(self.path) as saved:
+            self.assertEqual(json.load(saved), restored)
+
+    def test_backup_write_failure_is_reported_and_history_can_retry(self):
+        archive = self.dir + "/failed-backup.json"
+        with mock.patch.object(history.persistence, "write_json", side_effect=OSError("disk unavailable")), \
+                mock.patch.object(backup, "CONFIG_DIR", self.dir), mock.patch.object(backup, "FILE", archive):
+            with self.assertLogs(history.LOG, "WARNING"):
+                self.h.toggleFavorite("steam/42", "Unsaved", "steam", "")
+                b = backup.Backup((self.h,))
+                b.save()
+                self.wait_for(lambda: not b.state["busy"])
+                self.h._drain_saves()
+            self.assertNotEqual(b.state["message"], "saved")
+            self.assertFalse(os.path.exists(archive))
+        self.h._tick()
+        self.h.flush()
+        with open(self.path) as saved:
+            self.assertTrue(json.load(saved)["games"]["steam/42"]["favorite"])
 
     def wait_for_import(self, h):
         self.wait_for(lambda: h._imported)

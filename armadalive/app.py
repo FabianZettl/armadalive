@@ -1,4 +1,4 @@
-import json, os, signal, sys
+import json, os, signal, sys, time
 from PySide6.QtCore import QObject, QPoint, QTimer, QUrl, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
@@ -60,7 +60,7 @@ def main():
     now.history = history
     backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=Apps(history), history=history, gameinfo=GameInfo(history), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
                     health=Health(steamui), rules=GameRules(now, gamescope, monitor), tileStore=Tiles(),
-                    battery=Battery(), media=Media(), backup=Backup(), artwork=Palette(), steamShortcuts=SteamShortcuts(now), tasks=Tasks(), onboarding=Onboarding(), activity=Activity(), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad(), cheats=Cheats(), layout=layout, emulatorControl=emulator_ctrl)
+                    battery=Battery(), media=Media(), backup=Backup(writers=(history,)), artwork=Palette(), steamShortcuts=SteamShortcuts(now), tasks=Tasks(), onboarding=Onboarding(), activity=Activity(), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad(), cheats=Cheats(), layout=layout, emulatorControl=emulator_ctrl)
     pad = backends["pad"] = Pad()   # must stay referenced, like the rest
     backends["closer"] = Closer(pad, gamescope, now, backends["ui"])
     backends["thermal"] = Thermal(monitor, backends["ui"])
@@ -113,8 +113,8 @@ def main():
             QTimer.singleShot(int(ms), lambda: backends["nowPlaying"].pin(json.loads(later).get("event"), json.loads(later).get("ui")))
         if "--keep-demo" in sys.argv:  # show the keep-or-undo bar with 11 s left (nothing is changed or reverted)
             st = backends["settings"]
-            st._undo, st._left = {("profile", "demo", "demo"): "x"}, 11
-            st.changed.emit()
+            st._undo, st._deadline = {("profile", "demo", "demo"): "x"}, time.monotonic() + 11
+            st.pendingChanged.emit()
         if "--ask" in sys.argv:
             window.setProperty("askDemo", sys.argv[sys.argv.index("--ask") + 1])
         if "--notice" in sys.argv:  # code:title, show that popup message 600 ms in
