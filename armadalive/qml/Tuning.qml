@@ -5,6 +5,7 @@ import QtQuick.Controls
 Flickable {
     id: page
     readonly property var d: settings.data
+    readonly property bool canTune: d.helper === true && !settings.pending.busy && !settings.pending.recovery
     property string sel: "balanced"
     readonly property var prof: (d.profiles || []).find(p => p.id === sel)
     readonly property var curve: prof ? (d.curves || []).find(c => c.id === prof.fanCurve) : undefined
@@ -73,6 +74,7 @@ Flickable {
             text: Tr.t("Presets for this profile") + "  ·  " + ((page.d.device || ({})).name || "")
         }
         Chips {
+            enabled: page.canTune
             visible: (page.d.presets || []).length > 0
             width: parent.width
             model: (page.d.presets || []).map(p => ({ key: p.id, label: Tr.t(p.label) }))
@@ -92,7 +94,7 @@ Flickable {
             visible: page.prof !== undefined
             width: parent.width
             spacing: 12
-            enabled: page.d.helper === true
+            enabled: page.canTune
 
             Text { color: Theme.muted; font.pixelSize: 15; text: Tr.t("CPU governor") }
             Chips {
