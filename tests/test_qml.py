@@ -125,7 +125,24 @@ class Qml(unittest.TestCase):
                                     f'<rect width="{width}" height="{height}" fill="green"/></svg>')
                     return QUrl.fromLocalFile(str(file)).toString()
 
-                backends["nowPlaying"].value.update(logo=vector("tall #ログ % logo.svg", 100, 8000),
+                for original_width, kind, width, height in [(64, "game", 96, 48), (64, "system", 372, 186),
+                                                            (2000, "game", 446.4, 223.2), (2000, "system", 372, 186)]:
+                    name = f"logo-{original_width}.svg"
+                    backends["nowPlaying"].value.update(kind=kind, logo=vector(name, original_width, original_width // 2), fanart="")
+                    backends["nowPlaying"].changed.emit()
+                    for _ in range(50):
+                        QTest.qWait(20)
+                        logos = [item for item in page.findChildren(QQuickItem)
+                                 if item.inherits("QQuickImage") and item.isVisible()
+                                 and item.property("source").toString().endswith(name)]
+                        if any(abs(item.width() - width) < 0.01 and abs(item.height() - height) < 0.01
+                               and (kind != "system" or item.implicitWidth() >= width)
+                               for item in logos):
+                            break
+                    else:
+                        raise AssertionError((kind, [(item.width(), item.height()) for item in logos]))
+
+                backends["nowPlaying"].value.update(kind="game", logo=vector("tall #ログ % logo.svg", 100, 8000),
                                                     fanart=vector("wide.svg", 8000, 100))
                 backends["nowPlaying"].changed.emit()
                 for _ in range(50):
@@ -170,9 +187,12 @@ class Qml(unittest.TestCase):
             root.deleteLater()
             QTest.qWait(0)
         """)
-        result = subprocess.run([sys.executable, "-c", script, QML + "/NowPlaying.qml"],
-                                capture_output=True, text=True, timeout=10)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        for scale in ("1", "2"):
+            with self.subTest(screen_scale=scale):
+                result = subprocess.run([sys.executable, "-c", script, QML + "/NowPlaying.qml"],
+                                        env=dict(os.environ, QT_SCALE_FACTOR=scale),
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_no_property_group_followed_by_a_semicolon(self):  # a recurring QML syntax trap in this project
         for f in glob.glob(QML + "/*.qml"):

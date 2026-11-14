@@ -1,7 +1,7 @@
 .pragma library
 
-function source(url) {
+function source(url, naturalSizeRequest) {
     if (/^file:\/\/.*\.svgz?(?:$|[?#])/i.test(url))
-        return "image://vectors/" + encodeURIComponent(url)
+        return "image://vectors/" + (naturalSizeRequest ? "natural/" + naturalSizeRequest.width + "/" : "") + encodeURIComponent(url)
     return url
 }

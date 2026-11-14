@@ -88,7 +88,7 @@ Item {
                     axis { x: 0; y: 1; z: 0 }
                     angle: 3 * l.sway * l.k
                 }
-                source: l.visible ? Artwork.source(l.st.logo) : ""
+                source: l.visible ? Artwork.source(l.st.logo, l.st.kind === "game" ? sourceSize : null) : ""
                 sourceSize: Qt.size(1024, 768)
                 asynchronous: true
                 // Stretch keeps the decode bounded. Fit the item itself to keep the artwork's proportions.
