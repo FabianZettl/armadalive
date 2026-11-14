@@ -12,7 +12,22 @@ Rectangle {
     signal closed()
 
     color: Theme.bg
-    onVisibleChanged: if (visible) { query = ""; search.text = ""; items = apps.catalog().concat(apps.folderChoices()); groups = apps.groups().filter(g => p.folder === "" || g.id !== "folders"); if (folder !== "" && group === "folders") group = "apps" }
+    function reload() {
+        items = apps.catalog().concat(apps.folderChoices())
+        groups = apps.groups().filter(g => p.folder === "" || g.id !== "folders")
+        if (!groups.some(g => g.id === group))
+            group = "apps"
+    }
+    onVisibleChanged: if (visible) {
+        search.text = ""
+        reload()
+        apps.refreshCatalog()
+    }
+    Connections {
+        target: apps
+        enabled: p.visible
+        function onCatalogChanged() { p.reload() }
+    }
     MouseArea { anchors.fill: parent }      // swallow touches so the grid below stays untouched
 
     Item {

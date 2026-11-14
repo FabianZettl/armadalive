@@ -125,19 +125,29 @@ def _alternative(system, rom):
     return root.findtext("alternativeEmulator/label") or ""
 
 
-def _cover(system, path):
-    base = glob.escape(os.path.splitext(os.path.basename(path))[0])
+def _cover_index(system):
+    """Match the previous cover type and filename preference with one listing per directory."""
+    covers = {}
     for kind in COVERS:
-        hit = sorted(glob.glob(f"{glob.escape(MEDIA)}/{glob.escape(system)}/{kind}/{base}.*"))
-        if hit:
-            return hit[0]
-    return ""
+        directory = os.path.join(MEDIA, system, kind)
+        try:
+            names = sorted(os.listdir(directory))
+        except OSError:
+            continue
+        for filename in names:
+            # A basename followed by any suffix matched the original glob.
+            path = os.path.join(directory, filename)
+            for index, char in enumerate(filename):
+                if char == ".":
+                    covers.setdefault(filename[:index], path)
+    return covers
 
 
-def games():
+def games(definitions=None):
     """{system: [{id: "esde:<system>/<path under the system folder>", name, cover (file path), rom}]} for systems that have games."""
     root, out = _rom_dir(), {}
-    for name, s in systems().items():
+    definitions = systems() if definitions is None else definitions
+    for name, s in definitions.items():
         # the folder ES-DE itself uses: its <path> (with %ROMPATH% and ~ expanded), else <ROM directory>/<system>
         folder = os.path.expanduser((s.get("path") or "").replace("%ROMPATH%", root.rstrip("/"))) or os.path.join(root, name)
         if not os.path.isdir(folder):
@@ -149,6 +159,7 @@ def games():
             if (g.findtext("hidden") or "").lower() == "true":
                 hidden.add(key)
         found = []
+        covers = _cover_index(name)
         for here, dirs, files in os.walk(folder):
             dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("media", "images", "videos", "manuals")]
             for f in files:
@@ -156,7 +167,7 @@ def games():
                     continue
                 path = os.path.join(here, f)
                 found.append(dict(id=f"esde:{name}/{os.path.relpath(path, folder)}", name=titles.get(f) or os.path.splitext(f)[0],
-                                  cover=_cover(name, path), rom=path))
+                                  cover=covers.get(os.path.splitext(f)[0], ""), rom=path))
         if found:
             out[name] = sorted(found, key=lambda g: g["name"].lower())
     return out

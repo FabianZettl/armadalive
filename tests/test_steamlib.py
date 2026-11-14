@@ -1,7 +1,7 @@
 import os, struct, tempfile, unittest
 from unittest import mock
 
-from tests.common import app, touch  # noqa: F401
+from tests.common import touch, wait_for
 from PySide6.QtGui import QColor, QImage
 
 from armadalive import apps, steamlib
@@ -44,15 +44,26 @@ class Library(unittest.TestCase):
         self.assertEqual(img.pixelColor(0, 0).alpha(), 0)          # corner is cut away
         self.assertGreater(img.pixelColor(180, 180).red(), 240)     # middle is the cover
 
+    def test_title_only_scan_skips_artwork(self):
+        with mock.patch.object(steamlib, "_installed_art") as installed, \
+                mock.patch.object(steamlib, "_shortcut_art") as shortcuts:
+            games = steamlib.games(art=False)
+        installed.assert_not_called()
+        shortcuts.assert_not_called()
+        self.assertEqual({game["name"] for game in games}, {"Counter-Strike", "Eglantine"})
+        self.assertTrue(all(not game["icon"] for game in games))
+
     def test_grid_adds_replaces_and_removes_and_only_knows_catalog_ids(self):
         with mock.patch.object(apps, "CONFIG", f"{self.root}/apps.json"), mock.patch.object(apps, "_catalog", lambda: {}):
             a = apps.Apps()
+            wait_for(lambda: not a.catalogLoading)
             self.assertEqual(a.slots, [{}])
             a.assign(0, "steam:10")
             a.assign(5, "steam:10")
             a.assign(0, "nonsense")
             self.assertEqual([s.get("id") for s in a.slots], ["steam:10", None])
             a.assign(0, "")
+            a.flush()
             self.assertEqual(a.slots, [{}])
 
 

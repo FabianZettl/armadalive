@@ -56,7 +56,7 @@ def main():
     now, monitor = NowPlaying(gamescope, steamui), SystemMonitor(fps=lambda: gamescope.state["fps"])
     layout = ControlsLayout()
     emulator_ctrl = EmulatorControl()
-    history = History(now, steam_titles=lambda: {g["id"]: g["name"] for g in steamlib.games()})
+    history = History(now, steam_titles=lambda: {g["id"]: g["name"] for g in steamlib.games(art=False)})
     now.history = history
     backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=Apps(history), history=history, gameinfo=GameInfo(history), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
                     health=Health(steamui), rules=GameRules(now, gamescope, monitor), tileStore=Tiles(),

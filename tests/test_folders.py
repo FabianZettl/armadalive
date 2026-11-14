@@ -1,19 +1,23 @@
 import json, os, tempfile, unittest
 from unittest import mock
 
-from tests.common import app  # noqa: F401
+from tests.common import QObject, Signal, wait_for
 from armadalive import apps
 
 
-class FakeHistory:
+class FakeHistory(QObject):
+    changed = Signal()
+
     def __init__(self, rows):
+        super().__init__()
         self.rows = rows
+        self.favorite_rows = rows
 
     def recent(self, limit=12):
         return self.rows[:limit]
 
     def favorites(self):
-        return self.rows
+        return self.favorite_rows
 
 
 class Folders(unittest.TestCase):
@@ -22,14 +26,17 @@ class Folders(unittest.TestCase):
         self.games = {"snes": [dict(id="esde:snes/A.sfc", name="A", cover="", rom="/roms/snes/A.sfc"), dict(id="esde:snes/B.sfc", name="B", cover="", rom="/roms/snes/B.sfc")]}
         self.steam = [dict(id="steam:10", name="Counter-Strike", icon="")]
         self.patches = [mock.patch.object(apps, "CONFIG", f"{self.dir}/apps.json"), mock.patch.object(apps, "_catalog", lambda: {"firefox": dict(id="firefox", name="Firefox", iconName="")}),
-                        mock.patch.object(apps.esdelib, "games", lambda: self.games), mock.patch.object(apps.esdelib, "systems", lambda: {"snes": dict(fullname="Super Nintendo")}),
+                        mock.patch.object(apps.esdelib, "games", lambda **_: self.games), mock.patch.object(apps.esdelib, "systems", lambda: {"snes": dict(fullname="Super Nintendo")}),
                         mock.patch.object(apps.steamlib, "games", lambda: self.steam)]
         for p in self.patches:
             p.start()
             self.addCleanup(p.stop)
 
     def make(self, rows=()):
-        return apps.Apps(FakeHistory(list(rows)))
+        backend = apps.Apps(FakeHistory(list(rows)))
+        wait_for(lambda: not backend.catalogLoading)
+        self.addCleanup(backend.flush)
+        return backend
 
     def test_a_manual_folder_is_made_filled_renamed_and_forgotten_with_its_tile(self):
         a = self.make()
@@ -42,11 +49,13 @@ class Folders(unittest.TestCase):
         a.renameFolder(fid, "  Tools  ")
         self.assertEqual([i["name"] for i in a.folderItems(fid)], ["Firefox", "Counter-Strike"])
         self.assertEqual(a.slots[0]["name"], "Tools")
+        a.flush()
         again = self.make()                                  # it survives a restart
         self.assertEqual(again.slots[0]["count"], 2)
         a.removeFromFolder(fid, "firefox")
         self.assertEqual(a.slots[0]["count"], 1)
         a.assign(0, "")
+        a.flush()
         self.assertEqual(json.load(open(f"{self.dir}/apps.json"))["folders"], {})
 
     def test_the_favorites_folder_and_a_random_start_inside_a_folder(self):
@@ -70,6 +79,30 @@ class Folders(unittest.TestCase):
         a = self.make(rows)
         a.assign(0, "smart:recent")
         self.assertEqual([i["name"] for i in a.folderItems("smart:recent")], ["B", "Counter-Strike"])
+
+    def test_history_updates_publish_smart_folders_without_thumbnail_work(self):
+        self.steam[0]["icon"] = "steam-cover"
+        a = self.make()
+        a.assign(0, "smart:recent")
+        a.assign(1, "smart:favorites")
+        updates = []
+        a.changed.connect(lambda: updates.append(a.slots))
+        self.assertEqual([slot["count"] for slot in a.slots[:2]], [0, 0])
+
+        with mock.patch.object(apps.steamlib, "_url") as render:
+            a._history.rows = [("steam/10", dict(path="", last=2))]
+            a._history.changed.emit()
+            self.assertTrue(updates)
+            self.assertEqual([slot["count"] for slot in updates[-1][:2]], [1, 0])
+            self.assertEqual(updates[-1][0]["preview"], ["steam-cover"])
+            a._history.rows.insert(0, ("snes/B", dict(path="/roms/snes/B.sfc", last=3)))
+            a._history.favorite_rows = [("steam/10", dict(path="")), ("snes/A", dict(path="/roms/snes/A.sfc"))]
+            a._history.changed.emit()
+            self.assertEqual([slot["count"] for slot in updates[-1][:2]], [2, 2])
+            self.assertEqual(updates[-1][0]["preview"], ["", "steam-cover"])
+            self.assertEqual([i["name"] for i in a.folderItems("smart:recent")], ["B", "Counter-Strike"])
+            self.assertEqual([i["name"] for i in a.folderItems("smart:favorites")], ["A", "Counter-Strike"])
+            render.assert_not_called()
 
     def test_the_random_tile_starts_one_of_the_games(self):
         a = self.make()
