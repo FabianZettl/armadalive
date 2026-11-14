@@ -1,8 +1,9 @@
 """The two one-time setup steps that need root (root helper, AYN button), run from the app after the user types their password."""
 import os, subprocess, threading
-from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
+from PySide6.QtCore import Property, QObject, Qt, Signal, Slot
 
 from . import privileged
+from .poller import Poller
 
 SHARE = os.path.expanduser("~/.local/share/armadalive")
 SUDO = os.environ.get("ARMADALIVE_SUDO", "sudo")  # tests point this at a stand-in
@@ -12,7 +13,7 @@ SCRIPTS = {"helper": "install-helper.sh", "ayn": "ayn-button.sh"}
 
 def helper_state():
     """ok, outdated (installed, but this version ships a different one) or missing."""
-    if not privileged.available(refresh=True):
+    if not privileged.available():
         return "missing"
     try:
         same = open(privileged.HELPER, "rb").read() == open(f"{SHARE}/scripts/armadalive-helper", "rb").read()
@@ -35,12 +36,27 @@ class Admin(QObject):
     def __init__(self):
         super().__init__()
         self._busy, self._message = "", ""
-        self._s = {}
-        self.finished.connect(self._done)
-        timer = QTimer(self)
-        timer.timeout.connect(self.refresh)
-        timer.start(3000)  # the user may run the scripts in a terminal as well: keep looking
-        self.refresh()
+        self._status = dict(helper="missing", ayn=False)
+        self._s = dict(self._status, busy="", message="")
+        self.finished.connect(self._done, Qt.ConnectionType.QueuedConnection)
+        self._poller = Poller(self, self._read, self._apply, 3000, idle_ms=15000)
+
+    def set_active(self, active):
+        self._poller.set_active(active)
+
+    @staticmethod
+    def _read():
+        return dict(helper=helper_state(), ayn=ayn_done())
+
+    def _apply(self, status):
+        self._status = status
+        self._publish()
+
+    def _publish(self):
+        state = dict(self._status, busy=self._busy, message=self._message)
+        if state != self._s:
+            self._s = state
+            self.changed.emit()
 
     @Property("QVariant", notify=changed)
     def state(self):
@@ -48,15 +64,14 @@ class Admin(QObject):
 
     @Slot()
     def refresh(self):
-        self._s = dict(helper=helper_state(), ayn=ayn_done(), busy=self._busy, message=self._message)
-        self.changed.emit()
+        self._poller.refresh()
 
     @Slot(str, str)
     def run(self, action, password):
         if self._busy or action not in SCRIPTS:
             return
         self._busy, self._message = action, ""
-        self.refresh()
+        self._publish()
         threading.Thread(target=self._run, args=(action, password), daemon=True).start()
 
     def _run(self, action, password):
@@ -73,4 +88,7 @@ class Admin(QObject):
 
     def _done(self, action, msg):
         self._busy, self._message = "", msg
+        self._publish()
+        if action == "helper":
+            privileged.invalidate()
         self.refresh()

@@ -1,6 +1,6 @@
 """Low-battery warnings and an optional charge limit (the kernel's charge_control_end_threshold, written by the root helper)."""
-import json, os
-from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
+import json, os, threading, weakref
+from PySide6.QtCore import Property, QObject, QTimer, Qt, Signal, Slot
 from . import privileged
 
 BATTERY = "/sys/class/power_supply/battery"
@@ -24,6 +24,7 @@ def levels(warn):
 class Battery(QObject):
     changed = Signal()
     alert = Signal(str)
+    _limit_done = Signal(int, bool, str)
 
     def __init__(self):
         super().__init__()
@@ -35,14 +36,13 @@ class Battery(QObject):
         self._s = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}} if isinstance(saved, dict) else dict(DEFAULTS)
         self._done, self.error = set(), ""   # _s["refused"]: the battery's firmware rejected a limit (the Thor's does)
         self.supported = os.path.exists(LIMIT_FILE)
-        # the kernel forgets the limit on reboot, so it is applied again at start
-        if self.supported and self._s["limit"] < 100 and privileged.available():
-            self.error = privileged.run("charge-limit", self._s["limit"])
-            if self.error:   # do not try again at every start
-                self._s["refused"], self.error, self._s["limit"] = True, "", 100
-                self._save()
+        self._limit_busy, self._next_limit = False, None
+        self._limit_done.connect(self._finish_limit, Qt.ConnectionType.QueuedConnection)
+        # The kernel forgets the limit on reboot.
+        if self.supported and not self._s["refused"] and self._s["limit"] < 100:
+            self._start_limit(self._s["limit"], startup=True)
         timer = QTimer(self)
-        timer.timeout.connect(lambda: self.check(int(_read(BATTERY + "/capacity", "100")), _read(BATTERY + "/status")))
+        timer.timeout.connect(self._check_battery)
         timer.start(30000)
 
     @Property("QVariant", notify=changed)
@@ -54,6 +54,10 @@ class Battery(QObject):
         with open(CONFIG, "w") as f:
             json.dump(self._s, f)
         self.changed.emit()
+
+    @Slot()
+    def _check_battery(self):
+        self.check(int(_read(BATTERY + "/capacity", "100")), _read(BATTERY + "/status"))
 
     def check(self, capacity, status):
         """Tells once per level; the levels re-arm when the device charges or the charge climbs well above the warning."""
@@ -76,11 +80,46 @@ class Battery(QObject):
     @Slot(int)
     def setLimit(self, percent):
         percent = max(50, min(100, int(percent)))
-        self.error = privileged.run("charge-limit", percent) if privileged.available() else "root helper missing"
-        if not self.error and _read(LIMIT_FILE) not in (str(percent), ""):   # accepted, but the battery kept its old value
-            self.error = "the battery did not keep the limit"
-        if self.error and percent < 100 and self.error != "root helper missing":   # the battery refused: say so once instead of showing a broken setting
-            self._s["refused"], self.error = True, ""
-        elif not self.error:
-            self._s["limit"] = percent
-        self._save()
+        if self._limit_busy:
+            self._next_limit = percent
+        else:
+            self._start_limit(percent)
+
+    def _start_limit(self, percent, startup=False):
+        self._limit_busy = True
+        owner = weakref.ref(self)
+
+        def run():
+            error = privileged.run("charge-limit", percent) if privileged.available() else "root helper missing"
+            if not error and not startup and _read(LIMIT_FILE) not in (str(percent), ""):
+                error = "the battery did not keep the limit"
+            if (battery := owner()) is not None:
+                try:
+                    battery._limit_done.emit(percent, startup, error)
+                except RuntimeError:
+                    pass  # the application exited while the helper was running
+
+        threading.Thread(target=run, daemon=True).start()
+
+    @Slot(int, bool, str)
+    def _finish_limit(self, percent, startup, error):
+        try:
+            if startup:
+                if error and error != "root helper missing":
+                    self._s["refused"], self._s["limit"] = True, 100
+                    self._save()
+            else:
+                self.error = error
+                if self.error and percent < 100 and self.error != "root helper missing":
+                    self._s["refused"], self.error = True, ""
+                elif not self.error:
+                    self._s["limit"] = percent
+                self._save()
+        except OSError as exc:
+            self.error = f"Could not save battery settings: {exc}"
+            self.changed.emit()
+        finally:
+            self._limit_busy = False
+            pending, self._next_limit = self._next_limit, None
+            if pending is not None:
+                self._start_limit(pending)

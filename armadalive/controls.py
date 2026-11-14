@@ -1,8 +1,10 @@
 """Quick settings: radios, volume and the brightness of both screens."""
-import glob, json, os, re, subprocess, threading
+import glob, json, os, re, subprocess, time
+from functools import partial
 from . import privileged
 from .poller import Poller
-from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
+from .commands import Commands, run
+from PySide6.QtCore import Property, QObject, Signal, Slot
 
 # DSI-1 (1080x1240) is the bottom panel, DSI-2 (1080x1920) the top one; the backlight names follow the DSI order
 BACKLIGHTS = dict(bottom=os.environ.get("ARMADALIVE_BOTTOM_BACKLIGHT", "ae94000.dsi.0"),
@@ -15,9 +17,9 @@ MIN_PERCENT = 3  # never black out a screen: the bottom one is the one these sli
 
 def _out(*cmd):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=3).stdout
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=3, check=True).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 def _rfkill(kind):
@@ -29,10 +31,6 @@ def _rfkill(kind):
         except OSError:
             pass
     return None
-
-
-def _run(*cmd):
-    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def _read(path, default=0):
@@ -68,37 +66,64 @@ class Controls(QObject):
 
     def __init__(self):
         super().__init__()
-        self._s, self._n, self._ts = {}, 0, dict(state="missing", ip="")
-        self._apply(self._read())   # once, so the first frame has values
-        self._poller = Poller(self, self._read, self._apply, 2000, now=False)   # the reads spawn processes: not on the UI thread
+        self._ts = dict(state="missing", ip="")
+        self._s = dict(tailscale=self._ts, brightness={}, volume=0)
+        self._commands = Commands(self)
+        self._commands.completed.connect(self._command_completed)
+        self._poller = Poller(self, self._read, self._apply, 2000, idle_ms=15000)
+        self._vpn_poller = Poller(self, self._read_vpn, self._apply_vpn, 6000, idle_ms=30000)
+
+    def set_active(self, active):
+        self._poller.set_active(active)
+        self._vpn_poller.set_active(active)
+
+    @staticmethod
+    def _read_vpn():
+        text = _out("tailscale", "status", "--json")
+        return None if text is None else tailscale_state(text)
+
+    def _apply_vpn(self, status):
+        self._ts = status
+        self._apply(self._s)
 
     @Property("QVariant", notify=changed)
     def state(self):
         return self._s
 
-    def _read(self):
-        wifi, bluetooth = _rfkill("wlan"), _rfkill("bluetooth")   # sysfs: no process for each
-        if wifi is None:
-            wifi = _out("nmcli", "radio", "wifi").strip() == "enabled"
-        if bluetooth is None:
-            bluetooth = "Soft blocked: no" in _out("rfkill", "list", "bluetooth")  # this rfkill has no JSON output
-        volume_text = _out("wpctl", "get-volume", SINK)   # one call gives the level and the mute flag
-        vol = re.search(r"([\d.]+)", volume_text)
+    @staticmethod
+    def _read():
+        state = {}
+        wifi, bluetooth = _rfkill("wlan"), _rfkill("bluetooth")
+        if wifi is None and (text := _out("nmcli", "radio", "wifi")) is not None:
+            wifi = {"enabled": True, "disabled": False}.get(text.strip())
+        if bluetooth is None and (text := _out("rfkill", "list", "bluetooth")) is not None:
+            if "Soft blocked:" in text:
+                bluetooth = "Soft blocked: no" in text and "Hard blocked: yes" not in text
+        if wifi is not None:
+            state["wifi"] = wifi
+        if bluetooth is not None:
+            state["bluetooth"] = bluetooth
+        if wifi is False:
+            state["wifips"] = False
+        elif wifi is True and (text := _out("iw", "dev", Controls._wlan(), "get", "power_save")) is not None:
+            if match := re.search(r"power save: (on|off)", text.lower()):
+                state["wifips"] = match[1] == "on"
+        if (text := _out("wpctl", "get-volume", SINK)) is not None:
+            if vol := re.search(r"Volume:\s*(\d+(?:\.\d+)?)", text):
+                state.update(volume=min(1.0, float(vol[1])), muted="[MUTED]" in text)
         bright = {}
         for name, dev in BACKLIGHTS.items():
             base = f"/sys/class/backlight/{dev}"
-            top = _read(base + "/max_brightness", 1)
-            bright[name] = round(100 * _read(base + "/brightness") / top)
-        saver = "power save: on" in _out("iw", "dev", self._wlan(), "get", "power_save").lower() if wifi else False
-        if self._n % 3 == 0:    # a status call is the most expensive thing here, and the VPN changes rarely
-            self._ts = tailscale_state(_out("tailscale", "status", "--json"))
-        self._n += 1
-        return dict(wifi=wifi, wifips=saver, tailscale=self._ts, bluetooth=bluetooth, airplane=not wifi and not bluetooth,
-                    framegen=not os.path.exists(FRAMEGEN_OFF),
-                    volume=min(1.0, float(vol.group(1))) if vol else 0.0, muted="[MUTED]" in volume_text,
-                    brightness=bright)
+            top = _read(base + "/max_brightness", None)
+            value = _read(base + "/brightness", None)
+            if top and value is not None:
+                bright[name] = round(100 * value / top)
+        return dict(state, framegen=not os.path.exists(FRAMEGEN_OFF), brightness=bright)
 
     def _apply(self, state):
+        brightness = dict(self._s["brightness"], **state.get("brightness", {}))
+        state = {**self._s, **state, "tailscale": self._ts, "brightness": brightness}
+        state["airplane"] = state.get("wifi") is False and state.get("bluetooth") is False
         if state != self._s:
             self._s = state
             self.changed.emit()
@@ -109,29 +134,51 @@ class Controls(QObject):
 
     @Slot()
     def toggleTailscale(self):
-        state = self._ts["state"]
+        state = self._commands.target("vpn", self._ts["state"])
         if state in ("missing", "login"):
             self.notice.emit("tsmissing" if state == "missing" else "tslogin", "")
             return
         up = state != "on"
 
-        def run():
-            r = subprocess.run(["tailscale", "up" if up else "down"], capture_output=True, text=True, timeout=25)
-            if r.returncode and up and (flags := tailscale_retry(r.stderr)) is not None:
-                r = subprocess.run(["tailscale", "up", *flags], capture_output=True, text=True, timeout=25)
-            text = (r.stderr + r.stdout).lower()
-            self.notice.emit(("tsdenied" if "denied" in text or "sudo" in text else "tsfail") if r.returncode else ("tson" if up else "tsoff"), "")
-            self._ts = tailscale_state(_out("tailscale", "status", "--json"))
-        threading.Thread(target=run, daemon=True).start()
+        def apply():
+            try:
+                r = subprocess.run(["tailscale", "up" if up else "down"], capture_output=True, text=True, timeout=25)
+                if r.returncode and up and (flags := tailscale_retry(r.stderr)) is not None:
+                    r = subprocess.run(["tailscale", "up", *flags], capture_output=True, text=True, timeout=25)
+                if r.returncode:
+                    text = (r.stderr + r.stdout).lower()
+                    self.notice.emit("tsdenied" if "denied" in text or "sudo" in text else "tsfail", "")
+                    r.check_returncode()
+            except (OSError, subprocess.TimeoutExpired):
+                self.notice.emit("tsfail", "")
+                raise
+            self.notice.emit("tson" if up else "tsoff", "")
+
+        self._commands.submit("vpn", apply, "on" if up else "off")
 
     @Slot()
     def toggleWifiSaver(self):
-        # shortcut: the kernel drops this setting when Wi-Fi reconnects, so it is a per-session switch
-        if privileged.available():
-            def run(mode="off" if self._s.get("wifips") else "on"):
-                privileged.run("wifi-powersave", mode)   # sudo: not on the UI thread
-                self._poller.kick()
-            threading.Thread(target=run, daemon=True).start()
+        enabled = not self._commands.target("wifi-saver", self._s.get("wifips"))
+
+        def apply():
+            if not privileged.available():
+                raise RuntimeError("root helper missing")
+            if error := privileged.run("wifi-powersave", "on" if enabled else "off"):
+                raise RuntimeError(error)
+
+        self._commands.submit("wifi-saver", apply, enabled)
+
+    @Slot(str, object, bool)
+    def _command_completed(self, key, target, succeeded):
+        # Discard reads that started before the write completed. Subsequent observations
+        # supersede the acknowledged target, including after an external change.
+        (self._vpn_poller if key == "vpn" else self._poller).refresh()
+        if not succeeded:
+            return
+        if key == "vpn":
+            self._apply_vpn(dict(state=target, ip=self._ts["ip"] if target == "on" else ""))
+        elif field := {"wifi": "wifi", "bluetooth": "bluetooth", "wifi-saver": "wifips", "mute": "muted"}.get(key):
+            self._apply({field: target})
 
     @Slot()
     def toggleFrameGen(self):
@@ -146,40 +193,58 @@ class Controls(QObject):
             return
         self._poller.kick()
 
+    def _set_wifi(self, enabled):
+        self._commands.submit("wifi", partial(run, "nmcli", "radio", "wifi", "on" if enabled else "off"), enabled)
+
+    def _set_bluetooth(self, enabled):
+        self._commands.submit("bluetooth", partial(run, "rfkill", "unblock" if enabled else "block", "bluetooth"), enabled)
+
     @Slot()
     def toggleWifi(self):
-        _run("nmcli", "radio", "wifi", "off" if self._s.get("wifi") else "on")
+        self._set_wifi(not self._commands.target("wifi", self._s.get("wifi")))
 
     @Slot()
     def toggleBluetooth(self):
-        _run("rfkill", "block" if self._s.get("bluetooth") else "unblock", "bluetooth")
+        self._set_bluetooth(not self._commands.target("bluetooth", self._s.get("bluetooth")))
 
     @Slot()
     def toggleAirplane(self):
-        on = not self._s.get("airplane")
-        _run("nmcli", "radio", "wifi", "off" if on else "on")
-        _run("rfkill", "block" if on else "unblock", "bluetooth")
+        wifi = self._commands.target("wifi", self._s.get("wifi"))
+        bluetooth = self._commands.target("bluetooth", self._s.get("bluetooth"))
+        enabled = wifi is False and bluetooth is False
+        self._set_wifi(enabled)
+        self._set_bluetooth(enabled)
 
     @Slot()
     def toggleMute(self):
-        _run("wpctl", "set-mute", SINK, "toggle")
+        muted = not self._commands.target("mute", self._s.get("muted"))
+        self._commands.submit("mute", partial(run, "wpctl", "set-mute", SINK, str(int(muted))), muted)
 
     @Slot(float)
     def setVolume(self, fraction):
-        _run("wpctl", "set-volume", SINK, f"{max(0.0, min(1.0, fraction)):.2f}")
+        volume = f"{max(0.0, min(1.0, fraction)):.2f}"
+        self._commands.submit("volume", partial(run, "wpctl", "set-volume", SINK, volume))
 
     @Slot(str, int)
     def setBrightness(self, which, percent):
         dev = BACKLIGHTS.get(which)
-        if not dev:
-            return
-        top = _read(f"/sys/class/backlight/{dev}/max_brightness", 0)
-        value = round(max(MIN_PERCENT, min(100, percent)) / 100 * top)
-        _run("busctl", "call", "org.freedesktop.login1", "/org/freedesktop/login1/session/auto",
-             "org.freedesktop.login1.Session", "SetBrightness", "ssu", "backlight", dev, str(value))
+        if dev:
+            self._commands.submit("brightness-" + which, partial(_set_brightness, dev, percent))
 
     @Slot()
     def screenshot(self):
-        pictures = os.path.expanduser("~/Pictures")
-        os.makedirs(pictures, exist_ok=True)
-        _run("spectacle", "-b", "-n", "-f", "-o", f"{pictures}/armadalive-{os.getpid()}-{int(__import__('time').time())}.png")
+        self._commands.submit("screenshot", _screenshot)
+
+
+def _set_brightness(dev, percent):
+    top = _read(f"/sys/class/backlight/{dev}/max_brightness", 0)
+    if top:
+        value = round(max(MIN_PERCENT, min(100, percent)) / 100 * top)
+        run("busctl", "call", "org.freedesktop.login1", "/org/freedesktop/login1/session/auto",
+            "org.freedesktop.login1.Session", "SetBrightness", "ssu", "backlight", dev, str(value))
+
+
+def _screenshot():
+    pictures = os.path.expanduser("~/Pictures")
+    os.makedirs(pictures, exist_ok=True)
+    run("spectacle", "-b", "-n", "-f", "-o", f"{pictures}/armadalive-{os.getpid()}-{int(time.time())}.png")

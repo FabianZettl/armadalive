@@ -1,6 +1,6 @@
 import json, os, signal, sys
 from PySide6.QtCore import QObject, QPoint, QTimer, QUrl, Qt
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QWindow
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow
 from PySide6.QtTest import QTest
@@ -79,10 +79,21 @@ def main():
     engine.load(QUrl.fromLocalFile(HERE + "/qml/Main.qml"))
     if not engine.rootObjects():
         return 1
+    window = engine.rootObjects()[0]
+    presentation = (monitor, gamescope, backends["admin"], backends["controls"], backends["health"], backends["media"])
+
+    def update_presentation(*_):
+        active = window.isVisible() and window.visibility() != QWindow.Visibility.Minimized and not window.property("blanked")
+        for backend in presentation:
+            backend.set_active(active)
+
+    window.visibleChanged.connect(update_presentation)
+    window.visibilityChanged.connect(update_presentation)
+    window.blankedChanged.connect(update_presentation)
+    update_presentation()
     if "--snapshot" in sys.argv:  # render the first frames to a PNG and exit, for docs and tests
         out = sys.argv[sys.argv.index("--snapshot") + 1]
         page = int(sys.argv[sys.argv.index("--page") + 1]) if "--page" in sys.argv else 0
-        window = engine.rootObjects()[0]
         # a snapshot always shows a fixed game state, otherwise whatever ES-DE or Steam is doing at that moment throws the page
         # back to "Game": {"event": {...}} like ES-DE sends, or {"ui": [appid, "name"]} for Steam's UI; none means idle
         demo = json.loads(sys.argv[sys.argv.index("--demo") + 1]) if "--demo" in sys.argv else {}

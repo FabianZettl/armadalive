@@ -1,20 +1,43 @@
 """Calls into the root helper (scripts/install-helper.sh) through sudo; no password prompt, no other privileges."""
-import os, subprocess, time
+import os, subprocess, threading, time
 
 HELPER = "/etc/armadalive/armadalive-helper"  # /usr is read-only on Armada, /etc persists
 
 
-_seen = (0.0, False)
+_seen = (float("-inf"), False)
+_probe_lock = threading.Lock()
+_probe_timeout = 2
+_probe_generation = 0
+
+
+def cached_available():
+    """Last result for presentation. Reading it never starts a probe."""
+    return _seen[1]
+
+
+def invalidate():
+    """Refresh the probe after the app attempts to install or update the helper."""
+    global _seen, _probe_generation
+    _probe_generation += 1
+    _seen = (float("-inf"), _seen[1])
 
 
 def available(refresh=False):
-    """Is the helper installed and may this user run it without a password? Cached for a few seconds."""
+    """Check whether sudo will permit the installed helper. Call from a worker."""
     global _seen
-    if not refresh and time.monotonic() - _seen[0] < 3:
-        return _seen[1]
-    ok = os.path.exists(HELPER) and subprocess.run(["sudo", "-n", "-l", HELPER], capture_output=True).returncode == 0
-    _seen = (time.monotonic(), ok)
-    return ok
+    started = time.monotonic()
+    with _probe_lock:
+        if _seen[0] >= started or (not refresh and started - _seen[0] < 3):
+            return _seen[1]
+        generation = _probe_generation
+        try:
+            ok = os.path.exists(HELPER) and subprocess.run(
+                ["sudo", "-n", "-l", HELPER], capture_output=True, timeout=_probe_timeout).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            ok = False
+        if generation == _probe_generation:
+            _seen = (time.monotonic(), ok)
+        return ok
 
 
 def run(*args):
