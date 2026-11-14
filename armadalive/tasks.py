@@ -205,17 +205,26 @@ class Tasks(QObject):
             pass
         return False
 
+    def _bus_gone(self, bus):
+        # A dead private bus can leave its socket file behind. Only definitive
+        # connection errors prove absence; timeouts and access errors do not.
+        name = f"armadalive-cleanup-{uuid.uuid4().hex}"
+        conn = QDBusConnection.connectToBus(bus, name)
+        try:
+            return not conn.isConnected() and conn.lastError().name() in (
+                "org.freedesktop.DBus.Error.NoServer",
+                "org.freedesktop.DBus.Error.FileNotFound",
+            )
+        finally:
+            QDBusConnection.disconnectFromBus(name)
+
     def _retry_cleanup(self, bus):
         if self._pending_cleanup is None:
             return True
         previous_bus, script_name = self._pending_cleanup
-        old_path = previous_bus.removeprefix("unix:path=")
-        if previous_bus != bus and old_path != previous_bus and not os.path.exists(old_path):
-            # The private socket normally disappears with its old session.
-            self._pending_cleanup = None
-        elif time.monotonic() < self._cleanup_after:
+        if time.monotonic() < self._cleanup_after:
             return False
-        elif self._unload_script(previous_bus, script_name):
+        if self._unload_script(previous_bus, script_name) or (previous_bus != bus and self._bus_gone(previous_bus)):
             self._pending_cleanup = None
         else:
             self._cleanup_delay = min(30.0, self._cleanup_delay * 2)

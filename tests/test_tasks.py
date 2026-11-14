@@ -2,6 +2,7 @@ import json, os, subprocess, sys, tempfile, threading, time, unittest
 from unittest import mock
 
 from tests.common import app  # noqa: F401
+from PySide6.QtDBus import QDBusError, QDBusMessage
 from armadalive import closer, tasks
 
 WINDOWS = json.dumps([
@@ -120,6 +121,78 @@ class SessionReliability(unittest.TestCase):
         self.assertFalse(backend.state["ok"])
         run.assert_called_once()
         invalidate.assert_called_once_with("test")
+
+    def test_replaced_dead_bus_with_stale_path_does_not_block_new_scripts(self):
+        for error in ("NoServer", "FileNotFound"):
+            with self.subTest(error=error), tempfile.TemporaryDirectory() as directory:
+                path = os.path.join(directory, "dbus-old")
+                with open(path, "w"):
+                    pass  # The old daemon left a filesystem entry behind.
+                old_bus = "unix:path=" + path
+                backend = tasks.Tasks()
+                backend._bus = "unix:path=" + os.path.join(directory, "dbus-new")
+                backend._pending_cleanup = (old_bus, "old-script")
+                probe = mock.Mock()
+                probe.isConnected.return_value = False
+                probe.lastError.return_value = QDBusError(QDBusMessage.createError(
+                    "org.freedesktop.DBus.Error." + error, "old endpoint is gone"))
+                calls = []
+
+                def call(cmd, **kwargs):
+                    calls.append(cmd)
+                    if f"--address={old_bus}" in cmd:
+                        return subprocess.CompletedProcess(cmd, 1, "", "connection failed")
+                    reply = "i 42" if "loadScript" in cmd else "b true"
+                    return subprocess.CompletedProcess(cmd, 0, reply, "")
+
+                with mock.patch.object(tasks, "SCRIPT_DIR", directory), \
+                        mock.patch.object(tasks.subprocess, "run", side_effect=call), \
+                        mock.patch.object(tasks.QDBusConnection, "connectToBus", return_value=probe) as connect, \
+                        mock.patch.object(tasks.QDBusConnection, "disconnectFromBus") as disconnect:
+                    self.assertEqual(backend._run_script("new source", "list"), (True, True))
+                self.assertIsNone(backend._pending_cleanup)
+                self.assertEqual(sum("loadScript" in cmd for cmd in calls), 1)
+                self.assertEqual(connect.call_args.args[0], old_bus)
+                disconnect.assert_called_once_with(connect.call_args.args[1])
+                self.assertEqual(os.listdir(directory), ["dbus-old"])
+
+    def test_unconfirmed_old_bus_failure_preserves_cleanup_and_backoff(self):
+        for connected, error in ((True, "NoServer"), (False, "NoReply"), (False, "Timeout"),
+                                 (False, "TimedOut"), (False, "AuthFailed"), (False, "AccessDenied"),
+                                 (False, "UnknownMethod"), (False, "Disconnected"), (False, "Failed")):
+            with self.subTest(connected=connected, error=error), tempfile.TemporaryDirectory() as directory:
+                backend = tasks.Tasks()
+                backend._bus = "unix:path=" + os.path.join(directory, "dbus-new")
+                old_bus = "unix:path=" + os.path.join(directory, "dbus-old")
+                backend._pending_cleanup = (old_bus, "old-script")
+                probe = mock.Mock()
+                probe.isConnected.return_value = connected
+                probe.lastError.return_value = QDBusError(QDBusMessage.createError(
+                    "org.freedesktop.DBus.Error." + error, "old endpoint status is uncertain"))
+                with mock.patch.object(tasks, "SCRIPT_DIR", directory), \
+                        mock.patch.object(tasks.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "", "failed")) as run, \
+                        mock.patch.object(tasks.QDBusConnection, "connectToBus", return_value=probe) as connect, \
+                        mock.patch.object(tasks.QDBusConnection, "disconnectFromBus") as disconnect, \
+                        mock.patch.object(tasks.time, "monotonic", return_value=100) as clock:
+                    self.assertEqual(backend._run_script("new source", "list"), (False, False))
+                    self.assertEqual(backend._pending_cleanup, (old_bus, "old-script"))
+                    self.assertEqual(backend._cleanup_after, 102)
+                    clock.return_value = 101
+                    self.assertEqual(backend._run_script("new source", "list"), (False, False))
+                self.assertEqual(len(run.call_args_list), 1)
+                self.assertIn("unloadScript", run.call_args.args[0])
+                self.assertEqual(connect.call_count, 1)
+                disconnect.assert_called_once_with(connect.call_args.args[1])
+
+    def test_successful_old_cleanup_does_not_probe_the_connection(self):
+        backend = tasks.Tasks()
+        backend._bus = "new-bus"
+        backend._pending_cleanup = ("old-bus", "old-script")
+        with mock.patch.object(backend, "_unload_script", return_value=True), \
+                mock.patch.object(tasks.QDBusConnection, "connectToBus") as connect:
+            self.assertTrue(backend._retry_cleanup(backend._bus))
+        self.assertIsNone(backend._pending_cleanup)
+        connect.assert_not_called()
 
     def test_false_unload_reply_is_clean_if_the_script_is_absent(self):
         backend = tasks.Tasks()
