@@ -6,15 +6,22 @@ Flickable {
     id: page
     property bool presentationActive: true
     readonly property var s: nowPlaying.state
-    property var d: gameinfo.of(s.system || "", s.path || "", s.key || "", s.title || "")
-    onSChanged: d = gameinfo.of(s.system || "", s.path || "", s.key || "", s.title || "")
-    Connections { target: gameinfo; function onUpdated() { page.d = gameinfo.of(page.s.system || "", page.s.path || "", page.s.key || "", page.s.title || "") } }
-    Connections { target: history; function onChanged() { page.d = gameinfo.of(page.s.system || "", page.s.path || "", page.s.key || "", page.s.title || "") } }
+    property var d: ({})
+    function refresh() {
+        if (presentationActive && visible)
+            d = gameinfo.of(s.system || "", s.path || "", s.key || "", s.title || "")
+    }
+    onSChanged: refresh()
+    onPresentationActiveChanged: refresh()
+    onVisibleChanged: refresh()
+    Component.onCompleted: refresh()
+    Connections { target: gameinfo; function onUpdated() { page.refresh() } }
+    Connections { target: history; function onChanged() { page.refresh() } }
     Timer {
         interval: 30000
         repeat: true
         running: page.presentationActive && page.visible && /^steam\/[0-9]+$/.test(page.s.key || "")
-        onTriggered: page.d = gameinfo.of(page.s.system || "", page.s.path || "", page.s.key || "", page.s.title || "")
+        onTriggered: page.refresh()
     }
     readonly property real m: 16
     contentHeight: col.height + 2 * m

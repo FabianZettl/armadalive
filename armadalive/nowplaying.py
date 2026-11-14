@@ -37,6 +37,9 @@ def rom_relative(system, path):
     """Match an absolute launcher path and an ES-DE relative gamelist path."""
     path = os.path.normpath(path)
     if os.path.isabs(path):
+        folder = os.path.normpath(os.path.join(_rom_dir(), system)) + os.sep
+        if path.startswith(folder):
+            return path[len(folder):]
         parts = path.split("/")
         for index, part in enumerate(parts[:-2]):
             if part == "roms" and parts[index + 1] == system:

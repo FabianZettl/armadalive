@@ -26,6 +26,21 @@ class Describe(unittest.TestCase):
             self.assertEqual(game["title"], "First")
             self.assertTrue(game["fanart"].endswith("/a/Same.jpg"))
 
+    def test_configured_rom_root_takes_precedence_over_system_named_ancestors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = f"{directory}/snes/collection"
+            touch(f"{directory}/settings/es_settings.xml", f'<string name="ROMDirectory" value="{root}" />')
+            touch(f"{directory}/gamelists/snes/gamelist.xml", """<gameList>
+                <game><path>./Region/Unique.sfc</path><name>Correct title</name></game>
+                </gameList>""")
+            touch(f"{directory}/media/snes/fanart/Region/Unique.jpg")
+            with (mock.patch.object(n, "ES", directory),
+                  mock.patch.object(n, "GAMELISTS", directory + "/gamelists"),
+                  mock.patch.object(n, "MEDIA", directory + "/media")):
+                game = n.describe(dict(GAME, path=f"{root}/snes/Region/Unique.sfc"))
+            self.assertEqual(game["title"], "Correct title")
+            self.assertTrue(game["fanart"].endswith("/Region/Unique.jpg"))
+
     def test_steam_title_uses_configured_library(self):
         with tempfile.TemporaryDirectory() as directory:
             touch(f"{directory}/steamapps/appmanifest_42.acf", '"name" "Custom library game"')

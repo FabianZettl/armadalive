@@ -29,6 +29,19 @@ class Read(unittest.TestCase):
             info = gameinfo.GameInfo(mock.Mock(info=lambda key: dict(total=5, plays=1, last=2, favorite=False))).of("steam", "", "steam/2214475957", "Super Mario 3D World + Bowser's Fury")
         self.assertEqual((info["desc"], info["total"]), ("Cats.", 5))
 
+    def test_configured_rom_root_keeps_nested_roms_system_directory_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = f"{directory}/collection"
+            touch(f"{directory}/settings/es_settings.xml", f'<string name="ROMDirectory" value="{root}" />')
+            touch(f"{directory}/gamelists/snes/gamelist.xml", """<gameList>
+                <game><path>./roms/snes/Unique.sfc</path><desc>Nested game metadata</desc></game>
+                </gameList>""")
+            with (mock.patch.object(nowplaying, "ES", directory),
+                  mock.patch.object(nowplaying, "GAMELISTS", directory + "/gamelists"),
+                  mock.patch.object(nowplaying, "MEDIA", directory + "/media")):
+                info = gameinfo.read("snes", f"{root}/snes/roms/snes/Unique.sfc")
+            self.assertEqual(info["desc"], "Nested game metadata")
+
     def test_a_steam_game_takes_its_data_from_the_cached_store_entry(self):
         d = tempfile.mkdtemp(prefix="armadalive-steam-")
         touch(f"{d}/730.json", '{"name": "Counter-Strike 2", "short_description": "Shoot.", "genres": [{"description": "Action"}, {"description": "FPS"}, {"description": "x"}], '
