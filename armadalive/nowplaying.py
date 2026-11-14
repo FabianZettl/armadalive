@@ -12,7 +12,6 @@ CHEAT_DIRS = [os.path.expanduser(p) for p in (
 RUNTIME = os.environ.get("XDG_RUNTIME_DIR", "/run/user/%d" % os.getuid())
 STATE = os.path.join(RUNTIME, "armadalive", "state.json")
 
-STEAM_LIBRARIES = [os.path.expanduser(p) for p in ("~/.local/share/Steam", "/run/media/armada/EXT")]
 # emulators recognised by the name of their executable (RetroArch, AppImages, Flatpaks); a file manager is not one of them
 EMULATORS = ("retroarch", "eden", "azahar", "cemu", "armsx2", "pcsx2", "dolphin-emu", "ppsspp", "rpcs3", "xemu", "duckstation",
              "vita3k", "mgba", "melonds", "flycast", "redream", "xenia", "shadps4", "citra", "yuzu", "ryujinx", "mednafen", "scummvm", "dosbox")
@@ -34,16 +33,30 @@ def _system_logo(system):
     return _first(glob.escape(ES) + f"/themes/*/_inc/systems/logos/{glob.escape(system)}.svg")
 
 
+def rom_relative(system, path):
+    """Match an absolute launcher path and an ES-DE relative gamelist path."""
+    path = os.path.normpath(path)
+    if os.path.isabs(path):
+        parts = path.split("/")
+        for index, part in enumerate(parts[:-2]):
+            if part == "roms" and parts[index + 1] == system:
+                return "/".join(parts[index + 2:])
+        for index, part in enumerate(parts[:-1]):
+            if part == system:
+                return "/".join(parts[index + 1:])
+        return os.path.basename(path)
+    return path if path != ".." and not path.startswith("../") else os.path.basename(path)
+
+
 def _game_title(system, path):
     """The name ES-DE's gamelist gives a game (empty if it has no entry)."""
     f = f"{GAMELISTS}/{system}/gamelist.xml"
     try:
-        mtime = os.stat(f).st_mtime
-        if _gamelists.get(system, (0,))[0] != mtime:
-            # shortcut: matched by file basename, so same-named ROMs in subfolders collide
-            _gamelists[system] = (mtime, {os.path.basename(g.findtext("path") or ""): g.findtext("name") or ""
-                                          for g in ET.parse(f).getroot().iter("game")})
-        return _gamelists[system][1].get(os.path.basename(path), "")
+        mtime = os.stat(f).st_mtime_ns
+        if _gamelists.get(f, (None,))[0] != mtime:
+            _gamelists[f] = (mtime, {rom_relative(system, g.findtext("path") or ""): g.findtext("name") or ""
+                                    for g in ET.parse(f).getroot().iter("game")})
+        return _gamelists[f][1].get(rom_relative(system, path), "")
     except (OSError, ET.ParseError):
         return ""
 
@@ -69,10 +82,22 @@ def read_cheats(path):
 
 def _rom_dir():
     try:
-        value = re.search(r'name="ROMDirectory" value="([^"]*)"', open(ES + "/settings/es_settings.xml").read()).group(1)
+        with open(ES + "/settings/es_settings.xml", encoding="utf-8") as settings:
+            value = re.search(r'name="ROMDirectory" value="([^"]*)"', settings.read()).group(1)
     except (OSError, AttributeError):
         value = ""
-    return (value or "/run/media/armada/EXT/Emulation/roms").rstrip("/")
+    return os.path.expanduser(value or "/run/media/armada/EXT/Emulation/roms").rstrip("/")
+
+
+def _rom_path(path, root):
+    """Find the system and its relative game path under either ROM mount."""
+    for marker in (root + "/", "/roms/"):
+        _, found, relative = path.partition(marker)
+        if found:
+            system, sep, game = relative.partition("/")
+            if sep and system and game:
+                return system, game
+    return "", ""
 
 
 def running_game():
@@ -89,17 +114,13 @@ def running_game():
             continue
         for arg in args[1:]:
             text = arg.decode(errors="replace")
-            for marker in (rom_dir + "/", "/roms/"):   # Ludo mounts the card as /run/media/EXT, ES-DE as /run/media/armada/EXT
-                at = text.find(marker)
-                if at >= 0:
-                    break
-            parts = text[at + len(marker):].split("/") if at >= 0 else []
-            if len(parts) >= 2 and (best is None or int(pid) > best[0]):  # system folder + game; the newest process wins
-                best = (int(pid), parts[0], parts[1])
+            system, game = _rom_path(text, rom_dir)
+            if game and (best is None or int(pid) > best[0]):  # the newest process wins
+                best = (int(pid), system, game)
     if not best:
         return None
     _, system, game = best
-    return dict(event="game-start", system=system, path=f"{rom_dir}/{system}/{game}", name=os.path.splitext(game)[0], pid=best[0])
+    return dict(event="game-start", system=system, path=f"{rom_dir}/{system}/{game}", name=os.path.splitext(os.path.basename(game))[0], pid=best[0])
 
 
 def steam_running():
@@ -137,7 +158,7 @@ def esde_running():
 
 def describe_steam_ui(appid, name):
     """An app highlighted in Steam's UI: Steam games have art in the library cache, shortcuts (ES-DE, ...) in the grid folder."""
-    steam = os.path.expanduser("~/.local/share/Steam")
+    steam = steamlib.STEAM or os.path.expanduser("~/.local/share/Steam")
     cache, grid = f"{steam}/appcache/librarycache/{appid}", glob.escape(f"{steam}/userdata") + f"/*/config/grid/{appid}"
     logo = _first(cache + "/logo.png") or _first(grid + "_logo.*")
     hero = _first(cache + "/library_hero.jpg") or _first(grid + "_hero.*")
@@ -162,7 +183,13 @@ def describe_ludo(appid, name, screenshot):
     rom_id = int(appid.split(":")[1])
     server, games = _ludo_library()
     path = (games.get(rom_id) or {}).get("local_path", "")
-    out = describe(dict(event="game-select", system=os.path.basename(os.path.dirname(path)), path=path)) if path else {}
+    out = {}
+    if path:
+        system, relative = _rom_path(path, _rom_dir())
+        if system:
+            out = describe(dict(event="game-select", system=system, path=relative))
+        else:
+            out = describe(dict(event="game-select", system=os.path.basename(os.path.dirname(path)), path=path))
     if out.get("kind") != "game":
         out = dict(kind="game", logo="", fanart="", manual="")
     if not out["fanart"] and server and screenshot:
@@ -173,15 +200,13 @@ def describe_ludo(appid, name, screenshot):
 
 def describe_steam(appid):
     """A running Steam game: title from its manifest, art from Steam's library cache. None if unknown."""
-    cache = os.path.expanduser(f"~/.local/share/Steam/appcache/librarycache/{appid}")
-    for lib in STEAM_LIBRARIES:
+    for lib in sorted(steamlib._libraries() - {""}):
         try:
-            title = re.search(r'"name"\s+"(.*?)"', open(f"{lib}/steamapps/appmanifest_{appid}.acf").read()).group(1)
+            with open(f"{lib}/steamapps/appmanifest_{appid}.acf", encoding="utf-8", errors="replace") as manifest:
+                title = re.search(r'"name"\s+"(.*?)"', manifest.read()).group(1)
         except (OSError, AttributeError):
             continue
-        return dict(kind="game", title=title, logo=_url(_first(cache + "/logo.png")),
-                    fanart=_url(_first(cache + "/library_hero.jpg")), manual="", hasCheats=False, playing=True,
-                    key=f"steam/{appid}", system="steam")
+        return dict(describe_steam_ui(appid, title), playing=True)
     return None
 
 
@@ -193,9 +218,13 @@ def describe(event):
         fan = sorted(glob.glob(glob.escape(f"{MEDIA}/{system}/fanart") + "/*"))
         out.update(kind="system", system=system, title=event.get("systemName") or system, logo=_url(_system_logo(system)),
                    fanart=_url(random.Random(event.get("t", 0)).choice(fan) if fan else ""))
-    elif path and system and ev not in ("quit", "startup"):
-        base = glob.escape(f"{MEDIA}/{system}/%s/" + os.path.splitext(os.path.basename(path))[0])
-        media = lambda t: _first((base % t) + ".*")
+    elif path and re.fullmatch(r"[\w.-]+", system) and system not in (".", "..") and ev not in ("quit", "startup"):
+        relative = os.path.splitext(rom_relative(system, path))[0]
+
+        def media(kind):
+            folder = glob.escape(f"{MEDIA}/{system}/{kind}/")
+            return _first(folder + glob.escape(relative) + ".*") or _first(folder + glob.escape(os.path.basename(relative)) + ".*")
+
         out.update(kind="game", title=_game_title(system, path) or event.get("name", ""), logo=_url(media("marquees")),
                    fanart=_url(media("fanart") or media("screenshots")), manual=_url(media("manuals")),
                    hasCheats=bool(_cheat_file(path)), playing=ev == "game-start",
@@ -209,7 +238,7 @@ class NowPlaying(QObject):
 
     def __init__(self, gamescope, steamui):
         super().__init__()
-        self._event, self._steam, self._proc = {}, "", None
+        self._event, self._steam, self._proc = {}, None, None
         self._ui_focus, self._ui_app, self._hold, self._esde = False, (0, ""), 0.0, False
         self._pinned = False
         self.running = False     # a game is really running (a process), even while Steam's UI is in front
@@ -270,14 +299,14 @@ class NowPlaying(QObject):
             self._hold = time.monotonic() + 25
             QTimer.singleShot(26000, self._update)
         # AppIds of non-Steam shortcuts (ES-DE itself) are >= 2**31 and have no manifest, so they fall through to ES-DE
-        self._steam = app if app.isdigit() and 0 < int(app) < 2**31 and describe_steam(app) else ""
+        self._steam = describe_steam(app) if app.isdigit() and 0 < int(app) < 2**31 else None
         self._sgame = describe_shortcut(app) if self._shortcut else None
         self._update()
 
     def pin(self, event=None, ui=None):
         """Hold one state fixed, whatever the system does afterwards (for screenshots and tests)."""
         self._pinned = False
-        self._proc, self._steam, self._esde = None, "", True
+        self._proc, self._steam, self._esde = None, None, True
         self._ui_focus, self._ui_app = bool(ui), tuple(ui) if ui else (0, "")
         self._event = event or {}
         self._update()
@@ -292,7 +321,7 @@ class NowPlaying(QObject):
         if self._ui_focus:                  # browsing Steam: the highlighted app, whatever runs in the background
             self._path, state, key = "", ui or describe({}), None
         elif self._steam:                   # a Steam game is in front
-            self._path, state, key = "", describe_steam(self._steam), self._steam
+            self._path, state, key = "", dict(self._steam), self._steam["key"].partition("/")[2]
         elif self._sgame and not self._proc:   # a shortcut that is a game itself, and no emulator of ES-DE's behind it
             self._path, state, key = "", dict(self._sgame), "sgame|" + self._sgame["key"]
         elif ui and time.monotonic() < self._hold and not self._shortcut:  # that game is still starting

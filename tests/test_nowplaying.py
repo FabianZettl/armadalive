@@ -1,7 +1,7 @@
-import time, unittest
+import tempfile, time, unittest
 from unittest import mock
 
-from tests.common import ESDE, GAME, ROMS, Fake
+from tests.common import ESDE, GAME, ROMS, Fake, touch
 from armadalive import nowplaying as n
 
 
@@ -13,6 +13,25 @@ class Describe(unittest.TestCase):
         self.assertTrue(d["fanart"] and d["manual"])
         self.assertFalse(d["playing"])
         self.assertTrue(n.describe(dict(GAME, event="game-start"))["playing"])
+
+    def test_nested_rom_title_and_media_follow_the_relative_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            touch(f"{directory}/snes/gamelist.xml", """<gameList>
+                <game><path>./a/Same.sfc</path><name>First</name></game>
+                <game><path>./b/Same.sfc</path><name>Second</name></game>
+                </gameList>""")
+            touch(f"{directory}/snes/fanart/a/Same.jpg")
+            with mock.patch.object(n, "GAMELISTS", directory), mock.patch.object(n, "MEDIA", directory):
+                game = n.describe(dict(GAME, path=f"{ROMS}/snes/a/Same.sfc"))
+            self.assertEqual(game["title"], "First")
+            self.assertTrue(game["fanart"].endswith("/a/Same.jpg"))
+
+    def test_steam_title_uses_configured_library(self):
+        with tempfile.TemporaryDirectory() as directory:
+            touch(f"{directory}/steamapps/appmanifest_42.acf", '"name" "Custom library game"')
+            with mock.patch.object(n.steamlib, "_libraries", return_value={directory}):
+                game = n.describe_steam("42")
+        self.assertEqual((game or {}).get("title"), "Custom library game")
 
     def test_idle_and_system(self):
         self.assertEqual(n.describe({})["kind"], "idle")
@@ -69,6 +88,14 @@ class RunningGame(unittest.TestCase):
     def cmdline(self, rom):
         args = b"\0".join(a.encode() for a in ("retroarch", "-L", "/cores/x.so", rom, "--appendconfig", "/c.cfg")) + b"\0"
         return mock.patch("builtins.open", mock.mock_open(read_data=args)), mock.patch("os.listdir", return_value=["42"]), mock.patch.object(n, "_rom_dir", return_value=ROMS)
+
+    def test_a_nested_rom_keeps_every_path_component(self):
+        rom = "/run/media/EXT/Emulation/roms/gbc/Region/Nested/My Game.gbc"
+        a, b, c = self.cmdline(rom)
+        with a, b, c:
+            game = n.running_game()
+        self.assertEqual(game["path"], f"{ROMS}/gbc/Region/Nested/My Game.gbc")
+        self.assertEqual(game["name"], "My Game")
 
     def test_a_rom_under_another_mount_of_the_same_card_is_found(self):   # what Ludo starts: /run/media/EXT instead of /run/media/armada/EXT
         for rom in ("/run/media/EXT/Emulation/roms/gbc/Pokemon - Silver.gbc", ROMS + "/gbc/Pokemon - Silver.gbc"):

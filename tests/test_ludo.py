@@ -5,7 +5,7 @@ from tests.common import app  # noqa: F401
 
 import json
 
-from tests.common import GAME
+from tests.common import GAME, touch
 from armadalive import ludo, nowplaying
 
 START = [
@@ -73,6 +73,25 @@ class Highlighted(unittest.TestCase):
         self.assertTrue(out["logo"].endswith("/marquees/Super%20Game%20(EU).png") or "/marquees/Super" in out["logo"])
         self.assertTrue(out["fanart"].endswith("/fanart/Super%20Game%20(EU).jpg") or "/fanart/Super" in out["fanart"])
         self.assertEqual((out["title"], out["key"]), ("Name in Ludo", "ludo/1"))
+
+    def test_a_nested_download_uses_local_artwork_and_manual(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for rom_root in (f"{directory}/collection", f"{directory}/alternate/roms"):
+                with self.subTest(rom_root=rom_root):
+                    path = f"{rom_root}/snes/Region/Nested/Game.sfc"
+                    snapshot = f"{directory}/{os.path.basename(rom_root)}.json"
+                    touch(snapshot, json.dumps(dict(server_url="https://romm.example", games=[
+                        dict(rom_id=11, local_path=path),
+                    ])))
+                    touch(f"{directory}/snes/fanart/Region/Nested/Game.jpg")
+                    touch(f"{directory}/snes/manuals/Region/Nested/Game.pdf")
+                    with (mock.patch.object(nowplaying, "LUDO", snapshot),
+                          mock.patch.object(nowplaying, "MEDIA", directory),
+                          mock.patch.object(nowplaying, "_rom_dir", return_value=f"{directory}/collection")):
+                        out = nowplaying.describe_ludo("ludo:11", "Name in Ludo", "/remote.jpg")
+                    self.assertTrue(out["fanart"].endswith("/snes/fanart/Region/Nested/Game.jpg"), out["fanart"])
+                    self.assertTrue(out["manual"].endswith("/snes/manuals/Region/Nested/Game.pdf"))
+                    self.assertEqual((out["key"], out["playing"]), ("ludo/11", False))
 
     def test_any_other_game_gets_the_screenshot_of_the_server(self):
         out = self.describe(2, "/assets/x/0.jpg")

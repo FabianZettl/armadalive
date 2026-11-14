@@ -4,11 +4,18 @@ import QtQuick
 // Reached by tapping the Game page and then Info.
 Flickable {
     id: page
+    property bool presentationActive: true
     readonly property var s: nowPlaying.state
     property var d: gameinfo.of(s.system || "", s.path || "", s.key || "", s.title || "")
     onSChanged: d = gameinfo.of(s.system || "", s.path || "", s.key || "", s.title || "")
     Connections { target: gameinfo; function onUpdated() { page.d = gameinfo.of(page.s.system || "", page.s.path || "", page.s.key || "", page.s.title || "") } }
     Connections { target: history; function onChanged() { page.d = gameinfo.of(page.s.system || "", page.s.path || "", page.s.key || "", page.s.title || "") } }
+    Timer {
+        interval: 30000
+        repeat: true
+        running: page.presentationActive && page.visible && /^steam\/[0-9]+$/.test(page.s.key || "")
+        onTriggered: page.d = gameinfo.of(page.s.system || "", page.s.path || "", page.s.key || "", page.s.title || "")
+    }
     readonly property real m: 16
     contentHeight: col.height + 2 * m
     clip: true

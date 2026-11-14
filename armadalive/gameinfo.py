@@ -1,37 +1,43 @@
 """What ES-DE knows about a game (its gamelist entry: description, genre, developer, year, rating) and its pictures, for the game info page."""
-import glob, json, os, re, threading, time, urllib.request
+import glob, http.client, json, os, re, tempfile, threading, time, urllib.request
 import xml.etree.ElementTree as ET
-from PySide6.QtCore import QObject, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QUrl, Signal, Slot
 
-from . import nowplaying
+from . import nowplaying, steamlib
 
-_cache = {}   # system -> (mtime, {file name: entry})
+_cache = {}   # gamelist path -> (mtime, {relative ROM path: entry})
 STEAM_INFO = os.path.expanduser("~/.cache/armadalive/steam-info")   # what Steam's store says about a game, kept for a month
+STEAM_MAX_AGE = 30 * 86400
+STEAM_RETRY = 30
 STEAM_API = "https://store.steampowered.com/api/appdetails?appids=%s&l=%s"
 
 
 def _entries(system):
     f = f"{nowplaying.GAMELISTS}/{system}/gamelist.xml"
     try:
-        mtime = os.stat(f).st_mtime
-        if _cache.get(system, (0,))[0] != mtime:
-            _cache[system] = (mtime, {os.path.basename(g.findtext("path") or ""): g for g in ET.parse(f).getroot().iter("game")})
-        return _cache[system][1]
+        mtime = os.stat(f).st_mtime_ns
+        if _cache.get(f, (None,))[0] != mtime:
+            _cache[f] = (mtime, {nowplaying.rom_relative(system, g.findtext("path") or ""): g
+                                 for g in ET.parse(f).getroot().iter("game")})
+        return _cache[f][1]
     except (OSError, ET.ParseError):
         return {}
 
 
 def _pictures(system, base, kind):
-    return [QUrl.fromLocalFile(p).toString() for p in sorted(glob.glob(f"{glob.escape(nowplaying.MEDIA)}/{glob.escape(system)}/{kind}/{glob.escape(base)}.*"))]
+    folder = glob.escape(f"{nowplaying.MEDIA}/{system}/{kind}/")
+    paths = glob.glob(folder + glob.escape(base) + ".*") or glob.glob(folder + glob.escape(os.path.basename(base)) + ".*")
+    return [QUrl.fromLocalFile(p).toString() for p in sorted(paths)]
 
 
 def read(system, path):
     """{name, desc, genre, developer, year, rating (0..5, or 0), players, cover, shots} for a ROM; fields ES-DE has no entry for stay empty."""
     out = dict(name="", desc="", genre="", developer="", year="", rating=0, players="", cover="", shots=[])
-    if not system or not path:
+    if not re.fullmatch(r"[\w.-]+", system) or system in (".", "..") or not path:
         return out
-    base = os.path.splitext(os.path.basename(path))[0]
-    g = _entries(system).get(os.path.basename(path))
+    relative = nowplaying.rom_relative(system, path)
+    base = os.path.splitext(relative)[0]
+    g = _entries(system).get(relative)
     if g is not None:
         text = lambda tag: (g.findtext(tag) or "").strip()
         try:
@@ -51,7 +57,7 @@ def _plain(text):
 
 
 def find(title):
-    """(system, file name) of the ES-DE game with this name, or ("", "") - for a game that runs as a Steam shortcut and so has no ROM path of its own."""
+    """(system, relative ROM path) of the ES-DE game with this name, or ("", "") - for a game that runs as a Steam shortcut and so has no ROM path of its own."""
     want = _plain(title)
     if want:
         for f in sorted(glob.glob(f"{nowplaying.GAMELISTS}/*/gamelist.xml")):
@@ -66,10 +72,18 @@ def _steam_fetch(appid, lang):
     """Steam's store entry for an app as the raw `data` dict, or None (offline, unknown app, not a game)."""
     try:
         req = urllib.request.Request(STEAM_API % (appid, lang), headers={"User-Agent": "ArmadaLive"})
-        with urllib.request.urlopen(req, timeout=8) as r:
-            entry = json.load(r).get(str(appid)) or {}
-        return entry.get("data") if entry.get("success") else None
-    except (OSError, ValueError, AttributeError):
+        deadline = time.monotonic() + 8
+        limit = 2 * 1024 * 1024
+        payload = bytearray()
+        with urllib.request.urlopen(req, timeout=8) as response:
+            while len(payload) <= limit and time.monotonic() < deadline:
+                chunk = response.read1(min(65536, limit + 1 - len(payload)))
+                if not chunk:
+                    entry = json.loads(payload).get(str(appid)) or {}
+                    return entry.get("data") if entry.get("success") else None
+                payload.extend(chunk)
+        return None
+    except (OSError, http.client.HTTPException, ValueError, AttributeError):
         return None
 
 
@@ -81,47 +95,94 @@ def _steam_fields(data):
                 shots=[s["path_thumbnail"] for s in data.get("screenshots", [])[:3] if s.get("path_thumbnail")])
 
 
-def steam_read(appid, fetch=None, wait=False):
-    """Description, genre, developer, year, rating, screenshots and the local cover of a Steam game. The store entry is cached on disk;
-    without one the fields stay empty until it has been fetched (in the background unless `wait`)."""
-    out = dict(name="", desc="", genre="", developer="", year="", rating=0, players="", cover="", shots=[])
-    art = glob.glob(glob.escape(os.path.expanduser(f"~/.local/share/Steam/appcache/librarycache/{appid}")) + "/**/library_600x900*.jpg", recursive=True) \
-        or glob.glob(glob.escape(os.path.expanduser(f"~/.local/share/Steam/appcache/librarycache/{appid}")) + "/library_600x900*.jpg")
-    out["cover"] = QUrl.fromLocalFile(art[0]).toString() if art else ""
-    path = f"{STEAM_INFO}/{appid}.json"
+def _steam_entry(appid):
+    """Store fields and freshness. Expired fields remain usable during refresh."""
     try:
-        if time.time() - os.stat(path).st_mtime < 30 * 86400:
-            return dict(out, **_steam_fields(json.load(open(path))))
-    except (OSError, ValueError):
-        pass
+        with open(os.path.join(STEAM_INFO, f"{appid}.json"), encoding="utf-8") as f:
+            fresh = time.time() - os.fstat(f.fileno()).st_mtime < STEAM_MAX_AGE
+            return _steam_fields(json.load(f)), fresh
+    except (OSError, ValueError, AttributeError, TypeError, KeyError):
+        return {}, False
+
+
+def _steam_display(appid):
+    out = dict(name="", desc="", genre="", developer="", year="", rating=0, players="", cover="", shots=[])
+    steam = steamlib.STEAM or os.path.expanduser("~/.local/share/Steam")
+    art = sorted(glob.glob(glob.escape(os.path.join(steam, "appcache", "librarycache", appid))
+                           + "/**/library_600x900*.jpg", recursive=True))
+    out["cover"] = QUrl.fromLocalFile(art[0]).toString() if art else ""
     return out
 
 
-class GameInfo(QObject):
-    """For the info page: what ES-DE knows about a game, with the play history's numbers for it."""
+def steam_read(appid, fetch=None, wait=False):
+    """Return local cover and cached Steam store fields, even if the entry has expired."""
+    fields, _ = _steam_entry(appid)
+    return dict(_steam_display(appid), **fields)
 
-    updated = Signal()     # a Steam game's store entry arrived
+
+def _save_steam_entry(appid, data):
+    os.makedirs(STEAM_INFO, exist_ok=True)
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=STEAM_INFO, delete=False) as f:
+            tmp = f.name
+            json.dump(data, f)
+        os.replace(tmp, os.path.join(STEAM_INFO, f"{appid}.json"))
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+class GameInfo(QObject):
+    """For the info page: game metadata and play history."""
+
+    updated = Signal()
+    _fetched = Signal(str, bool)
 
     def __init__(self, history):
         super().__init__()
         self._history = history
-        self._asked = set()
+        self._active = self._pending = None
+        self._retry = {}
+        self._fetched.connect(self._complete, Qt.ConnectionType.QueuedConnection)
 
     def _steam(self, appid):
-        out = steam_read(appid)
-        if not out["desc"] and appid not in self._asked:   # not cached yet: ask Steam once per run, in the background
-            self._asked.add(appid)
-            lang = "german" if os.environ.get("LANG", "").startswith("de") else "english"
-            threading.Thread(target=self._fetch, args=(appid, lang), daemon=True).start()
-        return out
+        fields, fresh = _steam_entry(appid)
+        now = time.monotonic()
+        self._retry = {key: until for key, until in self._retry.items() if now < until}
+        self._pending = None if fresh or appid == self._active or appid in self._retry else appid
+        self._start()
+        return dict(_steam_display(appid), **fields)
+
+    def _start(self):
+        if self._active is not None or self._pending is None:
+            return
+        appid, self._pending = self._pending, None
+        self._active = appid
+        lang = "german" if os.environ.get("LANG", "").startswith("de") else "english"
+        threading.Thread(target=self._fetch, args=(appid, lang), daemon=True).start()
 
     def _fetch(self, appid, lang):
-        data = _steam_fetch(appid, lang)
-        if data:
-            os.makedirs(STEAM_INFO, exist_ok=True)
-            with open(f"{STEAM_INFO}/{appid}.json", "w") as f:
-                json.dump(data, f)
+        success = False
+        try:
+            data = _steam_fetch(appid, lang)
+            if data:
+                _steam_fields(data)  # keep an existing cache entry if the refresh is malformed
+                _save_steam_entry(appid, data)
+                success = True
+        except (OSError, ValueError, AttributeError, TypeError, KeyError):
+            pass
+        finally:
+            self._fetched.emit(appid, success)
+
+    @Slot(str, bool)
+    def _complete(self, appid, success):
+        self._active = None
+        if not success:
+            self._retry[appid] = time.monotonic() + STEAM_RETRY
+        if success:
             self.updated.emit()
+        self._start()
 
     @Slot(str, str, str, str, result="QVariant")
     def of(self, system, path, key, title=""):
@@ -129,6 +190,7 @@ class GameInfo(QObject):
         if steam and int(steam.group(1)) < 2 ** 31:   # a game of Steam itself: Steam knows its data
             out = self._steam(steam.group(1))
         else:
+            self._pending = None
             if (not path or system == "steam") and title:   # started through a Steam shortcut: find the game in ES-DE by its name
                 system, path = find(title)
             out = read(system, path)

@@ -1,4 +1,4 @@
-import tempfile, unittest
+import os, tempfile, threading, time, unittest
 from unittest import mock
 
 from tests.common import app, touch  # noqa: F401
@@ -44,6 +44,32 @@ class Read(unittest.TestCase):
         self.assertEqual((info["name"], info["genre"], info["developer"], info["year"], info["rating"], info["shots"]),
                          ("Counter-Strike 2", "Action, FPS", "Valve", "2012", 4.0, ["https://x/1.jpg"]))
         self.assertEqual((via_of["desc"], via_of["total"]), ("Shoot.", 9))
+
+    def test_expired_store_entry_remains_readable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = f"{directory}/42.json"
+            touch(path, '{"short_description": "Cached description"}')
+            old = time.time() - 31 * 86400
+            os.utime(path, (old, old))
+            with mock.patch.object(gameinfo, "STEAM_INFO", directory):
+                self.assertEqual(gameinfo.steam_read("42")["desc"], "Cached description")
+
+    def test_fetch_failure_can_retry_and_completion_reaches_owner_thread(self):
+        with (tempfile.TemporaryDirectory() as directory,
+              mock.patch.object(gameinfo, "STEAM_INFO", directory),
+              mock.patch.object(gameinfo, "STEAM_RETRY", 0),
+              mock.patch.object(gameinfo, "_steam_fetch", side_effect=[None, {"short_description": "Fetched"}]) as fetch):
+            gi = gameinfo.GameInfo(mock.Mock(info=lambda key: {}))
+            updated = []
+            gi.updated.connect(lambda: updated.append(threading.get_ident()))
+            until = time.monotonic() + 0.5
+            while time.monotonic() < until and not updated:
+                app.processEvents()
+                gi.of("steam", "", "steam/42")
+                time.sleep(0.001)
+            self.assertEqual(fetch.call_count, 2)
+            self.assertEqual(updated, [threading.get_ident()])
+            self.assertEqual(gi.of("steam", "", "steam/42")["desc"], "Fetched")
 
     def test_no_system_or_path_gives_empty_fields(self):
         self.assertEqual(gameinfo.read("", "")["desc"], "")
