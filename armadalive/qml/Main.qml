@@ -40,6 +40,7 @@ Window {
     // the screen dims a little after 10 s without a touch; the next touch wakes it (and does nothing else)
     property bool dimmed: false
     property bool blanked: false        // screen off: true black, ignores touches, a long press or the AYN button wakes it
+    readonly property bool presentationActive: visible && visibility !== Window.Hidden && visibility !== Window.Minimized && !blanked
     property bool pressWasBlanked: false
     property bool pressWasFront: false
     property string askDemo: ""     // snapshots only: open the password dialog
@@ -68,7 +69,7 @@ Window {
     // whatever un-fullscreens the window (another app, Plasma, a resize) is undone at once; Plasma's swipe-up panels draw over it
     onVisibilityChanged: if (win.visible && win.visibility !== Window.FullScreen && win.visibility !== Window.Hidden && win.visibility !== Window.Minimized) Qt.callLater(applyVisibility)
     onActiveChanged: if (active) applyVisibility()
-    Timer { interval: 3000; running: win.visible; repeat: true; onTriggered: if (win.visibility === Window.Windowed || win.visibility === Window.Maximized) win.applyVisibility() }
+    Timer { interval: 3000; running: win.presentationActive; repeat: true; onTriggered: if (win.visibility === Window.Windowed || win.visibility === Window.Maximized) win.applyVisibility() }
     function go(id) { page = id; if (home) hideChrome.restart() }
     function step(delta) {
         const i = pages.findIndex(p => p.id === section), j = i + delta
@@ -77,13 +78,18 @@ Window {
     onCurrentChanged: if (current.id !== page) page = current.id
     onHomeChanged: if (home) { peek = true; hideChrome.restart() }
     // "Follow game" takes its colour from the artwork the top screen is showing; without artwork it falls back to its plain palette
-    readonly property string followColor: ui.state.theme === "follow" ? artwork.dominant(now.fanart || now.logo || "") : ""
+    readonly property bool followActive: presentationActive && ui.state.theme === "follow"
+    readonly property string followSource: ui.state.theme === "follow" ? now.fanart || now.logo || "" : ""
+    readonly property string followColor: artwork.color
+    function requestFollowColor() { artwork.request(followSource, followActive) }
+    onFollowSourceChanged: requestFollowColor()
+    onFollowActiveChanged: requestFollowColor()
     function applyTheme() {
         Theme.apply(ui.state.theme, ui.state.theme === "follow" ? followColor : ui.state.accent)
         ui.applyFont(Theme.fontFamily)
     }
     onFollowColorChanged: applyTheme()
-    Component.onCompleted: { if (dimEnabled) idle.start(); applyVisibility(); applyTheme(); Tr.lang = ui.state.lang; ledSync.start(); activity.watch(win) }
+    Component.onCompleted: { if (dimEnabled) idle.start(); applyVisibility(); requestFollowColor(); applyTheme(); Tr.lang = ui.state.lang; ledSync.start(); activity.watch(win) }
     // The stick LEDs follow the theme's accent, until the user picks a colour of their own (Stick LEDs tile on System). Only while the LEDs are on and the
     // root helper can set them; a moment after the last change, because the accent fades and "Follow game" changes it with every game.
     function accentHex() { const c = Theme.accent; return [c.r, c.g, c.b].map(x => ("0" + Math.round(x * 255).toString(16)).slice(-2)).join("").toUpperCase() }
@@ -170,6 +176,8 @@ Window {
         Loader {
             anchors { fill: parent; leftMargin: win.home ? 0 : 12 * win.u; rightMargin: win.home ? 0 : 12 * win.u; topMargin: win.home ? 0 : 6 * win.u; bottomMargin: win.home ? 0 : 6 * win.u }
             source: win.current.file
+            onLoaded: if ("presentationActive" in item)
+                item.presentationActive = Qt.binding(() => win.presentationActive)
         }
         // swipe sideways between pages; the PDF view keeps its own panning
         DragHandler {

@@ -1,4 +1,6 @@
 import QtQuick
+import QtQuick.Window
+import "Artwork.js" as Artwork
 
 // The inside of a folder: its games and apps as a grid. Tap starts one, press and hold takes it out of a manual folder; a manual folder is renamed by
 // tapping its name and gets new things with the + tile.
@@ -10,6 +12,7 @@ Rectangle {
     readonly property bool manual: folder.indexOf("folder:") === 0
     readonly property string title: { const s = apps.slots.find(e => e && e.id === folder); return s ? s.name : "" }
     property bool adding: false
+    readonly property bool presentationActive: !Window.window || Window.window.presentationActive !== false
     signal closed()
 
     color: Theme.bg
@@ -81,13 +84,23 @@ Rectangle {
                 border.color: Theme.border
                 scale: area.pressed ? 0.95 : 1
                 Behavior on scale { NumberAnimation { duration: Theme.dur(90) } }
-                Image {
+                Item {
                     visible: !!modelData.icon
                     anchors.fill: parent
                     anchors.margins: modelData.cover ? 0 : parent.width * 0.2
-                    source: modelData.icon || ""
-                    fillMode: modelData.cover ? Image.PreserveAspectCrop : Image.PreserveAspectFit
-                    asynchronous: true
+                    clip: true
+                    Image {
+                        anchors.centerIn: parent
+                        readonly property real fit: implicitWidth <= 0 || implicitHeight <= 0 ? 0
+                                                    : modelData.cover
+                                                      ? Math.max(parent.width / implicitWidth, parent.height / implicitHeight)
+                                                      : Math.min(parent.width / implicitWidth, parent.height / implicitHeight)
+                        width: implicitWidth * fit
+                        height: implicitHeight * fit
+                        source: v.presentationActive ? Artwork.source(modelData.icon || "") : ""
+                        sourceSize: Qt.size(512, 512)
+                        asynchronous: true
+                    }
                 }
                 Text {
                     visible: !modelData.icon

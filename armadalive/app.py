@@ -8,6 +8,7 @@ from PySide6.QtTest import QTest
 from . import __version__
 from .admin import Admin
 from .apps import Apps
+from .artwork import VectorArtwork
 from .gameinfo import GameInfo
 from .history import History
 from . import steamlib
@@ -51,6 +52,7 @@ def main():
     app.setApplicationVersion(__version__)
     app.setDesktopFileName("armadalive")
     engine = QQmlApplicationEngine()
+    engine.addImageProvider("vectors", VectorArtwork())
     # the context does not own these objects: keep them referenced for the life of the app
     gamescope, steamui = Gamescope(), SteamUi()
     now, monitor = NowPlaying(gamescope, steamui), SystemMonitor(fps=lambda: gamescope.state["fps"])
