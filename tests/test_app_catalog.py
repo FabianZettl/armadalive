@@ -1,4 +1,5 @@
 import json
+import stat
 import threading
 import unittest
 from pathlib import Path
@@ -6,7 +7,7 @@ from tempfile import TemporaryDirectory
 from unittest import mock
 
 from tests.common import wait_for
-from armadalive import apps
+from armadalive import apps, backup
 
 
 class Catalog(unittest.TestCase):
@@ -173,10 +174,11 @@ class Catalog(unittest.TestCase):
         owner = threading.get_ident()
 
         def delayed_sync(fd):
-            writes.append(threading.get_ident())
-            if len(writes) == 1:
-                started.set()
-                release.wait(3)
+            if stat.S_ISREG(apps.os.fstat(fd).st_mode):
+                writes.append(threading.get_ident())
+                if len(writes) == 1:
+                    started.set()
+                    release.wait(3)
             return real_fsync(fd)
 
         with mock.patch.object(apps.steamlib, "games", return_value=[]), \
@@ -213,3 +215,135 @@ class Catalog(unittest.TestCase):
             backend.renameFolder("folder:1", "Saved name")
             backend.flush()
             self.assertEqual(json.loads(self.config.read_text())["folders"]["1"]["name"], "Saved name")
+
+    def backup_backend(self):
+        self.config.write_text(json.dumps({"slots": ["folder:1"], "folders": {
+            "1": {"name": "Current", "items": []}}, "next": 2}))
+        patch = mock.patch.object(apps.steamlib, "games", return_value=[])
+        patch.start()
+        self.addCleanup(patch.stop)
+        backend = apps.Apps()
+        wait_for(lambda: not backend.catalogLoading)
+        self.addCleanup(backend.flush)
+        for name, value in (("CONFIG_DIR", str(self.config.parent)),
+                            ("FILE", str(self.config.with_name("backup.json")))):
+            patch = mock.patch.object(backup, name, value)
+            patch.start()
+            self.addCleanup(patch.stop)
+        coordinator = backup.Backup((backend,))
+        return backend, coordinator
+
+    def block_layout_write(self):
+        started, release = threading.Event(), threading.Event()
+        original = apps._write_layout
+
+        def delayed(path, snapshot):
+            started.set()
+            if not release.wait(3):
+                raise OSError("test write was not released")
+            original(path, snapshot)
+
+        patch = mock.patch.object(apps, "_write_layout", delayed)
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.addCleanup(release.set)
+        return started, release
+
+    def test_backup_export_waits_for_accepted_layout_without_blocking_edits(self):
+        backend, coordinator = self.backup_backend()
+        started, release = self.block_layout_write()
+        backend.renameFolder("folder:1", "Accepted edit")
+        self.assertTrue(started.wait(1))
+        try:
+            coordinator.save()
+            self.assertNotEqual(coordinator.state["message"], "saved")
+            coordinator.restore()  # A second operation cannot interrupt the export.
+            backend.renameFolder("folder:1", "Edit during backup")
+        finally:
+            release.set()
+        wait_for(lambda: coordinator.state["message"] == "saved")
+        exported = json.loads(Path(backup.FILE).read_text())
+        self.assertEqual(exported["files"]["apps.json"]["folders"]["1"]["name"], "Accepted edit")
+        backend.flush()
+        self.assertEqual(json.loads(self.config.read_text())["folders"]["1"]["name"], "Edit during backup")
+
+    def test_backup_restore_drains_layout_then_holds_new_writes_until_restart(self):
+        backend, coordinator = self.backup_backend()
+        restored = {"slots": ["folder:9"], "folders": {
+            "9": {"name": "Restored", "items": []}}, "next": 10}
+        Path(backup.FILE).write_text(json.dumps({"files": {"apps.json": restored}}))
+        started, release = self.block_layout_write()
+        backend.renameFolder("folder:1", "Pending edit")
+        self.assertTrue(started.wait(1))
+        with mock.patch.object(backup.QTimer, "singleShot"):
+            try:
+                coordinator.restore()
+                self.assertNotEqual(coordinator.state["message"], "restored")
+                self.assertEqual(json.loads(self.config.read_text())["folders"]["1"]["name"], "Current")
+                backend.renameFolder("folder:1", "Edit during restore")
+            finally:
+                release.set()
+            wait_for(lambda: coordinator.state["message"] == "restored")
+        backend.renameFolder("folder:1", "Edit before restart")
+        backend.flush()
+        self.assertEqual(json.loads(self.config.read_text()), restored)
+
+    def test_failed_restore_resumes_deferred_layout_edits(self):
+        backend, coordinator = self.backup_backend()
+        Path(backup.FILE).write_text(json.dumps({"not": "a backup"}))
+        started, release = self.block_layout_write()
+        backend.renameFolder("folder:1", "Pending edit")
+        self.assertTrue(started.wait(1))
+        try:
+            coordinator.restore()
+            self.assertEqual(coordinator.state["message"], "")
+            backend.renameFolder("folder:1", "Kept after failure")
+        finally:
+            release.set()
+        wait_for(lambda: "not an ArmadaLive backup" in coordinator.state["message"])
+        backend.flush()
+        self.assertEqual(json.loads(self.config.read_text())["folders"]["1"]["name"], "Kept after failure")
+
+    def test_failed_layout_write_refuses_stale_export_and_next_edit_recovers(self):
+        backend, coordinator = self.backup_backend()
+        with mock.patch.object(apps, "_write_layout", side_effect=OSError("layout device unavailable")), \
+                self.assertLogs(apps.log, level="ERROR"):
+            backend.renameFolder("folder:1", "Unsaved")
+            backend.flush()
+        coordinator.save()
+        self.assertIn("layout device unavailable", coordinator.state["message"])
+        self.assertFalse(Path(backup.FILE).exists())
+        backend.renameFolder("folder:1", "Recovered")
+        backend.flush()
+        coordinator.save()
+        self.assertEqual(coordinator.state["message"], "saved")
+        self.assertEqual(json.loads(Path(backup.FILE).read_text())["files"]["apps.json"]["folders"]["1"]["name"], "Recovered")
+
+    def test_failed_restart_resumes_deferred_layout_edits(self):
+        backend, coordinator = self.backup_backend()
+        Path(backup.FILE).write_text(json.dumps({"files": {"apps.json": {
+            "slots": [], "folders": {}, "next": 1}}}))
+        with mock.patch.object(backup.QTimer, "singleShot") as restart:
+            coordinator.restore()
+        self.assertEqual(coordinator.state["message"], "restored")
+        backend.renameFolder("folder:1", "Kept after restart failure")
+        with mock.patch.object(backup.os, "execv", side_effect=OSError("restart unavailable")):
+            restart.call_args.args[1]()
+        self.assertEqual(coordinator.state["message"], "restart unavailable")
+        backend.flush()
+        self.assertEqual(json.loads(self.config.read_text())["folders"]["1"]["name"], "Kept after restart failure")
+
+    def test_new_layout_directory_survives_failed_first_write_and_retry(self):
+        nested = self.config.parent / "new" / "nested" / "apps.json"
+        with mock.patch.object(apps, "CONFIG", str(nested)), \
+                mock.patch.object(apps.steamlib, "games", return_value=[]):
+            backend = apps.Apps()
+            wait_for(lambda: not backend.catalogLoading)
+            with mock.patch.object(apps.os, "replace", side_effect=OSError("first replacement failed")), \
+                    self.assertLogs(apps.log, level="ERROR"):
+                backend.assign(0, "folder:new")
+                backend.flush()
+            self.assertFalse(nested.exists())
+            backend.renameFolder("folder:1", "Recovered new layout")
+            backend.flush()
+        self.assertEqual(json.loads(nested.read_text())["folders"]["1"]["name"], "Recovered new layout")

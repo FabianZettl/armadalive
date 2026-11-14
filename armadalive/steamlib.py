@@ -67,18 +67,30 @@ def _url(path):
 
 def _installed_art(cache):
     """Index all installed game artwork, keeping the same priority as the old glob searches."""
-    covers = {}
-    for here, dirs, files in os.walk(cache):
-        if here == cache:
-            dirs[:] = [directory for directory in dirs if directory.isdecimal()]
-            continue
-        dirs[:] = [directory for directory in dirs if not directory.startswith(".")]
-        appid = os.path.relpath(here, cache).split(os.sep, 1)[0]
-        for priority, filename in enumerate(("library_600x900.jpg", "header.jpg")):
-            if filename in files:
-                candidate = (priority, os.path.join(here, filename))
-                if appid not in covers or candidate < covers[appid]:
-                    covers[appid] = candidate
+    covers, visited = {}, set()
+    for here, dirs, files in os.walk(cache, followlinks=True):
+        appid = os.path.relpath(here, cache).split(os.sep, 1)[0] if here != cache else ""
+        if appid:
+            for priority, filename in enumerate(("library_600x900.jpg", "header.jpg")):
+                if filename in files:
+                    candidate = (priority, os.path.join(here, filename))
+                    if appid not in covers or candidate < covers[appid]:
+                        covers[appid] = candidate
+        descend = []
+        for directory in sorted(dirs):
+            if (not appid and not directory.isdecimal()) or directory.startswith("."):
+                continue
+            try:
+                info = os.stat(os.path.join(here, directory))
+            except OSError:
+                continue
+            # Each game may link the same artwork, but no game needs to visit
+            # one physical directory twice (including links to its ancestors).
+            identity = (appid or directory, info.st_dev, info.st_ino)
+            if identity not in visited:
+                visited.add(identity)
+                descend.append(directory)
+        dirs[:] = descend
     return {appid: cover for appid, (_, cover) in covers.items()}
 
 

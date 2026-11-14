@@ -1,10 +1,11 @@
 """The app grid on the idle screen: installed apps from their .desktop files (launched on the bottom screen) and Steam games and
 shortcuts (launched through Steam on the main screen) and ES-DE games (through a Steam shortcut they get on the first tap), as many as you add; the grid scrolls sideways."""
-import configparser, json, logging, os, random, re, subprocess, tempfile, threading
+import configparser, json, logging, os, random, re, subprocess, threading
 from PySide6.QtCore import Property, QCoreApplication, QObject, Qt, QUrl, Signal, Slot
 
 from . import esdelib, steamlib, steamshortcuts, steamui
 from .nowplaying import ES
+from .persistence import write_json as _write_layout
 
 CONFIG = os.path.expanduser("~/.config/armadalive/apps.json")
 APP_DIRS = [os.path.expanduser(p) for p in (
@@ -117,21 +118,6 @@ def _scan_catalog():
             {system: definitions[system]["fullname"] for system in systems}, _system_art_index(ES) if systems else {})
 
 
-def _write_layout(path, snapshot):
-    directory = os.path.dirname(path)
-    os.makedirs(directory, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(dir=directory)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(snapshot, stream)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
-
 class Apps(QObject):
     changed = Signal()
     catalogChanged = Signal()
@@ -158,6 +144,8 @@ class Apps(QObject):
         self._save_lock = threading.Lock()
         self._pending_save = None
         self._writer = None
+        self._writes_paused = self._deferred_save = False
+        self._save_error = None
         app = QCoreApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self.flush)
@@ -287,6 +275,9 @@ class Apps(QObject):
         return slots
 
     def _save(self):
+        if self._writes_paused:
+            self._deferred_save = True
+            return
         snapshot = {
             "slots": tuple(self._slots),
             "folders": {key: dict(name=folder["name"], items=tuple(folder["items"]))
@@ -309,8 +300,30 @@ class Apps(QObject):
                 self._pending_save = None
             try:
                 _write_layout(path, snapshot)
-            except OSError:
+            except OSError as error:
+                with self._save_lock:
+                    self._save_error = error
                 log.exception("Failed to save app layout to %s", path)
+            else:
+                with self._save_lock:
+                    self._save_error = None
+
+    def pauseWrites(self):
+        self._writes_paused = True
+
+    def writesPending(self):
+        with self._save_lock:
+            if self._writer is not None:
+                return True
+            if self._save_error is not None:
+                raise self._save_error
+        return False
+
+    def resumeWrites(self):
+        self._writes_paused = False
+        if self._deferred_save:
+            self._deferred_save = False
+            self._save()
 
     @Slot()
     def flush(self):

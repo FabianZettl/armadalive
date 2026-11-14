@@ -37,13 +37,19 @@ def apply(data):
 class Backup(QObject):
     changed = Signal()
 
-    def __init__(self):
+    def __init__(self, writers=()):
         super().__init__()
         self._message = ""
+        self._writers = tuple(writers)
+        self._paused = []
+        self._operation = ""
+        self._drain = QTimer(self)
+        self._drain.setInterval(20)
+        self._drain.timeout.connect(self._check_writers)
 
     @Property("QVariant", notify=changed)
     def state(self):
-        return dict(path=FILE, exists=os.path.exists(FILE), message=self._message)
+        return dict(path=FILE, exists=os.path.exists(FILE), message=self._message, busy=bool(self._operation))
 
     def _say(self, text):
         self._message = text
@@ -51,20 +57,66 @@ class Backup(QObject):
 
     @Slot()
     def save(self):
-        try:
-            with open(FILE, "w") as f:
-                json.dump(collect(), f, indent=1)
-            self._say("saved")
-        except OSError as e:
-            self._say(str(e))
+        self._start("save")
 
     @Slot()
     def restore(self):
-        try:
-            with open(FILE) as f:
-                apply(json.load(f))
-        except (OSError, ValueError) as e:
-            self._say(str(e))
+        self._start("restore")
+
+    def _start(self, operation):
+        if self._operation:
             return
-        self._say("restored")
-        QTimer.singleShot(800, lambda: os.execv(sys.executable, sys.orig_argv))   # start over so every part reads its file again
+        self._operation = operation
+        try:
+            # These methods run on the writers' owner thread. Later edits remain
+            # deferred while their already-accepted snapshots finish writing.
+            for writer in self._writers:
+                self._paused.append(writer)
+                writer.pauseWrites()
+        except (OSError, ValueError) as error:
+            self._finish(error)
+            return
+        self._say("")
+        self._drain.start()
+        self._check_writers()
+
+    @Slot()
+    def _check_writers(self):
+        try:
+            if any(writer.writesPending() for writer in self._paused):
+                return
+        except (OSError, ValueError) as error:
+            self._finish(error)
+            return
+        self._drain.stop()
+        # Keep the existing file operations on the owner thread so synchronous
+        # settings writers cannot interleave with collection or restoration.
+        try:
+            if self._operation == "save":
+                with open(FILE, "w") as stream:
+                    json.dump(collect(), stream, indent=1)
+            else:
+                with open(FILE) as stream:
+                    apply(json.load(stream))
+        except (OSError, ValueError) as error:
+            self._finish(error)
+        else:
+            self._finish(None)
+
+    def _finish(self, error):
+        self._drain.stop()
+        if error is None and self._operation == "restore":
+            self._say("restored")
+            QTimer.singleShot(800, self._restart)
+            return
+        self._operation = ""
+        for writer in self._paused:
+            writer.resumeWrites()
+        self._paused.clear()
+        self._say((str(error) or type(error).__name__) if error is not None else "saved")
+
+    def _restart(self):
+        try:
+            os.execv(sys.executable, sys.orig_argv)
+        except OSError as error:
+            self._finish(error)
