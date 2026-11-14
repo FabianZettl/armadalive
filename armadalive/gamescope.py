@@ -1,7 +1,7 @@
 """Gamescope frame rate from its stats pipe and focus and display settings from X properties."""
 import collections, math, os, select, subprocess, threading, time
 from functools import partial
-from PySide6.QtCore import Property, QObject, Signal, Slot
+from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 from .poller import Poller
 from .commands import Commands, run
 
@@ -85,13 +85,18 @@ class Gamescope(QObject):
         super().__init__()
         self._focus, self._limit, self._refresh, self._hz = "", 0, 0, 0
         self._commands = Commands(self)
-        self._commands.settled.connect(self._refresh_display)
+        self._commands.completed.connect(self._command_completed)
         self._samples = collections.deque([(0.0, 0.0)], maxlen=1)
+        self._published_fps = 0
         stopped = threading.Event()
         self.destroyed.connect(stopped.set)
         threading.Thread(target=_read_fps, args=(self._samples, stopped), daemon=True).start()
         self._focus_poller = Poller(self, lambda: _xprop("GAMESCOPE_FOCUSED_APP"), self._apply_focus, 1000)
         self._display_poller = Poller(self, _read_display, self._apply_display, 3000, idle_ms=15000)
+        # Pipe samples and their expiry remain visible even when X queries fail.
+        timer = QTimer(self)
+        timer.timeout.connect(self._publish_fps)
+        timer.start(1000)
 
     def set_active(self, active):
         self._display_poller.set_active(active)
@@ -105,23 +110,35 @@ class Gamescope(QObject):
         hz = self._commands.target("display", self._hz)
         return dict(fps=fps, focus=self._focus, limit=limit, refresh=self._refresh, hz=hz)
 
+    @Slot()
+    def _publish_fps(self):
+        if self.state["fps"] != self._published_fps:
+            self._publish()
+
+    def _publish(self):
+        self._published_fps = self.state["fps"]
+        self.changed.emit()
+
     def _apply_focus(self, app):
         focus = str(app) if app else ""
         if focus != self._focus:
             self._focus = focus
             self.focusChanged.emit(focus)
-        self.changed.emit()
+            self._publish()
 
     def _apply_display(self, display):
         self._limit, self._refresh, self._hz = display
-        self.changed.emit()
+        self._publish()
 
     @Slot(int)
     def setFpsLimit(self, fps):
         fps = int(fps)
         self._commands.submit("display", partial(_set_limit, fps), fps)
-        self.changed.emit()
+        self._publish()
 
-    @Slot(str)
-    def _refresh_display(self, _):
+    @Slot(str, object, bool)
+    def _command_completed(self, _, target, succeeded):
         self._display_poller.refresh()
+        if succeeded:
+            self._limit = self._hz = target
+        self._publish()

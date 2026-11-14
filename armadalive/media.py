@@ -62,7 +62,7 @@ class Media(QObject):
         listed = query("list")
         if not isinstance(listed, list):
             return None
-        paused = None
+        paused, failed = [], False
         for entry in listed:
             if time.monotonic() >= deadline:
                 return None
@@ -71,13 +71,22 @@ class Media(QObject):
                 continue
             reply = query("get-property", name, *PLAYER, "PlaybackStatus")
             if not isinstance(reply, dict) or "data" not in reply:
-                return None
+                failed = True
+                continue
             status = reply["data"]
             if status == "Playing":
-                return Media._describe(query, name, status)
-            if status == "Paused" and paused is None:
-                paused = name
-        return Media._describe(query, paused, "Paused") if paused else dict(active=False)
+                if found := Media._describe(query, name, status):
+                    return found
+                failed = True
+            elif status == "Paused":
+                paused.append(name)
+        for name in paused:
+            if time.monotonic() >= deadline:
+                return None
+            if found := Media._describe(query, name, "Paused"):
+                return found
+            failed = True
+        return None if failed else dict(active=False)
 
     @staticmethod
     def _describe(query, name, status):
