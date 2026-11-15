@@ -26,30 +26,61 @@ FRICTION, STOP_SPEED, GLIDE_TICK = 0.93, 40.0, 45     # per 16 ms frame; px/s be
 class Virtual:
     """One uinput device. Created on first use, gone with the app."""
     def __init__(self, name, keys=(), rels=(), abs_=()):
-        self.fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
+        self.fd = None
+        fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
         try:
             for ev, bit, codes in ((EV_KEY, UI_SET_KEYBIT, keys), (EV_REL, UI_SET_RELBIT, rels), (EV_ABS, UI_SET_ABSBIT, abs_)):
                 if codes:
-                    fcntl.ioctl(self.fd, UI_SET_EVBIT, ev)
+                    fcntl.ioctl(fd, UI_SET_EVBIT, ev)
                     for code in codes:
-                        fcntl.ioctl(self.fd, bit, code)
+                        fcntl.ioctl(fd, bit, code)
             absmax = [0] * 64
             absmin = [0] * 64
             for code in abs_:
                 absmax[code], absmin[code] = 32767, -32767
             # struct uinput_user_dev: name, input_id (bus 6 = virtual), ff_effects_max, then four arrays of 64
-            os.write(self.fd, struct.pack("80s4HI", name.encode(), 6, 0x1209, 0xA11, 1, 0)
+            setup = (struct.pack("80s4HI", name.encode(), 6, 0x1209, 0xA11, 1, 0)
                      + struct.pack("64i", *absmax) + struct.pack("64i", *absmin) + bytes(2 * 64 * 4))
-            fcntl.ioctl(self.fd, UI_DEV_CREATE)
-        except OSError:
-            os.close(self.fd)
+            self._write(fd, setup)
+            fcntl.ioctl(fd, UI_DEV_CREATE)
+        except BaseException:
+            os.close(fd)
             raise
+        self.fd = fd
+
+    @staticmethod
+    def _write(fd, data):
+        if os.write(fd, data) != len(data):
+            raise OSError("Incomplete write to /dev/uinput")
 
     def emit(self, kind, code, value):
-        os.write(self.fd, EVENT.pack(0, 0, kind, code, value))
+        self._write(self.fd, EVENT.pack(0, 0, kind, code, value))
 
     def sync(self):
         self.emit(EV_SYN, 0, 0)
+
+    def close(self):
+        fd, self.fd = self.fd, None
+        if fd is None:
+            return
+        try:
+            fcntl.ioctl(fd, UI_DEV_DESTROY)
+        except OSError:
+            pass
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    def __del__(self):
+        self.close()
+
+
+def tap_key(device, code):
+    device.emit(EV_KEY, code, 1)
+    device.sync()
+    device.emit(EV_KEY, code, 0)
+    device.sync()
 
 
 def rumble_effect(strong, length_ms):
@@ -210,10 +241,7 @@ class Trackpad(QObject):
         dev, code = self._device("keys"), KEYS.get(name)
         if dev and code:
             try:
-                dev.emit(EV_KEY, code, 1)
-                dev.sync()
-                dev.emit(EV_KEY, code, 0)
-                dev.sync()
+                tap_key(dev, code)
             except OSError:
                 pass
 

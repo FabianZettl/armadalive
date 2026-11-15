@@ -1,4 +1,5 @@
 import json, os, struct, tempfile, unittest
+from pathlib import Path
 from unittest import mock
 
 from tests.common import app  # noqa: F401
@@ -106,6 +107,45 @@ class EmuSettings(unittest.TestCase):
             self.assertFalse(emusettings.write("nes", 3))
         with mock.patch.dict(emusettings.SPECS, {"psp": ("/nonexistent/x.ini", "Graphics", "K", "{}")}):
             self.assertFalse(emusettings.write("psp", 3))
+
+
+    def test_changes_only_the_value_at_the_symlink_target(self):
+        from pathlib import Path
+
+        original = b"# header\r\n[Graphics]\r\n  InternalResolution= 2  ; keep this\r\nOther=\xff"
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory, "target.ini")
+            target.write_bytes(original)
+            target.chmod(0o640)
+            link = target.with_name("x.ini")
+            link.symlink_to(target.name)
+            with mock.patch.dict(emusettings.SPECS, {"psp": (link, "Graphics", "InternalResolution", "{}")}):
+                self.assertEqual(emusettings.read("psp"), "2")
+                self.assertTrue(emusettings.write("psp", 4))
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(target.read_bytes(), original.replace(b"2  ;", b"4  ;"))
+            self.assertEqual(target.stat().st_mode & 0o777, 0o640)
+
+    def test_interrupted_emu_write_keeps_settings(self):
+        original = "[Graphics]\nInternalResolution = 2\nOther = 9\n"
+        path, patch = self.ini(original)
+        with patch, mock.patch("os.replace", side_effect=OSError("replace failed")):
+            self.assertFalse(emusettings.write("psp", 4))
+        with open(path) as stream:
+            self.assertEqual(stream.read(), original)
+
+    def test_ambiguous_emulator_keys_and_sections_are_left_unchanged(self):
+        cases = (
+            "[Graphics]\nInternalResolution = 2\nInternalResolution = 3\n",
+            "[Graphics]\nInternalResolution = 2\n[Other]\na = 1\n[Graphics]\nInternalResolution = 3\n",
+        )
+        for original in cases:
+            with self.subTest(original=original):
+                path, patch = self.ini(original)
+                with patch:
+                    self.assertIsNone(emusettings.read("psp"))
+                    self.assertFalse(emusettings.write("psp", 4))
+                self.assertEqual(Path(path).read_text(), original)
 
 
 class Pad(unittest.TestCase):

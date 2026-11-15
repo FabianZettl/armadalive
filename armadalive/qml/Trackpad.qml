@@ -7,28 +7,21 @@ Item {
     id: page
     readonly property real gap: 14
     readonly property string system: nowPlaying.state.system || ""
-    // DEBUG: show hotkeys for any emulated system
-    readonly property var hotkeys: {
-        const s = system
-        if (s.match(/^(snes|nes|genesis|n64|ps1)$/)) return [
-            {id: "save_state", label: "🔒 Save"},
-            {id: "load_state", label: "🔓 Load"},
-            {id: "toggle_cheats", label: "🎮 Cheats"},
-            {id: "fast_forward", label: "⏩ Fast"}
-        ]
-        if (s.match(/^(gamecube|wii)$/)) return [
-            {id: "toggle_widescreen", label: "📐 Wide"},
-            {id: "increase_resolution", label: "⬆️ Res"},
-            {id: "decrease_resolution", label: "⬇️ Res"},
-            {id: "toggle_fullscreen", label: "🖥️ Full"}
-        ]
-        if (s === "ps2") return [
-            {id: "toggle_widescreen", label: "📐 Wide"},
-            {id: "increase_upscaling", label: "⬆️ Scale"},
-            {id: "decrease_upscaling", label: "⬇️ Scale"},
-            {id: "toggle_interlace", label: "🔄 Interlace"}
-        ]
-        return []
+    property string actionStatus: ""
+    property bool actionWarning: false
+
+    Connections {
+        target: emulatorControl
+        function onNotice(message, kind) {
+            page.actionStatus = message
+            page.actionWarning = kind === "warn"
+            statusTimer.restart()
+        }
+    }
+    Timer {
+        id: statusTimer
+        interval: 3500
+        onTriggered: page.actionStatus = ""
     }
 
     component Pad: Rectangle {
@@ -143,35 +136,7 @@ Item {
             Key { required property string modelData; label: modelData; width: (keys.width - 3 * page.gap) / 4; height: keys.height }
         }
     }
-    // Emulator-specific buttons (replace standard keys)
-    readonly property var emulatorButtons: {
-        const s = page.system
-        if (s.match(/^(snes|nes|genesis|n64|ps1)$/)) return [
-            {label: "📸 Shot", id: "screenshot"},
-            {label: "🎮 Cheats", id: "toggle_cheats"},
-            {label: "⏩ Fast", id: "fast_forward"},
-            {label: "💾 Save", id: "save_state"},
-            {label: "📂 Load", id: "load_state"},
-            {label: "🔄 Glide", id: "glide"}
-        ]
-        if (s.match(/^(gamecube|wii)$/)) return [
-            {label: "📸 Shot", id: "screenshot"},
-            {label: "📐 Wide", id: "toggle_widescreen"},
-            {label: "⬆️ Res", id: "increase_resolution"},
-            {label: "⬇️ Res", id: "decrease_resolution"},
-            {label: "🔄 Ratio", id: "toggle_aspect"},
-            {label: "🔄 Glide", id: "glide"}
-        ]
-        if (s === "ps2") return [
-            {label: "📸 Shot", id: "screenshot"},
-            {label: "📐 Wide", id: "toggle_widescreen"},
-            {label: "⬆️ Scale", id: "increase_upscaling"},
-            {label: "⬇️ Scale", id: "decrease_upscaling"},
-            {label: "🔄 Interlace", id: "toggle_interlace"},
-            {label: "🔄 Glide", id: "glide"}
-        ]
-        return [{label: "🔄 Glide", id: "glide"}]
-    }
+    readonly property var emulatorButtons: layout.layout_for(system).hotkeys.concat([{label: "🔄 Glide", id: "glide"}])
 
     Row {
         id: shortcuts
@@ -218,10 +183,13 @@ Item {
         Pad { width: (parent.width - page.gap) / 2; height: parent.height }
     }
     Text {
-        visible: trackpad.error !== ""
-        anchors { horizontalCenter: parent.horizontalCenter; verticalCenter: parent.verticalCenter }
-        color: Theme.hot
+        visible: text !== ""
+        width: parent.width - 2 * page.gap
+        anchors.centerIn: parent
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.WordWrap
+        color: page.actionStatus !== "" && !page.actionWarning ? Theme.text : Theme.hot
         font.pixelSize: 16
-        text: trackpad.error
+        text: page.actionStatus || trackpad.error
     }
 }
