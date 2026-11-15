@@ -1,6 +1,7 @@
 """Crash-safe replacement of small local state files."""
 import json
 import os
+import stat
 import tempfile
 
 
@@ -20,13 +21,15 @@ def _prepare_directory(path):
         path = parent
 
 
-def _replace(path, content):
+def _replace(path, content, mode=None):
     directory = os.path.dirname(path)
     with tempfile.NamedTemporaryFile(dir=directory, prefix=".armadalive-", delete=False) as file:
         tmp = file.name
         try:
             file.write(content)
             file.flush()
+            if mode is not None:
+                os.fchmod(file.fileno(), mode)
             os.fsync(file.fileno())
             os.replace(tmp, path)
             _sync_directory(directory)
@@ -37,10 +40,27 @@ def _replace(path, content):
                 pass
 
 
-def write_json(path, data, *, validate=None):
-    """Replace a JSON file. With a validator, keep its prior valid contents as .bak."""
+def write_bytes(path, content, *, mode=None):
+    """Durably replace a file with already serialized bytes."""
     path = os.path.abspath(path)
-    content = json.dumps(data, allow_nan=False).encode()
+    _prepare_directory(os.path.dirname(path))
+    _replace(path, content, mode=mode)
+
+
+def encode_json(data, *, indent=None):
+    return json.dumps(data, indent=indent, allow_nan=False).encode()
+
+
+def write_json(path, data, *, validate=None, indent=None, follow_symlinks=False):
+    """Replace a JSON file. With a validator, keep its prior valid contents as .bak."""
+    path = os.path.realpath(path) if follow_symlinks else os.path.abspath(path)
+    content = encode_json(data, indent=indent)
+    mode = None
+    if follow_symlinks:
+        try:
+            mode = stat.S_IMODE(os.stat(path).st_mode)
+        except FileNotFoundError:
+            pass
     _prepare_directory(os.path.dirname(path))
     if validate is not None:
         try:
@@ -48,14 +68,14 @@ def write_json(path, data, *, validate=None):
                 previous = file.read()
             if not validate(json.loads(previous)):
                 previous = None
-        except (FileNotFoundError, ValueError):
+        except (FileNotFoundError, ValueError, RecursionError):
             previous = None
         backup = path + ".bak"
         if previous is not None:
             _replace(backup, previous)
         elif not os.path.exists(backup):
             _replace(backup, content)
-    _replace(path, content)
+    _replace(path, content, mode=mode)
 
 
 def read_json(path, validate, default):
@@ -66,7 +86,7 @@ def read_json(path, validate, default):
                 data = json.load(file)
             if validate(data):
                 return data
-        except (OSError, ValueError):
+        except (OSError, ValueError, RecursionError):
             continue
     return default
 

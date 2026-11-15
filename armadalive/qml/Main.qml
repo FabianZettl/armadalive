@@ -309,13 +309,21 @@ Window {
             toast.show(text, code !== "tson" && code !== "tsoff")
         }
     }
+    Connections {
+        target: apps
+        function onSaveFailed(detail) {
+            toast.show(Tr.t("App layout could not be saved") + (detail ? ": " + detail : ""), true)
+        }
+    }
     // short messages from the app: something was done (accent colour) or went wrong (red)
     Connections {
         target: steamShortcuts
-        function onNotice(code, title) {
+        function onNotice(code, detail) {
             const text = ({ created: Tr.t("Shortcut created"), exists: Tr.t("Already in Steam"), unknown: Tr.t("Launch the game from ES-DE once first"),
-                            unreachable: Tr.t("Steam is not reachable") })[code]
-            toast.show(title && code !== "unknown" ? text + ": " + title : text, code !== "created")
+                            unreachable: Tr.t("Steam could not complete the shortcut"), prepareFailed: Tr.t("Could not prepare the Steam shortcut"),
+                            launchUnavailable: Tr.t("No launch command is available"), launchFailed: Tr.t("Steam could not start the game"),
+                            launchRequested: Tr.t("Launch requested"), launchBlocked: Tr.t("Launch blocked") })[code]
+            if (text) toast.show(detail && code !== "unknown" ? text + ": " + detail : text, code !== "created" && code !== "launchRequested")
         }
     }
     // saving, removing and loading a game rule

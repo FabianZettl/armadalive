@@ -1,9 +1,9 @@
 """The app grid on the idle screen: installed apps from their .desktop files (launched on the bottom screen) and Steam games and
 shortcuts (launched through Steam on the main screen) and ES-DE games (through a Steam shortcut they get on the first tap), as many as you add; the grid scrolls sideways."""
-import configparser, json, logging, os, random, re, subprocess, threading
+import configparser, json, logging, os, random, re, subprocess, threading, time
 from PySide6.QtCore import Property, QCoreApplication, QObject, Qt, QUrl, Signal, Slot
 
-from . import esdelib, steamlib, steamshortcuts, steamui
+from . import esdelib, steamlib, steamshortcuts
 from .nowplaying import ES
 from .persistence import write_json as _write_layout
 
@@ -65,14 +65,15 @@ def _icon(name, index):
 
 
 def _catalog():
-    apps = {}
+    apps, seen = {}, set()
     for d in APP_DIRS:
         try:
             entries = sorted(os.listdir(d))
         except OSError:
             continue
         for f in entries:
-            if not f.endswith(".desktop") or f[:-8] in apps:
+            app_id = f[:-8]
+            if not f.endswith(".desktop") or app_id in seen:
                 continue
             p = configparser.ConfigParser(interpolation=None, strict=False)
             p.optionxform = str
@@ -81,9 +82,10 @@ def _catalog():
                 e = p["Desktop Entry"]
             except (OSError, configparser.Error, KeyError, UnicodeDecodeError):
                 continue
+            seen.add(app_id)  # A higher-priority hidden entry masks the lower ones.
             if e.get("Type") != "Application" or e.get("NoDisplay") == "true" or e.get("Hidden") == "true" or e.get("Terminal") == "true":
                 continue
-            apps[f[:-8]] = dict(id=f[:-8], name=e.get("Name", f[:-8]), iconName=e.get("Icon", ""))
+            apps[app_id] = dict(id=app_id, name=e.get("Name", app_id), iconName=e.get("Icon", ""))
     return apps
 
 
@@ -122,12 +124,15 @@ class Apps(QObject):
     changed = Signal()
     catalogChanged = Signal()
     catalogLoadingChanged = Signal()
+    saveFailed = Signal(str)
     _scanned = Signal(int, object)
     _artReady = Signal(int, object)
+    _saveFailed = Signal(object)
 
-    def __init__(self, history=None):
+    def __init__(self, history=None, shortcuts=None):
         super().__init__()
         self._history = history
+        self._shortcuts = shortcuts if shortcuts is not None else steamshortcuts.SteamShortcuts(parent=self)
         self._rows, self._steam, self._esde, self._by_path = {}, {}, {}, {}
         self._systems, self._system_items, self._system_art = {}, {}, {}
         self._catalog_rows = self._steam_items = ()
@@ -148,7 +153,8 @@ class Apps(QObject):
         self._save_error = None
         app = QCoreApplication.instance()
         if app is not None:
-            app.aboutToQuit.connect(self.flush)
+            app.aboutToQuit.connect(self._shutdown)
+        self._saveFailed.connect(self._report_save_error, Qt.QueuedConnection)
         self._scanned.connect(self._accept_scan, Qt.QueuedConnection)
         self._artReady.connect(self._accept_art, Qt.QueuedConnection)
         if getattr(history, "changed", None) is not None:
@@ -287,26 +293,48 @@ class Apps(QObject):
         with self._save_lock:
             self._pending_save = (CONFIG, snapshot)
             if self._writer is None:
-                self._writer = threading.Thread(target=self._write_pending, daemon=True)
-                self._writer.start()
+                self._start_writer()
 
-    def _write_pending(self):
+    def _start_writer(self, retry=True):
+        self._writer = threading.Thread(target=self._write_pending, args=(retry,), daemon=True)
+        self._writer.start()
+        return self._writer
+
+    def _write_pending(self, retry):
+        failed = None
         while True:
             with self._save_lock:
-                if self._pending_save is None:
+                pending = self._pending_save
+                if pending is None:
                     self._writer = None
                     return
-                path, snapshot = self._pending_save
-                self._pending_save = None
+            path, snapshot = pending
             try:
                 _write_layout(path, snapshot)
             except OSError as error:
+                log.exception("Failed to save app layout to %s", path)
                 with self._save_lock:
                     self._save_error = error
-                log.exception("Failed to save app layout to %s", path)
+                    if self._pending_save is not pending:
+                        continue   # A newer snapshot already includes this edit.
+                    if not retry or failed is pending:
+                        self._writer = None
+                        self._saveFailed.emit(pending)
+                        return
+                failed = pending
+                time.sleep(0.1)
             else:
                 with self._save_lock:
                     self._save_error = None
+                    if self._pending_save is pending:
+                        self._pending_save = None
+
+    @Slot(object)
+    def _report_save_error(self, pending):
+        with self._save_lock:
+            error = self._save_error if pending is self._pending_save and self._writer is None else None
+        if error is not None:
+            self.saveFailed.emit(str(error))
 
     def pauseWrites(self):
         self._writes_paused = True
@@ -326,16 +354,30 @@ class Apps(QObject):
             self._save()
 
     @Slot()
-    def flush(self):
-        """Finish the last accepted edit before the application exits."""
+    def flush(self, timeout=3.0):
+        """Drain accepted edits, or raise if the latest snapshot remains unsaved."""
         with self._save_lock:
             writer = self._writer
+            if writer is None and self._pending_save is not None and not self._writes_paused:
+                writer = self._start_writer(retry=False)
         if writer is not None:
-            writer.join()
+            writer.join(timeout)
+            if writer.is_alive():
+                raise TimeoutError("Timed out saving app layout")
+        self.writesPending()
+
+    @Slot()
+    def _shutdown(self):
+        try:
+            self.flush()
+        except OSError as error:
+            log.error("App layout remains unsaved at shutdown: %s", error)
 
     # --- what a tile or a list row shows ---
     def _resolve(self, key, rec):
         """The catalog id of a game from the play history, None when it cannot be started from here any more."""
+        if key in self._esde:
+            return key
         if rec.get("path") in self._by_path:
             return self._by_path[rec["path"]]
         if key.startswith("steam/") and key[6:].isdigit():
@@ -483,7 +525,7 @@ class Apps(QObject):
 
     @Slot(str)
     def randomIn(self, folder_id):
-        """Starts a random game out of one folder (a system, the favorites, ...)."""
+        """Starts a random launchable item in the folder."""
         items = [app_id for app_id in self._items_of(folder_id) if self._plain(app_id)]
         if items:
             self.launchId(random.choice(items))
@@ -491,18 +533,23 @@ class Apps(QObject):
     @Slot(str)
     def launchId(self, app_id):
         if app_id == RANDOM:
+            if self._shortcuts.state["busy"]:
+                return
             pool = list(self._esde) + [i for i in self._steam]
             if pool:
                 self.launchId(random.choice(pool))
             return
         if app_id in self._steam:
-            steamui.eval_js(f'SteamClient.Apps.RunGame("{app_id[6:]}", "", -1, 100)', lambda _: None)
+            self._shortcuts.launch_steam(app_id[6:], self._steam[app_id]["name"], lambda: app_id in self._steam)
             return
         if app_id in self._esde:
-            g = self._esde[app_id]
-            words = esdelib.command(g["system"], g["rom"])
-            if words:
-                steamshortcuts.run_rom(g["name"], g["system"], g["rom"], words)
+            game = self._esde[app_id]
+
+            def current():
+                entry = self._esde.get(app_id)
+                return entry is not None and (entry["system"], entry["rom"]) == (game["system"], game["rom"])
+
+            self._shortcuts.launch(game["name"], game["system"], game["rom"], esdelib.command, current)
             return
         if not self._plain(app_id):  # only ids from the catalog ever reach gtk-launch
             return

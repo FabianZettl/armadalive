@@ -2,6 +2,7 @@ import os, struct, tempfile, unittest
 from unittest import mock
 
 from tests.common import touch, wait_for
+from tests.test_app_catalog import catalog_fixture
 from PySide6.QtGui import QColor, QImage
 
 from armadalive import apps, steamlib
@@ -82,8 +83,8 @@ class Library(unittest.TestCase):
         self.assertEqual(len(visited), 3)
 
     def test_grid_adds_replaces_and_removes_and_only_knows_catalog_ids(self):
-        with mock.patch.object(apps, "CONFIG", f"{self.root}/apps.json"), mock.patch.object(apps, "_catalog", lambda: {}):
-            a = apps.Apps()
+        with mock.patch.object(apps, "CONFIG", f"{self.root}/apps.json"), \
+                mock.patch.object(apps, "_catalog", lambda: {}), catalog_fixture() as a:
             wait_for(lambda: not a.catalogLoading)
             self.assertEqual(a.slots, [{}])
             a.assign(0, "steam:10")
