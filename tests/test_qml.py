@@ -149,16 +149,20 @@ class Qml(unittest.TestCase):
                     QTest.qWait(20)
                     images = [item for item in page.findChildren(QQuickItem)
                               if item.inherits("QQuickImage") and item.isVisible()
-                              and item.property("implicitHeight") > 0]
-                    if any(abs(item.width() / item.height() - 0.0125) < 0.001 for item in images):
+                              and item.implicitHeight() > 0 and item.height() > 0]
+                    logo = next((item for item in images
+                                 if abs(item.width() / item.height() - 0.0125) < 0.001), None)
+                    fanart = next((item for item in images
+                                   if item.property("source").toString().endswith("wide.svg")), None)
+                    if logo is not None and fanart is not None:
                         break
                 else:
-                    raise AssertionError("Tall vector logo was not rendered")
-                logo = next(item for item in images if item.width() / item.height() < 0.02)
+                    raise AssertionError(("Tall logo or wide fanart did not render",
+                                          [(item.width(), item.height()) for item in images]))
                 assert 0 < logo.implicitHeight() <= 768
                 assert abs(logo.height() - 345.6) < 1
-                assert any(abs(item.width() - 43200) < 1 and abs(item.height() - 540) < 1
-                           for item in images), [(item.width(), item.height()) for item in images]
+                assert abs(fanart.width() - 43200) < 1 and abs(fanart.height() - 540) < 1, (
+                    fanart.width(), fanart.height())
 
                 backends["apps"].value["items"] = [{
                     "id": "app", "name": "App", "icon": vector("portrait.svg", 100, 8000),
