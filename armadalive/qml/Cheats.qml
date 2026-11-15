@@ -1,7 +1,10 @@
 import QtQuick
 
 Item {
-    readonly property var items: nowPlaying.cheats()
+    id: page
+    readonly property string gameKey: nowPlaying.state.key || ""
+    readonly property var items: gameKey ? nowPlaying.cheats() : []
+    readonly property var activeIndices: cheats.active[gameKey] || []
 
     Empty { visible: parent.items.length === 0; text: Tr.t("This game has no cheats.") }
     ListView {
@@ -24,7 +27,7 @@ Item {
                 radius: Theme.radius
                 color: Theme.card
                 border.color: Theme.border
-                border.width: cheats.is_active(nowPlaying.state.key, index) ? 2 : 1
+                border.width: page.activeIndices.indexOf(index) !== -1 ? 2 : 1
                 Column {
                     id: col
                     x: 14
@@ -33,7 +36,7 @@ Item {
                     Text { width: parent.width; wrapMode: Text.WordWrap; color: Theme.text; font.pixelSize: 18; text: modelData.desc }
                     Text { width: parent.width; wrapMode: Text.WrapAnywhere; color: Theme.accent; font.pixelSize: 14; font.family: "monospace"; text: modelData.code }
                 }
-                TapHandler { onTapped: cheats.toggle_cheat(nowPlaying.state.key, index) }
+                TapHandler { onTapped: cheats.toggle_cheat(page.gameKey, index) }
             }
         }
     }

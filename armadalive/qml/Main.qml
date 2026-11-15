@@ -45,6 +45,27 @@ Window {
     property bool pressWasFront: false
     property string askDemo: ""     // snapshots only: open the password dialog
     onAskDemoChanged: Auth.ask = askDemo
+    property bool passwordOpen: false
+    property Item passwordReturnFocus: null
+    readonly property bool pageInteractive: !blanked && !passwordOpen && !onboardingOverlay.visible && !closer.state.phase
+    function syncPassword() {
+        const opening = Auth.ask !== ""
+        if (opening === passwordOpen) return
+        if (opening) {
+            passwordReturnFocus = activeFocusItem
+            passwordOpen = true
+        } else {
+            passwordOpen = false
+            const previous = passwordReturnFocus
+            passwordReturnFocus = null
+            if (previous && previous.visible && previous.enabled)
+                previous.forceActiveFocus()
+            else
+                contentItem.forceActiveFocus()
+            if (home && peek && !nav.activeFocus) hideChrome.restart()
+        }
+    }
+    Connections { target: Auth; function onAskChanged() { win.syncPassword() } }
     readonly property bool dimEnabled: ui.state.dim !== false     // Settings > Dim after 10 s
     function wake() { dimmed = false; if (dimEnabled) idle.restart() }
     onDimEnabledChanged: { if (dimEnabled) idle.restart(); else { idle.stop(); dimmed = false } }
@@ -89,7 +110,16 @@ Window {
         ui.applyFont(Theme.fontFamily)
     }
     onFollowColorChanged: applyTheme()
-    Component.onCompleted: { if (dimEnabled) idle.start(); applyVisibility(); requestFollowColor(); applyTheme(); Tr.lang = ui.state.lang; ledSync.start(); activity.watch(win) }
+    Component.onCompleted: {
+        if (dimEnabled) idle.start()
+        applyVisibility()
+        requestFollowColor()
+        applyTheme()
+        Tr.lang = ui.state.lang
+        ledSync.start()
+        activity.watch(win)
+        syncPassword()
+    }
     // The stick LEDs follow the theme's accent, until the user picks a colour of their own (Stick LEDs tile on System). Only while the LEDs are on and the
     // root helper can set them; a moment after the last change, because the accent fades and "Follow game" changes it with every game.
     function accentHex() { const c = Theme.accent; return [c.r, c.g, c.b].map(x => ("0" + Math.round(x * 255).toString(16)).slice(-2)).join("").toUpperCase() }
@@ -167,10 +197,25 @@ Window {
         interval: 900
         onTriggered: console.info("AYN: platform=" + Qt.platform.pluginName + " visible=" + win.visible + " active=" + win.active + " kwin=" + shell.hasKwin())
     }
-    Timer { id: hideChrome; interval: 3000; onTriggered: win.peek = false }
+    Timer {
+        id: hideChrome
+        interval: 3000
+        onTriggered: if (!nav.activeFocus && !win.passwordOpen) win.peek = false
+    }
+    Shortcut {
+        sequences: ["Tab", "Shift+Tab"]
+        autoRepeat: false
+        enabled: win.pageInteractive && !win.chrome
+        onActivated: {
+            nav.focusWhenShown = true
+            win.peek = true
+            hideChrome.restart()
+        }
+    }
 
     Item {
         id: body
+        enabled: win.pageInteractive
         anchors { left: parent.left; right: parent.right; top: win.home ? parent.top : status.bottom; bottom: win.home ? parent.bottom : (mediaBar.visible ? mediaBar.top : nav.top) }
         clip: true
         Loader {
@@ -253,18 +298,32 @@ Window {
         }
     }
 
-    Rectangle {
+    FocusScope {
         id: nav
+        property bool focusWhenShown: false
+        enabled: win.pageInteractive && win.chrome && y + height <= parent.height
+        onEnabledChanged: {
+            if (!enabled || !focusWhenShown) return
+            focusWhenShown = false
+            const index = win.pages.findIndex(p => p.id === win.section)
+            const button = navButtons.itemAt(Math.max(0, index))
+            if (button) button.forceActiveFocus(Qt.TabFocusReason)
+        }
+        onActiveFocusChanged: if (!activeFocus && win.pageInteractive && win.home && win.peek) hideChrome.restart()
         x: 18 * win.u
         width: parent.width - 36 * win.u
         height: 92 * win.u
         y: win.chrome ? parent.height - height - 16 * win.u : parent.height + 4
         Behavior on y { NumberAnimation { duration: Theme.dur(180); easing.type: Theme.ease } }
-        radius: Theme.radius * win.u
-        color: Theme.card
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.radius * win.u
+            color: Theme.card
+        }
         Row {
             anchors.fill: parent
             Repeater {
+                id: navButtons
                 model: win.pages
                 delegate: CircleButton {
                     width: nav.width / win.pages.length
@@ -282,6 +341,7 @@ Window {
     // what plays on the main screen (music, video): shown with the other bars, on the game page over the artwork
     Rectangle {
         id: mediaBar
+        enabled: win.pageInteractive
         x: 18 * win.u
         width: parent.width - 36 * win.u
         height: 46 * win.u
@@ -399,6 +459,7 @@ Window {
     onTuningChanged: if (tuning.active) wake()
     Rectangle {
         id: keep
+        enabled: win.pageInteractive && win.tuning.active === true
         anchors.horizontalCenter: parent.horizontalCenter
         y: 10 * win.u
         width: Math.min(parent.width - 30 * win.u, 520 * win.u)
@@ -457,14 +518,17 @@ Window {
     }
 
     Onboarding {
+        id: onboardingOverlay
         objectName: "onboarding"
         anchors.fill: parent
         visible: ui.state.onboarded === false
+        enabled: !win.blanked && !win.passwordOpen
     }
 
     PasswordDialog {
         anchors.fill: parent
-        visible: Auth.ask !== ""
+        visible: win.passwordOpen
+        enabled: !win.blanked
         action: Auth.ask
         onCancelled: Auth.ask = ""
         onAccepted: password => { admin.run(Auth.ask, password); Auth.ask = "" }
