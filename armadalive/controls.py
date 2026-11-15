@@ -2,7 +2,7 @@
 import glob, json, os, re, subprocess, threading
 from . import privileged
 from .poller import Poller
-from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
+from PySide6.QtCore import Property, QObject, Signal, Slot
 
 # DSI-1 (1080x1240) is the bottom panel, DSI-2 (1080x1920) the top one; the backlight names follow the DSI order
 BACKLIGHTS = dict(bottom=os.environ.get("ARMADALIVE_BOTTOM_BACKLIGHT", "ae94000.dsi.0"),
@@ -15,9 +15,9 @@ MIN_PERCENT = 3  # never black out a screen: the bottom one is the one these sli
 
 def _out(*cmd):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=3).stdout
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=3, check=True).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 def _rfkill(kind):
@@ -68,37 +68,62 @@ class Controls(QObject):
 
     def __init__(self):
         super().__init__()
-        self._s, self._n, self._ts = {}, 0, dict(state="missing", ip="")
-        self._apply(self._read())   # once, so the first frame has values
-        self._poller = Poller(self, self._read, self._apply, 2000, now=False)   # the reads spawn processes: not on the UI thread
+        self._ts = dict(state="missing", ip="")
+        self._s = dict(tailscale=self._ts, brightness={}, volume=0)
+        self._poller = Poller(self, self._read, self._apply, 2000, idle_ms=15000)
+        self._vpn_poller = Poller(self, self._read_vpn, self._apply_vpn, 6000, idle_ms=30000)
+
+    def set_active(self, active):
+        self._poller.set_active(active)
+        self._vpn_poller.set_active(active)
+
+    @staticmethod
+    def _read_vpn():
+        text = _out("tailscale", "status", "--json")
+        return None if text is None else tailscale_state(text)
+
+    def _apply_vpn(self, status):
+        self._ts = status
+        self._apply(self._s)
 
     @Property("QVariant", notify=changed)
     def state(self):
         return self._s
 
-    def _read(self):
-        wifi, bluetooth = _rfkill("wlan"), _rfkill("bluetooth")   # sysfs: no process for each
-        if wifi is None:
-            wifi = _out("nmcli", "radio", "wifi").strip() == "enabled"
-        if bluetooth is None:
-            bluetooth = "Soft blocked: no" in _out("rfkill", "list", "bluetooth")  # this rfkill has no JSON output
-        volume_text = _out("wpctl", "get-volume", SINK)   # one call gives the level and the mute flag
-        vol = re.search(r"([\d.]+)", volume_text)
+    @staticmethod
+    def _read():
+        state = {}
+        wifi, bluetooth = _rfkill("wlan"), _rfkill("bluetooth")
+        if wifi is None and (text := _out("nmcli", "radio", "wifi")) is not None:
+            wifi = {"enabled": True, "disabled": False}.get(text.strip())
+        if bluetooth is None and (text := _out("rfkill", "list", "bluetooth")) is not None:
+            if "Soft blocked:" in text:
+                bluetooth = "Soft blocked: no" in text and "Hard blocked: yes" not in text
+        if wifi is not None:
+            state["wifi"] = wifi
+        if bluetooth is not None:
+            state["bluetooth"] = bluetooth
+        if wifi is False:
+            state["wifips"] = False
+        elif wifi is True and (text := _out("iw", "dev", Controls._wlan(), "get", "power_save")) is not None:
+            if match := re.search(r"power save: (on|off)", text.lower()):
+                state["wifips"] = match[1] == "on"
+        if (text := _out("wpctl", "get-volume", SINK)) is not None:
+            if vol := re.search(r"Volume:\s*(\d+(?:\.\d+)?)", text):
+                state.update(volume=min(1.0, float(vol[1])), muted="[MUTED]" in text)
         bright = {}
         for name, dev in BACKLIGHTS.items():
             base = f"/sys/class/backlight/{dev}"
-            top = _read(base + "/max_brightness", 1)
-            bright[name] = round(100 * _read(base + "/brightness") / top)
-        saver = "power save: on" in _out("iw", "dev", self._wlan(), "get", "power_save").lower() if wifi else False
-        if self._n % 3 == 0:    # a status call is the most expensive thing here, and the VPN changes rarely
-            self._ts = tailscale_state(_out("tailscale", "status", "--json"))
-        self._n += 1
-        return dict(wifi=wifi, wifips=saver, tailscale=self._ts, bluetooth=bluetooth, airplane=not wifi and not bluetooth,
-                    framegen=not os.path.exists(FRAMEGEN_OFF),
-                    volume=min(1.0, float(vol.group(1))) if vol else 0.0, muted="[MUTED]" in volume_text,
-                    brightness=bright)
+            top = _read(base + "/max_brightness", None)
+            value = _read(base + "/brightness", None)
+            if top and value is not None:
+                bright[name] = round(100 * value / top)
+        return dict(state, framegen=not os.path.exists(FRAMEGEN_OFF), brightness=bright)
 
     def _apply(self, state):
+        brightness = dict(self._s["brightness"], **state.get("brightness", {}))
+        state = {**self._s, **state, "tailscale": self._ts, "brightness": brightness}
+        state["airplane"] = state.get("wifi") is False and state.get("bluetooth") is False
         if state != self._s:
             self._s = state
             self.changed.emit()
@@ -121,7 +146,7 @@ class Controls(QObject):
                 r = subprocess.run(["tailscale", "up", *flags], capture_output=True, text=True, timeout=25)
             text = (r.stderr + r.stdout).lower()
             self.notice.emit(("tsdenied" if "denied" in text or "sudo" in text else "tsfail") if r.returncode else ("tson" if up else "tsoff"), "")
-            self._ts = tailscale_state(_out("tailscale", "status", "--json"))
+            self._vpn_poller.refresh()
         threading.Thread(target=run, daemon=True).start()
 
     @Slot()

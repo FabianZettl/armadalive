@@ -1,5 +1,5 @@
 """What is playing on the main screen's session (music, video, browser: anything that speaks MPRIS), with play/pause and skip."""
-import json, os, subprocess
+import json, os, subprocess, time
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 from .poller import Poller
 
@@ -9,9 +9,9 @@ PREFIX = "org.mpris.MediaPlayer2."
 PLAYER = ["/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player"]
 
 
-def _bus(*args):
+def _bus(*args, timeout=2):
     try:
-        r = subprocess.run(["busctl", f"--address={BUS}", "--json=short", *args], capture_output=True, text=True, timeout=2)
+        r = subprocess.run(["busctl", f"--address={BUS}", "--json=short", *args], capture_output=True, text=True, timeout=timeout)
         return json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else None
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
@@ -40,23 +40,60 @@ class Media(QObject):
     def __init__(self):
         super().__init__()
         self._s = dict(active=False)
-        self._poller = Poller(self, self._read, self._apply, 3000)   # busctl runs here: not on the UI thread
+        self._poller = Poller(self, self._read, self._apply, 3000, idle_ms=15000)   # busctl runs here: not on the UI thread
+
+    def set_active(self, active):
+        self._poller.set_active(active)
 
     @Property("QVariant", notify=changed)
     def state(self):
         return self._s
 
-    def _read(self):
-        listed = _bus("list") or []
-        players = []
+    @staticmethod
+    def _read():
+        deadline = time.monotonic() + 4
+
+        def query(*args):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            return _bus(*args, timeout=min(2, remaining))
+
+        listed = query("list")
+        if not isinstance(listed, list):
+            return None
+        paused, failed = [], False
         for entry in listed:
+            if time.monotonic() >= deadline:
+                return None
             name = entry.get("name", "")
-            if name.startswith(PREFIX):
-                status = (_bus("get-property", name, *PLAYER, "PlaybackStatus") or {}).get("data", "")
-                meta = (_bus("get-property", name, *PLAYER, "Metadata") or {}).get("data")
-                players.append(describe(name, status, meta))
-        found = pick(players)
-        return dict(found, active=True) if found else dict(active=False)
+            if not name.startswith(PREFIX):
+                continue
+            reply = query("get-property", name, *PLAYER, "PlaybackStatus")
+            if not isinstance(reply, dict) or "data" not in reply:
+                failed = True
+                continue
+            status = reply["data"]
+            if status == "Playing":
+                if found := Media._describe(query, name, status):
+                    return found
+                failed = True
+            elif status == "Paused":
+                paused.append(name)
+        for name in paused:
+            if time.monotonic() >= deadline:
+                return None
+            if found := Media._describe(query, name, "Paused"):
+                return found
+            failed = True
+        return None if failed else dict(active=False)
+
+    @staticmethod
+    def _describe(query, name, status):
+        reply = query("get-property", name, *PLAYER, "Metadata")
+        if not isinstance(reply, dict) or not isinstance(reply.get("data"), dict):
+            return None
+        return dict(describe(name, status, reply["data"]), active=True)
 
     def _apply(self, new):
         if new != self._s:
