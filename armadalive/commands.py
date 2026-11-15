@@ -13,6 +13,18 @@ def run(*args, **kwargs):
                           timeout=5, check=True, **kwargs)
 
 
+def _failure_reason(error):
+    if isinstance(error, subprocess.TimeoutExpired):
+        return f"timed out after {error.timeout} seconds"
+    if isinstance(error, subprocess.CalledProcessError):
+        if error.returncode < 0:
+            return f"terminated by signal {-error.returncode}"
+        return f"exit status {error.returncode}"
+    reason = str(error)
+    summary = " ".join(reason[:160].split()) or type(error).__name__
+    return summary + ("…" if len(reason) > 160 else "")
+
+
 class Commands(QObject):
     settled = Signal(str)
     completed = Signal(str, object, bool)
@@ -42,8 +54,8 @@ class Commands(QObject):
             try:
                 command()
                 succeeded = True
-            except Exception:
-                log.debug("Device command failed", exc_info=True)
+            except Exception as error:
+                log.warning("Device command %s failed: %s", channel, _failure_reason(error))
             finally:
                 if (commands := owner()) is not None:
                     try:

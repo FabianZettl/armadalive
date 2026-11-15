@@ -174,6 +174,8 @@ class Controls(QObject):
         # supersede the acknowledged target, including after an external change.
         (self._vpn_poller if key == "vpn" else self._poller).refresh()
         if not succeeded:
+            if key != "vpn":
+                self.notice.emit("commandfail", "")
             return
         if key == "vpn":
             self._apply_vpn(dict(state=target, ip=self._ts["ip"] if target == "on" else ""))

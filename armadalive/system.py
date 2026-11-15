@@ -71,6 +71,7 @@ def _essential():
 
 class SystemMonitor(QObject):
     changed = Signal()
+    profileFinished = Signal(object, bool)
 
     def __init__(self, fps=None):
         super().__init__()
@@ -78,7 +79,9 @@ class SystemMonitor(QObject):
         self._hist = {k: collections.deque(maxlen=120) for k in ("fps", "cpu", "temp", "watts", "battery")}
         self._amps = collections.deque(maxlen=20)
         self._cpu = None
+        self._profile_request = 0
         self._commands = Commands(self)
+        self._commands.completed.connect(self._command_completed)
         self._commands.settled.connect(self._refresh_power)
         power = {key: default for key, (_, default) in POWER.items()}
         self._stats = dict(power, profiles=[], cpu=0, ramUsed=0, ramTotal=0, cpuGhz=0, cpuMaxGhz=0,
@@ -143,12 +146,20 @@ class SystemMonitor(QObject):
     def _refresh_power(self, _):
         self._power_poller.refresh()
 
-    def _power_cli(self, channel, *args):
-        self._commands.submit(channel, partial(run, "armada-power", *args))
+    @Slot(str, object, bool)
+    def _command_completed(self, channel, request, succeeded):
+        if channel == "profile" and request == self._profile_request:
+            self.profileFinished.emit(request, succeeded)
+
+    def _power_cli(self, channel, *args, target=None):
+        self._commands.submit(channel, partial(run, "armada-power", *args), target)
 
     @Slot(str)
     def setProfile(self, name):
-        self._power_cli("profile", "profile", name)
+        self._profile_request += 1
+        request = self._profile_request
+        self._power_cli("profile", "profile", name, target=request)
+        return request
 
     @Slot()
     def setGpuAuto(self):

@@ -2,7 +2,10 @@ import subprocess
 import threading
 import time
 import unittest
+from contextlib import contextmanager
 from unittest import mock
+
+from PySide6.QtCore import QEvent, QThreadPool
 
 from tests.common import app, QObject
 
@@ -20,20 +23,31 @@ def wait_for(predicate):
     return False
 
 
+@contextmanager
+def runtime_object(obj):
+    try:
+        yield obj
+    finally:
+        # Keep the parent alive through queued signal emission and delete its timers on their owner.
+        if not QThreadPool.globalInstance().waitForDone(5000):
+            raise AssertionError("Runtime workers did not finish before fixture teardown")
+        obj.deleteLater()
+        app.sendPostedEvents(obj, QEvent.Type.DeferredDelete)
+
+
 class Runtime(unittest.TestCase):
     def test_controls_initial_snapshot_is_read_off_owner_thread(self):
         owner = threading.get_ident()
-        with mock.patch.object(controls.Controls, "_read", staticmethod(lambda: {"thread": threading.get_ident()})):
-            obj = controls.Controls()
+        with mock.patch.object(controls.Controls, "_read", staticmethod(lambda: {"thread": threading.get_ident()})), \
+                runtime_object(controls.Controls()) as obj:
             self.assertTrue(wait_for(lambda: "thread" in obj.state))
-        self.assertNotEqual(obj.state["thread"], owner)
+            self.assertNotEqual(obj.state["thread"], owner)
 
     def test_admin_initial_snapshot_is_read_off_owner_thread(self):
         owner = threading.get_ident()
-        with mock.patch.object(admin, "helper_state", threading.get_ident):
-            obj = admin.Admin()
+        with mock.patch.object(admin, "helper_state", threading.get_ident), runtime_object(admin.Admin()) as obj:
             self.assertTrue(wait_for(lambda: obj.state.get("helper") not in (None, "missing")))
-        self.assertNotEqual(obj.state["helper"], owner)
+            self.assertNotEqual(obj.state["helper"], owner)
 
     def test_helper_probe_timeout_returns_unavailable(self):
         timeout = subprocess.TimeoutExpired("sudo", 2)
@@ -49,36 +63,32 @@ class Runtime(unittest.TestCase):
             reads.append(threading.get_ident())
             return 123, 456
 
-        with mock.patch.object(system, "_cpu_times", cpu):
-            monitor = system.SystemMonitor(fps=lambda: fps.append(threading.get_ident()) or 60)
+        with mock.patch.object(system, "_cpu_times", cpu), \
+                runtime_object(system.SystemMonitor(fps=lambda: fps.append(threading.get_ident()) or 60)) as monitor:
             self.assertTrue(wait_for(lambda: monitor.history["fps"] == [60]))
         self.assertTrue(reads)
         self.assertNotIn(owner, reads)
         self.assertEqual(fps, [owner])
 
     def test_a_queued_result_keeps_the_worker_busy_until_delivery(self):
-        owner = QObject()
-        finished = threading.Event()
         reads = []
         applied = []
 
         def read():
             reads.append(threading.get_ident())
-            finished.set()
             return len(reads)
 
-        poller = Poller(owner, read, lambda value: applied.append((value, threading.get_ident())), 60_000)
-        self.assertTrue(finished.wait(1))
-        time.sleep(0.02)  # allow the worker to queue delivery while the owner is blocked
-        for _ in range(5):
-            poller.kick()
-        self.assertTrue(wait_for(lambda: bool(applied)))
+        with runtime_object(QObject()) as owner:
+            poller = Poller(owner, read, lambda value: applied.append((value, threading.get_ident())), 60_000)
+            self.assertTrue(QThreadPool.globalInstance().waitForDone(2000))
+            for _ in range(5):
+                poller.kick()
+            self.assertTrue(wait_for(lambda: bool(applied)))
         self.assertEqual(reads, [reads[0]])
         self.assertEqual(applied, [(1, threading.get_ident())])
         self.assertNotEqual(reads[0], threading.get_ident())
 
     def test_resume_discards_old_snapshot_and_coalesces_requests(self):
-        owner = QObject()
         entered, release = threading.Event(), threading.Event()
         reads = []
         applied = []
@@ -90,30 +100,31 @@ class Runtime(unittest.TestCase):
                 release.wait(1)
             return reads[-1]
 
-        poller = Poller(owner, read, applied.append, 60_000, idle_ms=120_000)
-        self.assertTrue(entered.wait(1))
-        try:
-            poller.set_active(False)
-            poller.set_active(True)
-            poller.refresh()
-            poller.refresh()
-        finally:
-            release.set()
-        self.assertTrue(wait_for(lambda: applied == [2]))
+        with runtime_object(QObject()) as owner:
+            poller = Poller(owner, read, applied.append, 60_000, idle_ms=120_000)
+            self.assertTrue(entered.wait(1))
+            try:
+                poller.set_active(False)
+                poller.set_active(True)
+                poller.refresh()
+                poller.refresh()
+            finally:
+                release.set()
+            self.assertTrue(wait_for(lambda: applied == [2]))
         self.assertEqual(reads, [1, 2])
 
     def test_polling_recovers_after_a_failed_read(self):
-        owner = QObject()
         errors, applied = [], []
         failure = ValueError("bad sample")
         read = mock.Mock(side_effect=[failure, 42])
-        poller = Poller(owner, read, applied.append, 60_000)
-        poller.failed.connect(lambda err: errors.append((err, threading.get_ident())))
-        self.assertTrue(wait_for(lambda: bool(errors)))
-        self.assertEqual(errors, [(failure, threading.get_ident())])
-        self.assertFalse(applied)
-        poller.kick()
-        self.assertTrue(wait_for(lambda: applied == [42]))
+        with runtime_object(QObject()) as owner:
+            poller = Poller(owner, read, applied.append, 60_000)
+            poller.failed.connect(lambda err: errors.append((err, threading.get_ident())))
+            self.assertTrue(wait_for(lambda: bool(errors)))
+            self.assertEqual(errors, [(failure, threading.get_ident())])
+            self.assertFalse(applied)
+            poller.kick()
+            self.assertTrue(wait_for(lambda: applied == [42]))
 
     def test_power_properties_are_collected_in_one_bounded_call(self):
         response = mock.Mock(returncode=0, stdout='{"type":"a{sv}","data":[{"Temperature":{"type":"d","data":52.1},"AvailableProfiles":{"type":"as","data":["Balanced","Performance"]}}]}')
@@ -125,13 +136,13 @@ class Runtime(unittest.TestCase):
         self.assertGreater(run.call_args.kwargs["timeout"], 0)
 
     def test_a_worker_can_request_a_poll(self):
-        owner = QObject()
         applied = []
-        poller = Poller(owner, lambda: True, lambda _: applied.append(threading.get_ident()), 60_000, now=False)
-        requests = threading.Thread(target=poller.kick)
-        requests.start()
-        requests.join()
-        self.assertTrue(wait_for(lambda: bool(applied)))
+        with runtime_object(QObject()) as owner:
+            poller = Poller(owner, lambda: True, lambda _: applied.append(threading.get_ident()), 60_000, now=False)
+            requests = threading.Thread(target=poller.kick)
+            requests.start()
+            requests.join()
+            self.assertTrue(wait_for(lambda: bool(applied)))
         self.assertEqual(applied, [threading.get_ident()])
 
     def test_media_only_requests_metadata_for_the_chosen_player(self):
@@ -166,8 +177,8 @@ class Runtime(unittest.TestCase):
             threshold.touch()
             with mock.patch.multiple(battery, CONFIG=str(config), LIMIT_FILE=str(threshold)), \
                     mock.patch.object(privileged, "available", return_value=True), \
-                    mock.patch.object(privileged, "run", side_effect=lambda *_: threads.append(threading.get_ident()) or "refused"):
-                obj = battery.Battery()
+                    mock.patch.object(privileged, "run", side_effect=lambda *_: threads.append(threading.get_ident()) or "refused"), \
+                    runtime_object(battery.Battery()) as obj:
                 self.assertTrue(wait_for(lambda: obj.state["refused"]))
         self.assertEqual(len(threads), 1)
         self.assertNotEqual(threads[0], threading.get_ident())
@@ -176,8 +187,8 @@ class Runtime(unittest.TestCase):
         from armadalive import gamescope
 
         with mock.patch.object(gamescope, "_xprops", side_effect=lambda *names: {
-                name: 123 if name == "GAMESCOPE_FOCUSED_APP" else 60 for name in names}):
-            obj = gamescope.Gamescope()
+                name: 123 if name == "GAMESCOPE_FOCUSED_APP" else 60 for name in names}), \
+                runtime_object(gamescope.Gamescope()) as obj:
             obj.set_active(False)
             self.assertTrue(wait_for(lambda: obj.state["focus"] == "123"))
             obj.set_active(True)
@@ -201,8 +212,8 @@ class Runtime(unittest.TestCase):
         with TemporaryDirectory() as temp, mock.patch.multiple(
                 battery, CONFIG=str(Path(temp) / "battery.json"), LIMIT_FILE=str(Path(temp) / "threshold")), \
                 mock.patch.object(privileged, "available", return_value=True), \
-                mock.patch.object(privileged, "run", side_effect=limit):
-            obj = battery.Battery()
+                mock.patch.object(privileged, "run", side_effect=limit), \
+                runtime_object(battery.Battery()) as obj:
             obj.setLimit(80)
             try:
                 self.assertTrue(entered.wait(1))
@@ -217,18 +228,18 @@ class Runtime(unittest.TestCase):
     def test_charge_limit_save_error_releases_pending_request(self):
         from armadalive import battery
 
-        with mock.patch.object(battery, "CONFIG", "/unavailable/battery.json"):
-            obj = battery.Battery()
-        obj._limit_busy, obj._next_limit = True, 100
-        with mock.patch.object(obj, "_save", side_effect=OSError("disk full")), \
-                mock.patch.object(obj, "_start_limit") as next_limit:
-            obj._finish_limit(80, False, "")
-        self.assertIn("disk full", obj.state["error"])
-        next_limit.assert_called_once_with(100)
+        with mock.patch.object(battery, "CONFIG", "/unavailable/battery.json"), \
+                runtime_object(battery.Battery()) as obj:
+            obj._limit_busy, obj._next_limit = True, 100
+            with mock.patch.object(obj, "_save", side_effect=OSError("disk full")), \
+                    mock.patch.object(obj, "_start_limit") as next_limit:
+                obj._finish_limit(80, False, "")
+            self.assertIn("disk full", obj.state["error"])
+            next_limit.assert_called_once_with(100)
 
     def test_volume_commands_coalesce_and_recover_after_timeout(self):
         entered, release = threading.Event(), threading.Event()
-        commands = []
+        commands, settled = [], []
 
         def spawn(cmd, **kwargs):
             self.assertGreater(kwargs["timeout"], 0)
@@ -242,8 +253,9 @@ class Runtime(unittest.TestCase):
         with mock.patch.object(controls.Controls, "_read", return_value={}), \
                 mock.patch.object(controls.Controls, "_read_vpn", return_value=None), \
                 mock.patch.object(controls.subprocess, "run", side_effect=spawn), \
-                mock.patch.object(controls.subprocess, "Popen", side_effect=AssertionError("unbounded command")):
-            obj = controls.Controls()
+                mock.patch.object(controls.subprocess, "Popen", side_effect=AssertionError("unbounded command")), \
+                runtime_object(controls.Controls()) as obj:
+            obj._commands.settled.connect(settled.append)
             obj.setVolume(0.25)
             try:
                 self.assertTrue(entered.wait(1))
@@ -252,7 +264,8 @@ class Runtime(unittest.TestCase):
                 self.assertEqual(commands, ["0.25"])
             finally:
                 release.set()
-            self.assertTrue(wait_for(lambda: commands == ["0.25", "0.90"]))
+            self.assertTrue(wait_for(lambda: settled == ["volume"]))
+        self.assertEqual(commands, ["0.25", "0.90"])
 
     def test_media_transport_error_preserves_snapshot_but_empty_list_clears_it(self):
         from armadalive import media
@@ -268,8 +281,8 @@ class Runtime(unittest.TestCase):
         initial = mock.Mock(returncode=0, stdout="GAMESCOPE_FOCUSED_APP(CARDINAL) = 123")
         with mock.patch.object(gamescope, "_read_display", return_value=None), \
                 mock.patch.object(gamescope.subprocess, "run", side_effect=[
-                    initial, subprocess.TimeoutExpired("xprop", 3)]):
-            obj = gamescope.Gamescope()
+                    initial, subprocess.TimeoutExpired("xprop", 3)]), \
+                runtime_object(gamescope.Gamescope()) as obj:
             focus = []
             obj.focusChanged.connect(focus.append)
             self.assertTrue(wait_for(lambda: focus == ["123"]))
@@ -286,15 +299,15 @@ class Runtime(unittest.TestCase):
         with mock.patch.object(controls.Controls, "_read_vpn", return_value=None), \
                 mock.patch.object(controls.Controls, "_wlan", return_value="wlan0"), \
                 mock.patch.object(controls, "_rfkill", return_value=None), \
-                mock.patch.object(controls.subprocess, "run", side_effect=[online, blocked, saver, volume, failure, failure, failure]):
-            obj = controls.Controls()
+                mock.patch.object(controls.subprocess, "run", side_effect=[online, blocked, saver, volume, failure, failure, failure]), \
+                runtime_object(controls.Controls()) as obj:
             self.assertTrue(wait_for(lambda: obj.state.get("volume") == 0.50))
             obj._poller.refresh()
             self.assertTrue(wait_for(lambda: not obj._poller._busy))
-        self.assertTrue(obj.state["wifi"])
-        self.assertTrue(obj.state["bluetooth"])
-        self.assertTrue(obj.state["wifips"])
-        self.assertEqual(obj.state["volume"], 0.50)
+            self.assertTrue(obj.state["wifi"])
+            self.assertTrue(obj.state["bluetooth"])
+            self.assertTrue(obj.state["wifips"])
+            self.assertEqual(obj.state["volume"], 0.50)
 
     def test_failed_metadata_request_retains_media_snapshot(self):
         from armadalive import media
@@ -312,16 +325,16 @@ class Runtime(unittest.TestCase):
 
     def _check_mute_readback(self, expected, fail_first=False):
         commands, completed = [], []
+
+        def execute(*args):
+            commands.append(args[-1])
+            if len(commands) == 1 and fail_first:
+                raise subprocess.TimeoutExpired(args, 5)
+
         with mock.patch.object(controls.Controls, "_read", return_value={"muted": False}), \
                 mock.patch.object(controls.Controls, "_read_vpn", return_value=None), \
-                mock.patch.object(controls, "run") as run:
-            def execute(*args):
-                commands.append(args[-1])
-                if len(commands) == 1 and fail_first:
-                    raise subprocess.TimeoutExpired(args, 5)
-
-            run.side_effect = execute
-            obj = controls.Controls()
+                mock.patch.object(controls, "run", execute), \
+                runtime_object(controls.Controls()) as obj:
             self.assertTrue(wait_for(lambda: obj.state.get("muted") is False))
             obj._commands.settled.connect(completed.append)
             with mock.patch.object(obj._poller, "refresh"):
@@ -338,8 +351,8 @@ class Runtime(unittest.TestCase):
         with mock.patch.object(controls.Controls, "_read", return_value={"wifips": False}), \
                 mock.patch.object(controls.Controls, "_read_vpn", return_value=None), \
                 mock.patch.object(privileged, "available", return_value=True), \
-                mock.patch.object(privileged, "run", return_value="permission denied") as run:
-            obj = controls.Controls()
+                mock.patch.object(privileged, "run", return_value="permission denied") as run, \
+                runtime_object(controls.Controls()) as obj:
             self.assertTrue(wait_for(lambda: obj.state.get("wifips") is False))
             completed = []
             obj._commands.settled.connect(completed.append)
@@ -353,8 +366,8 @@ class Runtime(unittest.TestCase):
         response = subprocess.CompletedProcess(["tailscale", "up"], 1, "", "permission denied")
         with mock.patch.object(controls.Controls, "_read", return_value={}), \
                 mock.patch.object(controls.Controls, "_read_vpn", return_value={"state": "off", "ip": ""}), \
-                mock.patch.object(controls.subprocess, "run", return_value=response):
-            obj = controls.Controls()
+                mock.patch.object(controls.subprocess, "run", return_value=response), \
+                runtime_object(controls.Controls()) as obj:
             self.assertTrue(wait_for(lambda: obj.state["tailscale"]["state"] == "off"))
             completed, notices = [], []
             obj._commands.settled.connect(completed.append)

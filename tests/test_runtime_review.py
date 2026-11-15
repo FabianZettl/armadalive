@@ -4,9 +4,7 @@ import unittest
 from contextlib import contextmanager
 from unittest import mock
 
-from PySide6.QtCore import QCoreApplication, QEvent
-
-from tests.test_runtime import wait_for
+from tests.test_runtime import runtime_object, wait_for
 from armadalive import gamescope, media
 
 
@@ -15,13 +13,9 @@ def display_backend(read, write=lambda _: None):
     with mock.patch.object(gamescope, "_read_fps"), \
             mock.patch.object(gamescope, "_xprop", return_value=None), \
             mock.patch.object(gamescope, "_read_display", side_effect=read), \
-            mock.patch.object(gamescope, "_set_limit", side_effect=write):
-        obj = gamescope.Gamescope()
-        try:
-            yield obj
-        finally:
-            obj.deleteLater()
-            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            mock.patch.object(gamescope, "_set_limit", side_effect=write), \
+            runtime_object(gamescope.Gamescope()) as obj:
+        yield obj
 
 
 class GamescopeReview(unittest.TestCase):
