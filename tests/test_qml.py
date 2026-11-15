@@ -9,7 +9,7 @@ QML = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 
 
 class Qml(unittest.TestCase):
-    def test_every_file_loads(self):
+    def test_every_file_compiles(self):
         gui = QGuiApplication.instance() or QGuiApplication([])
         engine = QQmlApplicationEngine()
         bad = {}

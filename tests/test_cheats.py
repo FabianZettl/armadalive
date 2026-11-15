@@ -1,47 +1,44 @@
-import json, os, tempfile, unittest
-from armadalive.cheats import Cheats
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from armadalive import cheats
 
 
 class TestCheats(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.mkdtemp()
-        self.old_home = os.environ.get("HOME")
-        os.environ["HOME"] = self.temp_dir
-        os.makedirs(os.path.expanduser("~/.config/retroarch/config"), exist_ok=True)
-
-    def tearDown(self):
-        import shutil
-        if self.old_home:
-            os.environ["HOME"] = self.old_home
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.config = Path(directory.name)
+        patch = mock.patch.object(cheats, "CONFIG", str(self.config))
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def test_toggle_cheat(self):
-        """Test toggling a cheat on/off."""
-        c = Cheats()
+        c = cheats.Cheats()
         c.toggle_cheat("snes/mario", 0)
         self.assertTrue(c.is_active("snes/mario", 0))
         c.toggle_cheat("snes/mario", 0)
         self.assertFalse(c.is_active("snes/mario", 0))
 
     def test_write_config(self):
-        """Test that .opt config file is written correctly."""
-        c = Cheats()
+        opt_file = self.config / "config" / "Snes9x" / "mario.opt"
+        opt_file.parent.mkdir(parents=True)
+        opt_file.write_text('snes9x_region = "PAL"\ncheat1_enable = "true"\n')
+
+        c = cheats.Cheats()
         c.toggle_cheat("snes/mario", 0)
         c.toggle_cheat("snes/mario", 2)
-        # check that the active cheats are stored
-        self.assertTrue(c.is_active("snes/mario", 0))
-        self.assertTrue(c.is_active("snes/mario", 2))
-        self.assertFalse(c.is_active("snes/mario", 1))
-        # opt file path depends on core mapping; just check it was attempted
-        opt_file = os.path.expanduser("~/.config/retroarch/config/snes/mario.opt")
-        # if the core mapping worked, file should exist
-        if os.path.exists(opt_file):
-            content = open(opt_file).read()
-            self.assertIn('cheat0_enable = "true"', content)
+
+        entries = opt_file.read_text().splitlines()
+        self.assertIn('snes9x_region = "PAL"', entries)
+        self.assertIn('cheats_enabled = "true"', entries)
+        self.assertIn('cheat0_enable = "true"', entries)
+        self.assertIn('cheat1_enable = "false"', entries)
+        self.assertIn('cheat2_enable = "true"', entries)
 
     def test_non_emulated_games_ignored(self):
-        """Test that Steam games don't get .opt files written."""
-        c = Cheats()
+        c = cheats.Cheats()
         c.toggle_cheat("steam/570", 0)
-        opt_file = os.path.expanduser("~/.config/retroarch/config/steam/570.opt")
-        self.assertFalse(os.path.exists(opt_file))
+        self.assertEqual(list(self.config.rglob("*.opt")), [])
