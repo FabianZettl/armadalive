@@ -1,6 +1,7 @@
 """Look of the app: theme and accent, remembered between runs."""
-import json, os
+import os
 from PySide6.QtCore import Property, QObject, Signal, Slot
+from . import persistence
 
 CONFIG = os.path.expanduser("~/.config/armadalive/ui.json")
 
@@ -8,18 +9,25 @@ CONFIG = os.path.expanduser("~/.config/armadalive/ui.json")
 DEFAULTS = dict(theme="stock", accent="", lang="en", animate=True, dim=True, close=True, heat=85, apps=True, ledFollow=True, onboarded=True)
 
 
+def validate_settings(saved):
+    if not isinstance(saved, dict):
+        raise ValueError("expected an object")
+    for key, default in DEFAULTS.items():
+        if key in saved and type(saved[key]) is not type(default):
+            raise ValueError(f"{key} must be a {type(default).__name__}")
+    if saved.get("heat", DEFAULTS["heat"]) not in (0, 80, 85, 90):
+        raise ValueError("heat must be 0, 80, 85 or 90")
+    return True
+
+
 class UiSettings(QObject):
     changed = Signal()
 
     def __init__(self):
         super().__init__()
-        try:
-            with open(CONFIG) as f:
-                saved = json.load(f)
-        except (OSError, ValueError):
-            saved = {}
+        saved = persistence.read_json(CONFIG, validate_settings, {})
         # saved values win over the defaults; keys we do not know are dropped
-        self._s = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}} if isinstance(saved, dict) else dict(DEFAULTS)
+        self._s = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}}
         if not saved:      # a fresh install (no settings yet) gets the first-run setup; an install that already has settings does not
             self._s["onboarded"] = False
 
@@ -28,9 +36,7 @@ class UiSettings(QObject):
         return self._s
 
     def _save(self):
-        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
-        with open(CONFIG, "w") as f:
-            json.dump(self._s, f)
+        persistence.write_json(CONFIG, self._s, follow_symlinks=True)
         self.changed.emit()
 
     @Slot(str)

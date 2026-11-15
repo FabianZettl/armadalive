@@ -322,8 +322,9 @@ Window {
     Connections {
         target: rules
         function onNotice(code, detail) {
-            const text = ({ saved: Tr.t("Rule saved"), removed: Tr.t("Rule removed"), loaded: Tr.t("Rule loaded") })[code]
-            toast.show(text + ": " + detail, false)
+            const text = ({ saved: Tr.t("Rule saved"), removed: Tr.t("Rule removed"), loaded: Tr.t("Rule loaded"),
+                            failed: Tr.t("Rule failed"), resolutionNextLaunch: Tr.t("Resolution rule applies on the next launch") })[code]
+            toast.show(text + ": " + detail, code === "failed")
         }
     }
     Rectangle {

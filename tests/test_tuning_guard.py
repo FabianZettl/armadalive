@@ -1,4 +1,5 @@
 import copy, json, os, tempfile, threading, time, unittest
+from types import SimpleNamespace
 from unittest import mock
 
 from tests.common import app
@@ -188,6 +189,139 @@ class Guard(unittest.TestCase):
         self.assertFalse(s.pending["active"])
         self.assertFalse(os.path.exists(self.pending))
         self.assertEqual(self.calls, [("profile", "balanced", "cpu_governor=performance")])
+
+    def _check_keep_while_refreshing(self, *, tick):
+        s = self.make()
+        s.setProfileOption("balanced", "gpu_max_mhz", "475")
+        self.wait_for(lambda: s._future is None)
+        deadline = s._deadline
+        now = deadline - 1
+        entered, release = threading.Event(), threading.Event()
+
+        def blocked_helper_probe():
+            entered.set()
+            if not release.wait(2):
+                raise TimeoutError("Refresh did not release")
+            return True
+
+        with (mock.patch.object(settings, "time", SimpleNamespace(monotonic=lambda: now)),
+              mock.patch.object(settings.privileged, "available", side_effect=blocked_helper_probe),
+              mock.patch.object(settings.persistence, "remove", wraps=settings.persistence.remove) as remove):
+            try:
+                s.refresh()
+                self.assertTrue(entered.wait(2))
+                self.assertFalse(s.pending["busy"])
+                self.assertEqual(s.pending["seconds"], 1)
+                s.confirm()
+                s.confirm()
+                self.assertTrue(s.pending["busy"])
+                self.assertTrue(os.path.exists(self.pending))
+                now = deadline + 1
+                if tick:
+                    s._tick()
+                    self.assertFalse(s.pending["recovery"])
+                release.set()
+                s._future.result(timeout=2)
+                # Process refresh completion directly so the dispatch case has no timer tick.
+                s._poll_result()
+                self.wait_for(lambda: s._future is None)
+            finally:
+                release.set()
+        self.assertFalse(s.pending["active"])
+        self.assertFalse(os.path.exists(self.pending))
+        self.assertEqual(self.calls, [("profile", "balanced", "gpu_max_mhz=475")])
+        remove.assert_called_once_with(self.pending)
+
+    def test_dispatch_keeps_confirmation_accepted_before_refresh_crosses_deadline(self):
+        self._check_keep_while_refreshing(tick=False)
+
+    def test_timer_keeps_confirmation_accepted_before_refresh_crosses_deadline(self):
+        self._check_keep_while_refreshing(tick=True)
+
+    def test_confirm_at_the_deadline_restores_the_previous_value(self):
+        s = self.make()
+        s.setProfileOption("balanced", "gpu_max_mhz", "475")
+        self.wait_for(lambda: s._future is None)
+        deadline = s._deadline
+        with mock.patch.object(settings, "time", SimpleNamespace(monotonic=lambda: deadline)):
+            s.confirm()
+            self.wait_for(lambda: s._future is None)
+        self.assertEqual(self.calls, [("profile", "balanced", "gpu_max_mhz=475"),
+                                     ("profile", "balanced", "gpu_max_mhz=680")])
+        self.assertFalse(s.pending["active"])
+        self.assertFalse(os.path.exists(self.pending))
+
+    def test_failed_confirmation_keeps_the_journal_for_restore(self):
+        s = self.make()
+        s.setProfileOption("balanced", "gpu_max_mhz", "475")
+        self.wait_for(lambda: s._future is None)
+        messages = []
+        s.message.connect(messages.append)
+        with mock.patch.object(settings.persistence, "remove", side_effect=OSError("journal removal failed")):
+            s.confirm()
+            self.wait_for(lambda: s._future is None)
+        self.assertTrue(s.pending["recovery"])
+        self.assertTrue(os.path.exists(self.pending))
+        self.assertIn("journal removal failed", messages)
+        self.assertEqual(self.calls, [("profile", "balanced", "gpu_max_mhz=475")])
+
+        s.revert()
+        self.wait_for(lambda: s._future is None)
+        self.assertEqual(self.calls[-1], ("profile", "balanced", "gpu_max_mhz=680"))
+        self.assertFalse(s.pending["active"])
+        self.assertFalse(os.path.exists(self.pending))
+
+    def test_confirmation_sync_failure_preserves_undo_across_restart(self):
+        s = self.make()
+        s.setProfileOption("balanced", "gpu_max_mhz", "475")
+        self.wait_for(lambda: s._future is None)
+        messages = []
+        s.message.connect(messages.append)
+        sync_directory = settings.persistence._sync_directory
+        failed = False
+
+        def fail_once_after_unlink(path):
+            nonlocal failed
+            if path == self.directory and not failed:
+                failed = True
+                self.assertFalse(os.path.exists(self.pending))
+                raise OSError("one-time directory sync failure")
+            sync_directory(path)
+
+        with mock.patch.object(settings.persistence, "_sync_directory", side_effect=fail_once_after_unlink):
+            s.confirm()
+            self.wait_for(lambda: s._future is None)
+        self.assertIn("one-time directory sync failure", messages)
+        self.assertTrue(s.pending["recovery"])
+
+        again = settings.Settings()
+        self.wait_for(lambda: again._future is None)
+        self.assertEqual(self.calls, [("profile", "balanced", "gpu_max_mhz=475"),
+                                     ("profile", "balanced", "gpu_max_mhz=680")])
+        self.assertFalse(again.pending["active"])
+        self.assertFalse(os.path.exists(self.pending))
+
+    def test_confirmation_reports_journal_rewrite_failure_and_preserves_in_memory_undo(self):
+        s = self.make()
+        s.setProfileOption("balanced", "gpu_max_mhz", "475")
+        self.wait_for(lambda: s._future is None)
+        messages = []
+        s.message.connect(messages.append)
+        with (mock.patch.object(settings.persistence, "_sync_directory", side_effect=OSError("removal sync failed")),
+              mock.patch.object(settings.persistence, "write_json", side_effect=OSError("disk full"))):
+            s.confirm()
+            self.wait_for(lambda: s._future is None)
+        self.assertTrue(s.pending["active"])
+        self.assertTrue(s.pending["recovery"])
+        self.assertIn("removal sync failed", messages[-1])
+        self.assertIn("disk full", messages[-1])
+        self.assertIn("Retry restore before closing", messages[-1])
+
+        s.revert()
+        self.wait_for(lambda: s._future is None)
+        self.assertEqual(self.calls, [("profile", "balanced", "gpu_max_mhz=475"),
+                                     ("profile", "balanced", "gpu_max_mhz=680")])
+        self.assertFalse(s.pending["active"])
 
     def test_delayed_timer_restores_as_soon_as_monotonic_deadline_passes(self):
         s = self.make()

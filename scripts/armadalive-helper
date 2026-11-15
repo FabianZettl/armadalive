@@ -18,6 +18,7 @@ import configparser, glob, os, re, subprocess, sys, tempfile
 ETC = os.environ.get("ARMADALIVE_ETC", "/etc/armada")
 CONFIG = f"{ETC}/power-profiles.conf"
 FACTORY = "/usr/share/armada/power-profiles.conf"
+RELOAD_TIMEOUT = 8  # Leave time to report failure before the app's 15-second sudo timeout.
 PROFILES = ("eco", "balanced", "performance")
 UNDERCLOCK = ("none", "small", "medium", "large")
 FAN_KEYS = {"ramp_up": (1, 255, int), "ramp_down": (1, 255, int), "smoothing": (0.0, 0.99, float),
@@ -61,6 +62,23 @@ def merged():
     return parser
 
 
+def reload_config():
+    if os.environ.get("ARMADALIVE_NO_RELOAD"):
+        return
+    try:
+        subprocess.run(["armada-power", "reload"], check=True, timeout=RELOAD_TIMEOUT,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="replace")
+    except subprocess.CalledProcessError as exc:
+        message = f"Daemon reload failed (exit status {exc.returncode}). {exc.stderr.strip()}".rstrip()
+    except subprocess.TimeoutExpired:
+        message = "Daemon reload timed out."
+    except OSError as exc:
+        message = f"Daemon reload could not run ({exc.strerror})."
+    else:
+        return
+    die(f"{message} The power configuration on disk may have changed.")
+
+
 def save(parser):
     os.makedirs(ETC, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=ETC, prefix=".power-profiles.")
@@ -68,8 +86,7 @@ def save(parser):
         parser.write(f)
     os.chmod(tmp, 0o644)
     os.replace(tmp, CONFIG)
-    if not os.environ.get("ARMADALIVE_NO_RELOAD"):
-        subprocess.run(["armada-power", "reload"], check=False)
+    reload_config()
 
 
 def put(parser, section, key, value):
@@ -154,8 +171,7 @@ def op_fan(args):
 def op_reset(args):
     if os.path.exists(CONFIG):
         os.replace(CONFIG, CONFIG + ".armadalive-bak")
-    if not os.environ.get("ARMADALIVE_NO_RELOAD"):
-        subprocess.run(["armada-power", "reload"], check=False)
+    reload_config()
 
 
 def op_drop_caches(args):

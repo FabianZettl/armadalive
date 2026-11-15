@@ -1,10 +1,11 @@
 import json, os, struct, tempfile, unittest
+from pathlib import Path
 from unittest import mock
 
 from tests.common import app  # noqa: F401
 from PySide6.QtGui import QColor, QImage
 
-from armadalive import backup, battery, closer, controls, emusettings, gamepad, media, palette, thermal
+from armadalive import backup, battery, closer, controls, emusettings, gamepad, gamerules, media, palette, thermal, tiles, ui
 
 
 class Palette(unittest.TestCase):
@@ -67,9 +68,9 @@ class Battery(unittest.TestCase):
 
 
 class Backup(unittest.TestCase):
-    def test_only_known_files_are_written_and_a_foreign_file_is_refused(self):
+    def test_only_known_files_are_written_and_foreign_backup_is_refused(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.object(backup, "CONFIG_DIR", d):
-            n = backup.apply({"files": {"ui.json": {"theme": "neon"}, "evil.json": {"x": 1}, "tiles.json": "nope"}})
+            n = backup.apply({"files": {"ui.json": {"theme": "neon"}, "evil.json": {"x": 1}}})
             self.assertEqual(n, 1)
             self.assertEqual(sorted(os.listdir(d)), ["ui.json"])
             self.assertEqual(backup.collect()["files"], {"ui.json": {"theme": "neon"}})
@@ -81,6 +82,153 @@ class Backup(unittest.TestCase):
             data = {"files": {"apps.json": {"slots": [], "folders": {"1": {"name": "Tools", "items": []}}}, "history.json": {"games": {}, "sessions": [["x", 1, 2]]}}}
             self.assertEqual(backup.apply(data), 2)
             self.assertEqual(backup.collect()["files"], data["files"])
+
+    def test_legacy_emulator_originals_do_not_transfer_between_devices(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            file = Path(directory, "game_rules.json")
+            local = {"enabled": False, "base": {"psp": "2"}}
+            file.write_text(json.dumps(local))
+            portable = backup.collect()["files"]
+            self.assertEqual(portable["game_rules.json"], {"enabled": False})
+            portable["game_rules.json"]["base"] = {"psp": "5"}
+            backup.apply({"files": portable})
+            self.assertEqual(json.loads(file.read_text()), local)
+            file.unlink()
+            backup.apply({"files": portable})
+            self.assertEqual(json.loads(file.read_text()), {"enabled": False})
+
+    def test_invalid_known_file_is_reported_before_any_file_is_written(self):
+        invalid = {
+            "game_rules.json": {"rules": None},
+            "battery.json": {"warn": "20"},
+            "tiles.json": {"order": ["battery", 1]},
+            "apps.json": {"slots": {}, "folders": []},
+            "history.json": {"sessions": [["game", "not a date", 2]]},
+            "ui.json": {"heat": "hot"},
+        }
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            existing = Path(directory, "ui.json")
+            previous = b'{ "theme": "stock" }\n'
+            existing.write_bytes(previous)
+            for name, data in invalid.items():
+                with self.subTest(name=name):
+                    files = {"ui.json": {"theme": "neon"}, name: data}
+                    with self.assertRaisesRegex(ValueError, name.replace(".", r"\.")):
+                        backup.apply({"files": files})
+                    self.assertEqual(existing.read_bytes(), previous)
+                    self.assertEqual(sorted(os.listdir(directory)), ["ui.json"])
+
+    def test_interrupted_backup_export_keeps_previous_archive(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            archive = Path(directory, "backup.json")
+            previous = b'{ "files": {"ui.json": {}} }\n'
+            archive.write_bytes(previous)
+            with mock.patch.object(backup, "FILE", str(archive)), \
+                    mock.patch("os.replace", side_effect=OSError("export replace failed")):
+                coordinator = backup.Backup()
+                coordinator.save()
+            self.assertIn("export replace failed", coordinator.state["message"])
+            self.assertEqual(archive.read_bytes(), previous)
+
+    def test_second_replace_failure_rolls_back_the_first_file(self):
+        self._verify_failed_restore(OSError("second replace failed"), b"prior bytes, even from a damaged file")
+
+    def test_interrupted_restore_rolls_back_on_restart(self):
+        self._verify_failed_restore(KeyboardInterrupt())
+
+    def _verify_failed_restore(self, failure, prior_ui=None):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            ui_file = Path(directory, "ui.json")
+            real_rules = Path(directory, "rules-target")
+            rules_file = Path(directory, "game_rules.json")
+            previous = b'{ "rules": {}, "enabled": true }\n'
+            if prior_ui is not None:
+                ui_file.write_bytes(prior_ui)
+            real_rules.write_bytes(previous)
+            rules_file.symlink_to(real_rules.name)
+            replace = os.replace
+
+            def fail_second(source, dest):
+                if Path(dest) == real_rules:
+                    raise failure
+                replace(source, dest)
+
+            files = {"ui.json": {"theme": "neon"}, "game_rules.json": {"enabled": False}}
+            with mock.patch("os.replace", side_effect=fail_second):
+                with self.assertRaises(type(failure)):
+                    backup.apply({"files": files})
+            if isinstance(failure, KeyboardInterrupt):
+                self.assertTrue(ui_file.exists())
+                backup.recover_restore()
+                backup.recover_restore()
+            expected = ["game_rules.json", "rules-target"]
+            if prior_ui is None:
+                self.assertFalse(ui_file.exists())
+            else:
+                self.assertEqual(ui_file.read_bytes(), prior_ui)
+                expected.append("ui.json")
+            self.assertEqual(sorted(os.listdir(directory)), expected)
+            self.assertTrue(rules_file.is_symlink())
+            self.assertEqual(real_rules.read_bytes(), previous)
+
+    def test_successful_restore_preserves_symlink_and_target_mode(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            actual = Path(directory, "target")
+            actual.write_text('{"theme":"stock"}')
+            actual.chmod(0o640)
+            link = Path(directory, "ui.json")
+            link.symlink_to(actual.name)
+            self.assertEqual(backup.apply({"files": {"ui.json": {"theme": "neon"}}}), 1)
+            backup.recover_restore()
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(json.loads(actual.read_text()), {"theme": "neon"})
+            self.assertEqual(actual.stat().st_mode & 0o777, 0o640)
+
+    def test_restore_failure_after_replacement_retains_undo_until_retry(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            ui_file = Path(directory, "ui.json")
+            rules_file = Path(directory, "game_rules.json")
+            rules_file.write_text('{"enabled":false}')
+            write = backup.persistence.write_bytes
+
+            def fail_second(path, data, **options):
+                if Path(path) != rules_file:
+                    return write(path, data, **options)
+                if data != b'{"enabled":false}':
+                    write(path, data, **options)
+                raise OSError("device stopped responding")
+
+            files = {"ui.json": {"theme": "neon"}, "game_rules.json": {"enabled": True}}
+            with mock.patch.object(backup.persistence, "write_bytes", side_effect=fail_second):
+                with self.assertRaisesRegex(backup.RestoreRecoveryError, "device stopped responding"):
+                    backup.apply({"files": files})
+                self.assertFalse(ui_file.exists())
+                self.assertEqual(json.loads(rules_file.read_text()), {"enabled": True})
+            backup.recover_restore()
+            self.assertEqual(rules_file.read_text(), '{"enabled":false}')
+            self.assertEqual(sorted(os.listdir(directory)), ["game_rules.json"])
+
+    def test_startup_defaults_for_individual_malformed_configurations(self):
+        from tests.test_gamerules import FakeGs, FakeNow, FakeSys
+
+        cases = (
+            (gamerules, {"rules": None}, lambda: gamerules.GameRules(FakeNow(), FakeGs(), FakeSys()).state["rules"], []),
+            (battery, {"warn": "20"}, lambda: self._battery_warning(), 20),
+            (ui, {"heat": "hot"}, lambda: ui.UiSettings().state["heat"], 85),
+            (tiles, {"order": ["battery", 1]}, lambda: tiles.Tiles().order, []),
+        )
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(battery, "LIMIT_FILE", "/nonexistent"):
+            path = Path(directory, "config.json")
+            for module, saved, startup, expected in cases:
+                with self.subTest(module=module.__name__), mock.patch.object(module, "CONFIG", path):
+                    path.write_text(json.dumps(saved))
+                    self.assertEqual(startup(), expected)
+
+    @staticmethod
+    def _battery_warning():
+        backend = battery.Battery()
+        backend.check(9, "Discharging")
+        return backend.state["warn"]
 
 
 class EmuSettings(unittest.TestCase):
@@ -106,6 +254,43 @@ class EmuSettings(unittest.TestCase):
             self.assertFalse(emusettings.write("nes", 3))
         with mock.patch.dict(emusettings.SPECS, {"psp": ("/nonexistent/x.ini", "Graphics", "K", "{}")}):
             self.assertFalse(emusettings.write("psp", 3))
+
+
+    def test_changes_only_the_value_at_the_symlink_target(self):
+        original = b"# header\r\n[Graphics]\r\n  InternalResolution= 2  ; keep this\r\nOther=\xff"
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory, "target.ini")
+            target.write_bytes(original)
+            target.chmod(0o640)
+            link = target.with_name("x.ini")
+            link.symlink_to(target.name)
+            with mock.patch.dict(emusettings.SPECS, {"psp": (link, "Graphics", "InternalResolution", "{}")}):
+                self.assertEqual(emusettings.read("psp"), "2")
+                self.assertTrue(emusettings.write("psp", 4))
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(target.read_bytes(), original.replace(b"2  ;", b"4  ;"))
+            self.assertEqual(target.stat().st_mode & 0o777, 0o640)
+
+    def test_interrupted_emu_write_keeps_settings(self):
+        original = "[Graphics]\nInternalResolution = 2\nOther = 9\n"
+        path, patch = self.ini(original)
+        with patch, mock.patch("os.replace", side_effect=OSError("replace failed")):
+            self.assertFalse(emusettings.write("psp", 4))
+        with open(path) as stream:
+            self.assertEqual(stream.read(), original)
+
+    def test_ambiguous_emulator_keys_and_sections_are_left_unchanged(self):
+        cases = (
+            "[Graphics]\nInternalResolution = 2\nInternalResolution = 3\n",
+            "[Graphics]\nInternalResolution = 2\n[Other]\na = 1\n[Graphics]\nInternalResolution = 3\n",
+        )
+        for original in cases:
+            with self.subTest(original=original):
+                path, patch = self.ini(original)
+                with patch:
+                    self.assertIsNone(emusettings.read("psp"))
+                    self.assertFalse(emusettings.write("psp", 4))
+                self.assertEqual(Path(path).read_text(), original)
 
 
 class Pad(unittest.TestCase):

@@ -5,6 +5,7 @@ import QtQuick
 Flickable {
     id: page
     readonly property var rl: rules.state
+    enabled: !rl.writesPaused
     readonly property var s: nowPlaying.state
     readonly property bool inGame: s.kind === "game"
     readonly property real m: 16

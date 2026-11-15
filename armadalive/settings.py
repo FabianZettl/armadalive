@@ -119,6 +119,10 @@ def _journal(path):
     return undo
 
 
+def _write_journal(path, undo):
+    persistence.write_json(path, [[*key, value] for key, value in undo.items()])
+
+
 def _apply(path, undo, args):
     """Record each original value before entering the helper."""
     operation, name, *items = args
@@ -137,7 +141,7 @@ def _apply(path, undo, args):
             raise ValueError("Could not read the previous tuning setting")
         updated = {**remembered, **undo}
         if updated != undo:
-            persistence.write_json(path, [[*key, value] for key, value in updated.items()])
+            _write_journal(path, updated)
     except (configparser.Error, OSError, ValueError, KeyError) as exc:
         return undo, str(exc), False
     if not remembered:
@@ -147,6 +151,22 @@ def _apply(path, undo, args):
     except Exception as exc:
         # The helper may have changed state before reporting an error.
         return updated, str(exc), True
+
+
+def _keep(path, undo):
+    try:
+        persistence.remove(path)
+    except OSError as exc:
+        error = str(exc) or "Could not remove the tuning recovery journal."
+        # An unlink may have succeeded before the directory sync failed.
+        if not os.path.lexists(path):
+            try:
+                _write_journal(path, undo)
+            except (OSError, ValueError) as write_error:
+                return (f"{error}\nCould not save the tuning recovery journal ({write_error}). "
+                        "Retry restore before closing ArmadaLive.")
+        return error
+    return ""
 
 
 def _restore(path, undo):
@@ -249,7 +269,7 @@ class Settings(QObject):
             if kind == "apply":
                 self._submit(kind, _apply, self._path, dict(self._undo), args)
             elif kind == "keep":
-                self._submit(kind, persistence.remove, self._path)
+                self._submit(kind, _keep, self._path, dict(self._undo))
             else:
                 self._submit(kind, privileged.run, *args)
         elif self._refresh_requested:
@@ -333,8 +353,11 @@ class Settings(QObject):
 
     @Slot()
     def confirm(self):
-        self._tick()
-        if self._undo and not self._recovery and not self.pending["busy"]:
+        if self._expired():
+            self.revert()
+        elif self._undo and not self._recovery and not self.pending["busy"]:
+            # Accept Keep now even if an in-flight refresh delays journal removal.
+            self._deadline = None
             self._enqueue("keep")
 
     def _request_recovery(self):

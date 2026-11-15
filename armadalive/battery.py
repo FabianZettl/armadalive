@@ -1,12 +1,24 @@
 """Low-battery warnings and an optional charge limit (the kernel's charge_control_end_threshold, written by the root helper)."""
-import json, os
+import os
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
-from . import privileged
+from . import persistence, privileged
 
 BATTERY = "/sys/class/power_supply/battery"
 LIMIT_FILE = BATTERY + "/charge_control_end_threshold"
 CONFIG = os.path.expanduser("~/.config/armadalive/battery.json")
 DEFAULTS = dict(warn=20, limit=100, refused=False)   # warn: percent, 0 = off
+
+
+def validate_settings(saved):
+    if not isinstance(saved, dict):
+        raise ValueError("expected an object")
+    for key, minimum, maximum in (("warn", 0, 50), ("limit", 50, 100)):
+        value = saved.get(key, DEFAULTS[key])
+        if type(value) is not int or not minimum <= value <= maximum:
+            raise ValueError(f"{key} must be an integer from {minimum} to {maximum}")
+    if not isinstance(saved.get("refused", False), bool):
+        raise ValueError("refused must be a boolean")
+    return True
 
 
 def _read(path, default=""):
@@ -27,12 +39,8 @@ class Battery(QObject):
 
     def __init__(self):
         super().__init__()
-        try:
-            with open(CONFIG) as f:
-                saved = json.load(f)
-        except (OSError, ValueError):
-            saved = {}
-        self._s = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}} if isinstance(saved, dict) else dict(DEFAULTS)
+        saved = persistence.read_json(CONFIG, validate_settings, {})
+        self._s = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}}
         self._done, self.error = set(), ""   # _s["refused"]: the battery's firmware rejected a limit (the Thor's does)
         self.supported = os.path.exists(LIMIT_FILE)
         # the kernel forgets the limit on reboot, so it is applied again at start
@@ -50,9 +58,7 @@ class Battery(QObject):
         return dict(self._s, supported=self.supported and not self._s["refused"], error=self.error)
 
     def _save(self):
-        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
-        with open(CONFIG, "w") as f:
-            json.dump(self._s, f)
+        persistence.write_json(CONFIG, self._s, follow_symlinks=True)
         self.changed.emit()
 
     def check(self, capacity, status):

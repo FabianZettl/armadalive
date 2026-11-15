@@ -2,9 +2,9 @@
 
 It follows NowPlaying: a game that runs starts a session, anything else ends it. Steam's own play times and ES-DE's `lastplayed` are read once, so the lists are
 not empty on the first day. Kept in ~/.config/armadalive/history.json; sessions older than a year are dropped."""
-import glob, logging, math, os, re, time
+import glob, logging, os, re, threading, time
 import xml.etree.ElementTree as ET
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, wait
 from copy import deepcopy
 from datetime import datetime, timedelta
 from PySide6.QtCore import Property, QCoreApplication, QObject, QTimer, Signal, Slot
@@ -15,6 +15,7 @@ LOG = logging.getLogger(__name__)
 CONFIG = os.path.expanduser("~/.config/armadalive/history.json")
 MIN_SESSION = 10          # seconds: a game that was started by mistake and closed again is not a play
 KEEP_DAYS = 400
+SHUTDOWN_TIMEOUT = 3.0
 STEAM = os.path.expanduser("~/.local/share/Steam")
 
 
@@ -51,7 +52,14 @@ def _read_esde(gamelists):
 
 
 def _number(value):
-    return isinstance(value, int) or isinstance(value, float) and math.isfinite(value)
+    return type(value) in (int, float) and -(2**63) <= value < 2**63
+
+
+def _valid_game(record):
+    return (isinstance(record, dict)
+            and all(_number(record.get(field, 0)) for field in ("total", "plays", "last"))
+            and all(isinstance(record.get(field, ""), str) for field in ("title", "system", "path", "art"))
+            and isinstance(record.get("favorite", False), bool))
 
 
 def _valid_history(saved):
@@ -59,12 +67,12 @@ def _valid_history(saved):
         return False
     games, sessions = saved.get("games", {}), saved.get("sessions", [])
     baseline = saved.get("steam_baseline", {})
-    return (isinstance(games, dict) and isinstance(sessions, list)
+    return (isinstance(saved.get("imported", False), bool)
+            and isinstance(games, dict) and isinstance(sessions, list)
             and isinstance(baseline, dict)
             and all(isinstance(v, (list, tuple)) and len(v) == 2
                     and all(_number(n) and n >= 0 for n in v) for v in baseline.values())
-            and all(isinstance(rec, dict) and all(_number(rec.get(field, 0))
-                    for field in ("total", "plays", "last")) for rec in games.values())
+            and all(_valid_game(rec) for rec in games.values())
             and all(isinstance(s, list) and len(s) == 3 and isinstance(s[0], str)
                     and _number(s[1]) and 0 <= s[1] < 253402214400
                     and _number(s[2]) for s in sessions))
@@ -88,6 +96,22 @@ def _import_history(steam_titles, gamelists, imported, baseline):
     return titles, steam, [] if imported else _read_esde(gamelists)
 
 
+def _background(task, *args, **kwargs):
+    result = Future()
+
+    def run():
+        try:
+            value = task(*args, **kwargs)
+        except Exception as error:
+            result.set_exception(error)
+        else:
+            result.set_result(value)
+
+    # An unresponsive storage device must not prevent the process from exiting.
+    threading.Thread(target=run, daemon=True).start()
+    return result
+
+
 class History(QObject):
     changed = Signal()
 
@@ -99,10 +123,9 @@ class History(QObject):
         self._titles = {}
         saved = persistence.read_json(self._path, _valid_history, {})
         self._games, self._sessions = saved.get("games", {}), saved.get("sessions", [])
-        self._writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="history-save")
         self._write_job = self._pending_save = None
         self._dirty = False
-        self._waiting_baseline = False
+        self._waiting_baseline = self._baseline_error = None
         self._writes_paused = self._deferred_save = False
         self._write_timer = QTimer(self)
         self._write_timer.setInterval(30)
@@ -116,16 +139,21 @@ class History(QObject):
         self._sessions = [s for s in self._sessions if isinstance(s, list) and len(s) == 3 and s[1] >= cut]
         if not self._imported or steam_titles is not None:
             from .nowplaying import GAMELISTS
-            worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="history-import")
-            self._baseline_job = Future()
+            baseline = self._baseline_job = Future()
             if self._imported or "steam_baseline" in saved:
-                self._baseline_job.set_result(saved.get("steam_baseline", {}))
-            else:
-                totals = {key: rec.get("total", 0) for key, rec in self._games.items()}
-                self._baseline_job = worker.submit(_steam_baseline, totals)
-            self._import_job = worker.submit(_import_history, steam_titles, gamelists or GAMELISTS,
-                                             self._imported, self._baseline_job)
-            worker.shutdown(wait=False)
+                baseline.set_result(saved.get("steam_baseline", {}))
+            totals = {} if baseline.done() else {key: rec.get("total", 0) for key, rec in self._games.items()}
+            imported = self._imported
+
+            def load_sources():
+                if not baseline.done():
+                    try:
+                        baseline.set_result(_steam_baseline(totals))
+                    except Exception as error:
+                        baseline.set_exception(error)
+                return _import_history(steam_titles, gamelists or GAMELISTS, imported, baseline)
+
+            self._import_job = _background(load_sources)
             self._import_timer = QTimer(self)
             self._import_timer.timeout.connect(self._finish_import)
             self._import_timer.start(30)
@@ -140,15 +168,17 @@ class History(QObject):
     def _finish_import(self):
         if not self._tracking_ready:
             self._seen()
-        if self._waiting_baseline and self._baseline_job.done():
-            self._save()
+        baseline_ready = self._baseline_job.done() and not self._baseline_failed()
+        if self._waiting_baseline is not None and baseline_ready:
+            self._queue_waiting_baseline()
         if not self._import_job.done():
             return
         self._import_timer.stop()
         try:
             self._titles, steam, esde = self._import_job.result()
         except Exception as exc:
-            LOG.warning("Could not import play history: %s", exc)
+            if not self._baseline_job.done() or not self._baseline_failed():
+                LOG.warning("Could not import play history: %s", exc)
             return
         if not self._imported:
             for appid, (last, seconds) in steam.items():
@@ -173,26 +203,40 @@ class History(QObject):
         self._queue_save()
 
     def _queue_save(self):
-        if not self._imported and not self._baseline_job.done():
-            # Never persist live totals without the baseline needed to merge
-            # them after an abrupt restart, even while the source read is slow.
-            self._waiting_baseline = True
-            return
-        self._waiting_baseline = False
         self._deferred_save = False
-        # The worker exclusively owns its detached snapshot. Keep only the newest
-        # unsent snapshot while a durable write is in progress.
-        self._pending_save = dict(imported=self._imported, games=deepcopy(self._games),
-                                  sessions=deepcopy(self._sessions))
-        if not self._imported:
-            self._pending_save["steam_baseline"] = self._baseline_job.result()
+        # Detach the accepted state even when a baseline still has to be read.
+        snapshot = dict(imported=self._imported, games=deepcopy(self._games),
+                        sessions=deepcopy(self._sessions))
+        if not self._imported and (not self._baseline_job.done() or self._baseline_failed()):
+            self._waiting_baseline = snapshot
+            return
+        self._waiting_baseline = None
+        self._queue_snapshot(snapshot)
+
+    def _baseline_failed(self):
+        if self._baseline_error is None:
+            self._baseline_error = self._baseline_job.exception()
+            if self._baseline_error is not None:
+                LOG.warning("Could not prepare play history baseline: %s", self._baseline_error)
+        return self._baseline_error is not None
+
+    def _queue_waiting_baseline(self):
+        if self._baseline_failed():
+            raise OSError(f"Could not prepare play history baseline: {self._baseline_error}") from self._baseline_error
+        self._queue_snapshot(self._waiting_baseline)
+        self._waiting_baseline = None
+
+    def _queue_snapshot(self, snapshot):
+        if not snapshot["imported"]:
+            snapshot["steam_baseline"] = self._baseline_job.result()
+        # Keep only the newest unsent snapshot while a durable write is in progress.
+        self._pending_save = snapshot
         if self._write_job is None:
             self._start_save()
 
     def _start_save(self):
         snapshot, self._pending_save = self._pending_save, None
-        self._write_job = self._writer.submit(persistence.write_json, self._path, snapshot,
-                                             validate=_valid_history)
+        self._write_job = _background(persistence.write_json, self._path, snapshot, validate=_valid_history)
         self._write_timer.start()
 
     @Slot()
@@ -212,15 +256,18 @@ class History(QObject):
             self._start_save()
 
     @Slot()
-    def flush(self):
-        """Drain pending writes on shutdown, with one retry for an unsaved latest state."""
-        if self._waiting_baseline and not self._writes_paused:
-            self._baseline_job.result()
-            self._save()
-        self._drain_saves()
+    def flush(self, timeout=SHUTDOWN_TIMEOUT):
+        """Drain pending writes with one retry and a shared wait budget."""
+        deadline = time.monotonic() + timeout
+        if self._waiting_baseline is not None:
+            _, pending = wait((self._baseline_job,), timeout=max(0, deadline - time.monotonic()))
+            if pending:
+                raise TimeoutError("Timed out preparing play history")
+            self._queue_waiting_baseline()
+        self._drain_saves(deadline)
         if self._dirty and not self._writes_paused:
             self._save()
-            self._drain_saves()
+            self._drain_saves(deadline)
 
     def pauseWrites(self):
         """Freeze a backup snapshot; later edits wait for resume or restart."""
@@ -229,10 +276,10 @@ class History(QObject):
         self._writes_paused = True
 
     def writesPending(self):
-        if self._waiting_baseline:
+        if self._waiting_baseline is not None:
             if not self._baseline_job.done():
                 return True
-            self._queue_save()
+            self._queue_waiting_baseline()
         self._finish_save()
         if self._write_job is not None:
             return True
@@ -247,14 +294,23 @@ class History(QObject):
 
     @Slot()
     def _shutdown(self):
-        self.flush()
-        self._writer.shutdown()
+        try:
+            self.flush()
+        except Exception as error:
+            LOG.warning("Play history remains unsaved at shutdown: %s", error)
+        finally:
+            self._write_timer.stop()
 
-    def _drain_saves(self):
+    def _drain_saves(self, deadline=None):
+        if deadline is None:
+            deadline = time.monotonic() + SHUTDOWN_TIMEOUT
         while self._write_job is not None:
             # The owner thread handles each result, even after the event loop stops.
             try:
-                self._write_job.result()
+                self._write_job.result(timeout=max(0, deadline - time.monotonic()))
+            except TimeoutError as error:
+                if not self._write_job.done():
+                    raise TimeoutError("Timed out saving play history") from error
             except Exception:
                 pass
             self._finish_save()

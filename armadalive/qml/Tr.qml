@@ -31,6 +31,8 @@ QtObject {
         "Graphs": "Graphen", "Temperature": "Temperatur", "Power": "Leistung", "Battery": "Akku", "last 2 minutes": "letzte 2 Minuten",
         "Screen off": "Bildschirm aus", "Tap two tiles to swap": "Zwei Kacheln antippen zum Tauschen", "Done": "Fertig", "Reset": "Zurücksetzen", "Game rule": "Spielregel", "System rule": "Systemregel", "Idle rule": "Leerlauf-Regel", "Base rule": "Basisregel",
         "Rule saved": "Regel gespeichert", "Rule removed": "Regel entfernt", "Rule loaded": "Regel geladen", "Loaded last": "Zuletzt geladen",
+        "Rule failed": "Regel konnte nicht geladen werden",
+        "Resolution rule applies on the next launch": "Die Auflösungsregel gilt beim nächsten Start",
         "Health check": "Einrichtungs-Check", "ES-DE hooks": "ES-DE-Hooks", "ES-DE event scripts": "ES-DE-Ereignisskripte", "ES-DE media": "ES-DE-Medien",
         "Steam Big Picture link": "Steam-Big-Picture-Verbindung", "FPS source": "FPS-Quelle",
         "Run install.sh again: the ES-DE hooks are missing": "install.sh erneut ausführen: die ES-DE-Hooks fehlen",

@@ -371,6 +371,116 @@ class Sessions(unittest.TestCase):
                     self.wait_for_import(h)
                 self.assertEqual(h.info("steam/42")["total"], 360)
 
+    def test_backup_exports_only_accepted_history_while_initial_baseline_is_pending(self):
+        started, release_baseline, release_titles = (threading.Event() for _ in range(3))
+        backup_dir = self.enterContext(tempfile.TemporaryDirectory(dir=self.dir))
+        path, archive = backup_dir + "/history.json", self.dir + "/backup.json"
+
+        def load_baseline():
+            started.set()
+            release_baseline.wait(5)
+            return {}
+
+        def load_titles():
+            release_titles.wait(5)
+            return {}
+
+        with mock.patch.object(history, "_read_steam", side_effect=load_baseline), \
+                mock.patch.object(backup, "CONFIG_DIR", backup_dir), \
+                mock.patch.object(backup, "FILE", archive):
+            h = history.History(FakeNow(), path, steam_titles=load_titles, gamelists=self.dir)
+            self.addCleanup(self.close_history, h)
+            try:
+                self.assertTrue(started.wait(1))
+                h.toggleFavorite("steam/42", "Accepted", "steam", "")
+                coordinator = backup.Backup((h,))
+                coordinator.save()
+                h.toggleFavorite("steam/43", "Deferred", "steam", "")
+                release_baseline.set()
+                self.wait_for(lambda: coordinator.state["message"] == "saved")
+                h.flush()
+                with open(archive) as stream:
+                    exported = json.load(stream)["files"]["history.json"]["games"]
+                self.assertEqual(set(exported), {"steam/42"})
+                with open(path) as stream:
+                    self.assertEqual(set(json.load(stream)["games"]), {"steam/42", "steam/43"})
+            finally:
+                release_baseline.set()
+                release_titles.set()
+
+    def test_failed_baseline_stops_polling_and_backup_reports_unsaved_history(self):
+        source = self.dir + "/steam/userdata/1/config/localconfig.vdf"
+        touch(source, '"42" { "LastPlayed" "100" "Playtime" "' + "9" * 350 + '" }')
+        path, archive = self.dir + "/failed-baseline.json", self.dir + "/backup.json"
+        touch(path, json.dumps(dict(imported=False, games={"steam/42": dict(total=1.5)}, sessions=[])))
+        started, release = threading.Event(), threading.Event()
+        read_steam = history._read_steam
+
+        def gated_read():
+            started.set()
+            release.wait(5)
+            return read_steam()
+
+        with mock.patch.object(history, "STEAM", self.dir + "/steam"), \
+                mock.patch.object(history, "_read_steam", side_effect=gated_read) as source_reads, \
+                mock.patch.object(backup, "CONFIG_DIR", self.dir), \
+                mock.patch.object(backup, "FILE", archive):
+            h = history.History(FakeNow(), path, gamelists=self.dir)
+            self.addCleanup(self.close_history, h)
+            coordinator = backup.Backup((h,))
+            try:
+                self.assertTrue(started.wait(1))
+                h.toggleFavorite("steam/43", "Accepted", "steam", "")
+                coordinator.save()
+                h.toggleFavorite("steam/44", "Deferred", "steam", "")
+                with self.assertLogs(history.LOG, "WARNING") as warnings:
+                    release.set()
+                    self.wait_for(lambda: not coordinator.state["busy"] and not h._import_timer.isActive())
+                    self.assertIn("play history baseline", coordinator.state["message"])
+                    self.assertFalse(os.path.exists(archive))
+                    self.assertFalse(h._writes_paused)
+                    self.assertTrue(h.games["steam/43"]["favorite"])
+                    self.assertTrue(h.games["steam/44"]["favorite"])
+                    with self.assertRaisesRegex(OSError, "play history baseline"):
+                        h.flush()
+                    coordinator.save()
+                    self.assertFalse(coordinator.state["busy"])
+                    self.assertIn("play history baseline", coordinator.state["message"])
+                    self.assertFalse(os.path.exists(archive))
+                    source_reads.assert_called_once()
+                self.assertEqual(len(warnings.output), 1)
+                with open(path) as stream:
+                    self.assertEqual(set(json.load(stream)["games"]), {"steam/42"})
+            finally:
+                release.set()
+                h._import_timer.stop()
+                coordinator._drain.stop()
+
+    def test_shutdown_drains_accepted_history_when_backup_pauses_a_pending_baseline(self):
+        started, release_baseline = threading.Event(), threading.Event()
+        path = self.dir + "/shutdown.json"
+
+        def load_baseline():
+            started.set()
+            release_baseline.wait(5)
+            return {}
+
+        with mock.patch.object(history, "_read_steam", side_effect=load_baseline):
+            h = history.History(FakeNow(), path, gamelists=self.dir)
+            self.addCleanup(self.close_history, h)
+            try:
+                self.assertTrue(started.wait(1))
+                h.toggleFavorite("steam/42", "Accepted", "steam", "")
+                h.pauseWrites()
+                h.toggleFavorite("steam/43", "Deferred", "steam", "")
+                release_baseline.set()
+                h._shutdown()
+                self.assertTrue(os.path.exists(path), "Accepted history did not reach disk")
+                with open(path) as stream:
+                    self.assertEqual(set(json.load(stream)["games"]), {"steam/42"})
+            finally:
+                release_baseline.set()
+
     def test_backup_export_drains_latest_history_without_blocking_events(self):
         entered, release = threading.Event(), threading.Event()
         write_json = history.persistence.write_json
