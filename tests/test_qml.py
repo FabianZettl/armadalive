@@ -204,6 +204,106 @@ class Qml(unittest.TestCase):
                 text = fh.read()
             self.assertIsNone(re.search(r"font \{|\}; ", text), f)
 
+    def test_now_playing_resumes_vector_marquee_without_a_source_binding_loop(self):
+        # The offscreen window follows Main's page loader and selection routing.
+        script = textwrap.dedent(r"""
+            import sys, tempfile
+            from pathlib import Path
+            from PySide6.QtCore import QEventLoop, QTimer, QUrl
+            from PySide6.QtGui import QGuiApplication
+            from PySide6.QtQml import QQmlEngine, QQmlComponent
+            from PySide6.QtQuick import QQuickItem
+            from armadalive.artwork import VectorArtwork
+
+            def wait(milliseconds):
+                loop = QEventLoop()
+                QTimer.singleShot(milliseconds, loop.quit)
+                loop.exec()
+
+            def visible_artwork(page):
+                return [item for item in page.findChildren(QQuickItem)
+                        if item.inherits("QQuickImage") and item.isVisible()
+                        and not item.property("source").isEmpty()]
+
+            app = QGuiApplication([])
+            engine = QQmlEngine()
+            engine.addImageProvider("vectors", VectorArtwork())
+            component = QQmlComponent(engine)
+            component.setData(b'''
+                import QtQuick
+                Window {
+                    id: win
+                    width: 620
+                    height: 540
+                    visible: true
+                    property bool blanked: false
+                    readonly property bool presentationActive: visible && !blanked
+                    property string page: "now"
+                    property alias nowPage: loader.item
+                    property var selectedGame: ({kind: "game", title: "", logo: "", fanart: "", manual: "", hasCheats: false})
+                    onSelectedGameChanged: nowPlaying.selection()
+                    QtObject {
+                        id: nowPlaying
+                        readonly property var state: win.selectedGame
+                        signal selection()
+                    }
+                    QtObject { id: ui; readonly property var state: ({animate: true}) }
+                    QtObject { id: apps; readonly property var slots: []; signal changed() }
+                    Connections {
+                        target: nowPlaying
+                        function onSelection() { win.page = "now" }
+                    }
+                    Loader {
+                        id: loader
+                        anchors.fill: parent
+                        source: win.page === "now" ? "NowPlaying.qml" : ""
+                        onLoaded: item.presentationActive = Qt.binding(() => win.presentationActive)
+                    }
+                }
+            ''', QUrl.fromLocalFile(sys.argv[1]))
+            window = component.create()
+            assert window is not None, component.errors()
+
+            with tempfile.TemporaryDirectory() as directory:
+                logos = [Path(directory) / name for name in ("first.svg", "last.svg")]
+                for logo in logos:
+                    logo.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="200">'
+                                    '<rect width="800" height="200" fill="green"/></svg>')
+
+                # Resume once to populate the image cache, then repeat with the same artwork.
+                for _ in range(3):
+                    assert window.setProperty("page", "system")
+                    assert window.property("nowPage") is None
+                    assert window.setProperty("blanked", True)
+                    for logo in logos:
+                        assert window.setProperty("selectedGame", dict(
+                            kind="game", title=logo.stem, logo=QUrl.fromLocalFile(str(logo)).toString(),
+                            fanart="", manual="", hasCheats=False))
+                    assert window.property("page") == "now"
+                    page = window.property("nowPage")
+                    assert page is not None and not page.property("presentationActive")
+                    assert not visible_artwork(page)
+
+                    assert window.setProperty("blanked", False)
+                    for _ in range(100):
+                        if any(item.property("source").toString().endswith("last.svg")
+                               and item.implicitWidth() == 800 and item.implicitHeight() == 200
+                               for item in visible_artwork(page)):
+                            break
+                        wait(20)
+                    else:
+                        raise AssertionError("The last selected marquee did not render at its natural size")
+                window.deleteLater()
+                wait(0)
+        """)
+        for scale in ("1", "2"):
+            with self.subTest(screen_scale=scale):
+                result = subprocess.run([sys.executable, "-c", script, QML + "/MarqueeTestWindow.qml"],
+                                        env=dict(os.environ, QT_SCALE_FACTOR=scale),
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotRegex(result.stderr, r'NowPlaying\.qml[^\n]*Binding loop detected for property "source"')
+
 
 class Translations(unittest.TestCase):
     def test_every_text_has_a_german_version(self):
