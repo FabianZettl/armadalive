@@ -1,7 +1,8 @@
 """The order of the dashboard tiles, remembered between runs."""
-import json, os
+import os
 from PySide6.QtCore import Property, QObject, Signal, Slot
 from PySide6.QtQml import QJSValue
+from . import persistence
 
 CONFIG = os.path.expanduser("~/.config/armadalive/tiles.json")
 
@@ -18,21 +19,15 @@ class Tiles(QObject):
 
     def __init__(self):
         super().__init__()
-        try:
-            with open(CONFIG) as f:
-                saved = json.load(f).get("order", [])
-            self._order = [i for i in saved if isinstance(i, str)] if isinstance(saved, list) else []
-        except (OSError, ValueError, AttributeError):
-            self._order = []
+        saved = persistence.read_json(CONFIG, lambda data: isinstance(data, dict), {}).get("order", [])
+        self._order = [i for i in saved if isinstance(i, str)] if isinstance(saved, list) else []
 
     @Property("QVariant", notify=changed)
     def order(self):
         return self._order
 
     def _save(self):
-        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
-        with open(CONFIG, "w") as f:
-            json.dump({"order": self._order}, f)
+        persistence.write_json(CONFIG, {"order": self._order}, follow_symlinks=True, require_writable=True)
         self.changed.emit()
 
     @Slot("QVariant", result="QVariant")
