@@ -1,5 +1,6 @@
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -74,5 +75,7 @@ class PaletteRequests(unittest.TestCase):
         for _ in range(100):
             if predicate():
                 return
-            QTest.qWait(10)
+            app.processEvents()
+            # qWait can retain the interpreter lock while the Python worker needs it.
+            time.sleep(0.01)
         self.assertTrue(predicate())
