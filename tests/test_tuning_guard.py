@@ -1,4 +1,5 @@
-import copy, json, os, tempfile, unittest
+import copy, json, os, subprocess, sys, tempfile, unittest
+from pathlib import Path
 from unittest import mock
 
 from tests.common import app  # noqa: F401
@@ -13,10 +14,10 @@ class Guard(unittest.TestCase):
         self.pending = os.path.join(tempfile.mkdtemp(), "pending.json")
         self.calls = []
 
-        def run(*args):
-            self.calls.append(args)
-            return ""
-        patches = [mock.patch.object(settings, "PENDING", self.pending), mock.patch.object(settings.privileged, "run", side_effect=run),
+        def run(command, **kwargs):
+            self.calls.append(tuple(command[3:]))
+            return subprocess.CompletedProcess(command, 0, "", "")
+        patches = [mock.patch.object(settings, "PENDING", self.pending), mock.patch.object(settings.privileged.subprocess, "run", side_effect=run),
                    mock.patch.object(settings.privileged, "available", return_value=True),
                    mock.patch.object(settings, "read_power", side_effect=lambda: copy.deepcopy(dict(profiles=PROFILES, curves=CURVES, governors=["conservative", "performance"], gpuSteps=[220, 475, 680])))]
         for p in patches:
@@ -67,7 +68,8 @@ class Guard(unittest.TestCase):
         s = self.make()
         s.setProfileOption("balanced", "cpu_governor", "conservative")      # already that
         self.assertFalse(s.pending["active"])
-        with mock.patch.object(settings.privileged, "run", return_value="no"):
+        refusal = subprocess.CompletedProcess([], 2, "", "no")
+        with mock.patch.object(settings.privileged.subprocess, "run", return_value=refusal):
             s.setProfileOption("balanced", "cpu_governor", "performance")
         self.assertFalse(s.pending["active"])
 
@@ -88,6 +90,67 @@ class Guard(unittest.TestCase):
         s._since -= settings.MAX_S - 3
         s.setProfileOption("balanced", "fan_curve", "aggressive")
         self.assertLessEqual(s.pending["seconds"], 3)
+
+
+class ReloadGuard(unittest.TestCase):
+    def setUp(self):
+        etc = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.config = etc / "power-profiles.conf"
+        self.original = (
+            "[profile.balanced]\ncpu_governor = conservative\ncpu_underclock = medium\nfan_curve = moderate\n"
+            "[fan_curve.moderate]\ncurve = 96:255,55:51,0:51\n"
+        )
+        self.config.write_text(self.original, encoding="utf-8")
+        self.pending = etc / "pending.json"
+        self.reload = etc / "armada-power"
+        self.reload.write_text("#!/bin/sh\necho 'fixture rejected reload' >&2\nexit 7\n", encoding="utf-8")
+        self.reload.chmod(0o755)
+        helper = str(Path(__file__).resolve().parents[1] / "scripts" / "armadalive-helper")
+        env = dict(os.environ, ARMADALIVE_ETC=str(etc), PATH=str(etc))
+        env.pop("ARMADALIVE_NO_RELOAD", None)
+        run = subprocess.run
+
+        def fake_sudo(command, **kwargs):
+            self.assertEqual(command[:3], ["sudo", "-n", helper])
+            return run([sys.executable, *command[2:]], env=env, **kwargs)
+
+        self.enterContext(mock.patch.multiple(settings, OVERRIDE=str(self.config), PENDING=str(self.pending),
+                                              FACTORY=etc / "factory", GPU_FREQS=etc / "freqs", GOVERNORS=etc / "governors"))
+        self.enterContext(mock.patch.object(settings.privileged, "HELPER", helper))
+        self.enterContext(mock.patch.object(settings.privileged, "available", return_value=True))
+        self.enterContext(mock.patch.object(settings.privileged.subprocess, "run", side_effect=fake_sudo))
+        self.settings = settings.Settings()
+        self.messages = []
+        self.settings.message.connect(self.messages.append)
+
+    def test_profile_edit_arms_undo_when_reload_is_rejected(self):
+        self.settings.setProfileOption("balanced", "cpu_underclock", "small")
+        self.assertIn("cpu_underclock = small", self.config.read_text(encoding="utf-8"))
+        self.assertIn("fixture rejected reload", self.messages[-1])
+        self.assertTrue(self.settings.pending["active"])
+        self.assertEqual(json.loads(self.pending.read_text(encoding="utf-8")),
+                         [["profile", "balanced", "cpu_underclock", "medium"]])
+
+    def test_fan_curve_edit_arms_undo_when_reload_times_out(self):
+        self.reload.write_text("#!/bin/sh\nexec /bin/sleep 11\n", encoding="utf-8")
+        self.settings.saveFanCurve("moderate", "96:255,55:200,0:51")
+        self.assertIn("curve = 96:255,55:200,0:51", self.config.read_text(encoding="utf-8"))
+        self.assertIn("reload timed out", self.messages[-1])
+        self.assertTrue(self.settings.pending["active"])
+        self.assertEqual(json.loads(self.pending.read_text(encoding="utf-8")),
+                         [["curve", "moderate", "", "96:255,55:51,0:51"]])
+
+    def test_validation_rejections_leave_the_configuration_and_undo_alone(self):
+        for edit, args, error in (
+            (self.settings.setProfileOption, ("balanced", "cpu_underclock", "invalid"), "cpu_underclock must be"),
+            (self.settings.saveFanCurve, ("moderate", "96:999"), "outside 0..255"),
+        ):
+            with self.subTest(args=args):
+                edit(*args)
+                self.assertIn(error, self.messages[-1])
+                self.assertEqual(self.config.read_text(encoding="utf-8"), self.original)
+                self.assertFalse(self.settings.pending["active"])
+                self.assertFalse(self.pending.exists())
 
 
 class Presets(unittest.TestCase):

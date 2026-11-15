@@ -2,6 +2,7 @@
 import os, subprocess, time
 
 HELPER = "/etc/armadalive/armadalive-helper"  # /usr is read-only on Armada, /etc persists
+RELOAD_FAILED = 3  # I keep this status in sync with scripts/armadalive-helper.
 
 
 _seen = (0.0, False)
@@ -19,8 +20,13 @@ def available(refresh=False):
 
 def run(*args):
     """Returns an empty string on success, the helper's error message otherwise."""
+    return run_with_status(*args)[1]
+
+
+def run_with_status(*args):
+    """Return (exit status, error). The status is None if sudo could not run or timed out."""
     try:
         r = subprocess.run(["sudo", "-n", HELPER, *map(str, args)], capture_output=True, text=True, timeout=15)
     except (OSError, subprocess.TimeoutExpired) as e:
-        return str(e)
-    return "" if r.returncode == 0 else (r.stderr.strip() or f"helper failed ({r.returncode})")
+        return None, str(e)
+    return r.returncode, "" if r.returncode == 0 else (r.stderr.strip() or f"helper failed ({r.returncode})")
