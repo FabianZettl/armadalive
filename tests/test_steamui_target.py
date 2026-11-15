@@ -45,6 +45,8 @@ class Target(unittest.TestCase):
 
     def test_busy_discovery_coalesces_ticks_then_retries_after_failure(self):
         with mock.patch.object(steamui, "_discover") as discover:
+            # Mocked bound callbacks retain the timer owner; release them on its thread.
+            self.addCleanup(discover.reset_mock)
             ui = steamui.SteamUi()
             for _ in range(12):
                 ui._tick()
