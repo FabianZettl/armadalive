@@ -216,17 +216,18 @@ Item {
                 text: Tr.t("Updates need the GitHub repository, which does not exist yet.")
             }
             Body {
-                visible: ["checking", "uptodate", "available", "installing", "installed", "error"].indexOf(page.up.status) >= 0
+                visible: ["checking", "uptodate", "available", "installing", "started", "installed", "error"].indexOf(page.up.status) >= 0
                 color: page.up.status === "error" ? Theme.hot : (page.up.status === "uptodate" ? Theme.muted : Theme.text)
                 text: ({ checking: Tr.t("Checking…"), uptodate: Tr.t("Up to date"), available: Tr.t("Update available"),
-                         installing: Tr.t("Installing…"), installed: Tr.t("Installed. The app restarts in a moment."),
+                         installing: Tr.t("Downloading and verifying…"), started: Tr.t("Update started. The app will restart."),
+                         installed: Tr.t("Update installed."),
                          error: page.up.message })[page.up.status] || ""
             }
             Row {
                 spacing: 10
                 PillButton {
                     label: Tr.t("Check for updates")
-                    enabled: page.up.status !== "norepo" && page.up.status !== "checking" && page.up.status !== "installing"
+                    enabled: page.up.status !== "norepo" && page.up.status !== "checking" && page.up.status !== "installing" && page.up.status !== "started"
                     onClicked: updater.check()
                 }
                 PillButton {

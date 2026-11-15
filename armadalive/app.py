@@ -35,7 +35,7 @@ from .thermal import Thermal
 from .tiles import Tiles
 from .trackpad import Trackpad
 from .ui import UiSettings
-from .updater import Updater
+from .updater import Updater, notify_ready
 from .onboarding import Onboarding
 from .system import SystemMonitor
 from .cheats import Cheats
@@ -136,4 +136,6 @@ def main():
             QTimer.singleShot(int(sys.argv[sys.argv.index("--close-demo") + 1]), lambda: backends["pad"].feed("demo", press))
         delay = int(sys.argv[sys.argv.index("--delay") + 1]) if "--delay" in sys.argv else 3000
         QTimer.singleShot(delay, lambda: (print("dimmed:", window.property("dimmed")), QQuickWindow.grabWindow(window).save(out), app.quit()))
+    if "--snapshot" not in sys.argv:
+        QTimer.singleShot(0, notify_ready)
     return app.exec()

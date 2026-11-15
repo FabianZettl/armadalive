@@ -3,6 +3,10 @@ Description=ArmadaLive (bottom screen companion)
 After=armada-bottom-screen.service
 
 [Service]
+Type=notify
+# The X11 fallback launcher keeps the Python process as a child.
+NotifyAccess=all
+TimeoutStartSec=90s
 Environment=QT_QPA_PLATFORM=wayland WAYLAND_DISPLAY=armada-plasma-bottom QT_QUICK_CONTROLS_STYLE=Basic
 Environment=PYTHONPATH=%h/.local/share/armadalive
 ExecStart=%h/.local/share/armadalive/scripts/run.sh
