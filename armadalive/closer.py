@@ -1,60 +1,103 @@
 """Start + Select held for two seconds closes the program in front (emulator, ES-DE, Steam game; never Steam itself), with a countdown on the bottom screen."""
 import os, signal, time
+from collections import defaultdict
 from PySide6.QtCore import Property, QObject, QTimer, Signal
 from .nowplaying import esde_running, running_game
 
 HOLD = 2.0
 
 
-def parents():
+def process_table():
     table = {}
     for pid in os.listdir("/proc"):
         if pid.isdigit():
-            try:   # the command name may hold spaces and brackets: the fields start after its closing bracket
-                table[int(pid)] = int(open(f"/proc/{pid}/stat").read().rpartition(")")[2].split()[1])
+            try:
+                fields = process_stat(pid)
+                table[int(pid)] = (int(fields[1]), int(fields[19]))
             except (OSError, ValueError, IndexError):
                 pass
     return table
 
 
+def parents():
+    return {pid: parent for pid, (parent, _) in process_table().items()}
+
+
+def process_stat(pid):
+    # The command name may contain spaces and brackets.
+    with open(f"/proc/{pid}/stat") as stat:
+        return stat.read().rpartition(")")[2].split()
+
+
+def children(table):
+    index = defaultdict(list)
+    for pid, parent in table.items():
+        index[parent].append(pid)
+    return index
+
+
 def tree(root, table):
-    """root and everything below it."""
-    found, todo = [], [root]
+    """Root and everything below it."""
+    return descendants(root, children(table))
+
+
+def descendants(root, index):
+    found, seen, todo = [], {root}, [root]
     while todo:
         pid = todo.pop()
         found.append(pid)
-        todo += [p for p, parent in table.items() if parent == pid and p not in found]
+        for child in index.get(pid, ()):
+            if child not in seen:
+                seen.add(child)
+                todo.append(child)
     return found
+
+
+def process_start(pid):
+    """Linux /proc start time, in clock ticks since boot."""
+    try:
+        return int(process_stat(pid)[19])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def process_identities(pids):
+    return {pid: process_start(pid) for pid in pids}
+
+
+def same_process(pid, start):
+    return start is not None and process_start(pid) == start
+
+
+def signal_processes(identities, sig):
+    for pid, start in identities.items():
+        if same_process(pid, start):
+            try:
+                os.kill(pid, sig)
+            except OSError:
+                pass
 
 
 def steam_pids(appid):
     """Steam starts a game as `reaper SteamLaunch AppId=<id> -- ...`; that process and its children are the game."""
     table, pids = parents(), []
+    index = children(table)
     for pid in table:
         try:
-            args = open(f"/proc/{pid}/cmdline", "rb").read().split(b"\0")
+            with open(f"/proc/{pid}/cmdline", "rb") as cmdline:
+                args = cmdline.read().split(b"\0")
         except OSError:
             continue
         if b"SteamLaunch" in args and f"AppId={appid}".encode() in args:
-            pids += tree(pid, table)
+            pids += descendants(pid, index)
     return pids
 
 
-def terminate(pids):
-    for pid in pids:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            pass
-
-    def force():   # whatever ignored the polite request
-        for pid in pids:
-            try:
-                os.kill(pid, 0)
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                pass
-    QTimer.singleShot(3000, force)
+def terminate(pids, identities=None):
+    if identities is None:
+        identities = process_identities(pids)
+    signal_processes(identities, signal.SIGTERM)
+    QTimer.singleShot(3000, lambda: signal_processes(identities, signal.SIGKILL))
 
 
 class Closer(QObject):
@@ -97,6 +140,7 @@ class Closer(QObject):
         if on and self._s["phase"] == "" and self._ui.state.get("close", True):
             self._target = self.target()
             if self._target:
+                self._identities = process_identities(self._target[0])
                 self._since = time.monotonic()
                 self._set(phase="holding", title=self._target[1], progress=0.0)
                 self._tick.start()
@@ -111,6 +155,6 @@ class Closer(QObject):
             self._set(progress=progress)
             return
         self._tick.stop()
-        terminate(self._target[0])
+        terminate(self._target[0], self._identities)
         self._set(phase="closed", progress=1.0)
         QTimer.singleShot(1500, lambda: self._set(phase=""))

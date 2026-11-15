@@ -1,9 +1,12 @@
 """Bring the ArmadaLive window to the front of the bottom Plasma session, whatever is on top of it."""
-import glob, json, os, stat, subprocess, threading
+import glob, json, os, stat, subprocess, threading, time
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 
 TITLE = "ArmadaLive"
 _bus = None
+_probe_after = 0.0
+_bus_lock = threading.Lock()
+_discovery_lock = threading.Lock()
 
 
 def _find_bus():
@@ -37,34 +40,66 @@ def _call(addr, *args):
                            "org.kde.krunner1", *args], capture_output=True, text=True, timeout=5)
 
 
+def _cached_bus():
+    with _bus_lock:
+        return _bus
+
+
+def session_bus():
+    """Discover on a worker and share the result across session operations."""
+    global _bus, _probe_after
+    with _discovery_lock:
+        with _bus_lock:
+            if time.monotonic() < _probe_after:
+                return _bus
+        found = _find_bus()
+        with _bus_lock:
+            _bus = found
+            _probe_after = time.monotonic() + (10 if found else 2)
+            return _bus
+
+
+def invalidate_bus(addr):
+    global _bus, _probe_after
+    with _bus_lock:
+        if _bus == addr:
+            _bus, _probe_after = None, 0.0
+
+
 def activate_window():
     """KWin's own windows runner activates the window, so focus-stealing prevention never gets a say."""
-    global _bus
-    for attempt in range(2):
-        _bus = _bus or _find_bus()
-        if not _bus:
+    for _ in range(2):
+        addr = session_bus()
+        if not addr:
             return False
         try:
-            r = _call(_bus, "Match", "s", TITLE)
+            r = _call(addr, "Match", "s", TITLE)
             if r.returncode == 0:
-                for m in json.loads(r.stdout)["data"][0]:
-                    if m[1] == TITLE:
-                        return _call(_bus, "Run", "ss", m[0], "").returncode == 0
-                return False  # window not mapped (yet)
+                for match in json.loads(r.stdout)["data"][0]:
+                    if match[1] == TITLE:
+                        if _call(addr, "Run", "ss", match[0], "").returncode == 0:
+                            return True
+                        break
+                else:
+                    return False  # window not mapped yet
         except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, IndexError):
             pass
-        _bus = None  # the session may have restarted: look again once
+        invalidate_bus(addr)
     return False
 
 
 def _kb(*args):
-    bus = _bus or _find_bus()
+    bus = session_bus()
     if not bus:
         return ""
     try:
-        return subprocess.run(["busctl", f"--address={bus}", *args], capture_output=True, text=True, timeout=5).stdout.strip()
+        result = subprocess.run(["busctl", f"--address={bus}", *args], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            return result.stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
-        return ""
+        pass
+    invalidate_bus(bus)
+    return ""
 
 
 KB = ["org.kde.KWin", "/VirtualKeyboard", "org.kde.kwin.VirtualKeyboard"]
@@ -74,8 +109,9 @@ def keyboard_visible():
     return _kb("get-property", *KB, "visible") == "b true"
 
 
-def keyboard_show():
-    if not keyboard_visible():     # forceActivate toggles, so only when it is not up
+def keyboard_show(is_current=lambda: True):
+    # forceActivate toggles. Only use it after confirming the keyboard is hidden.
+    if _kb("get-property", *KB, "visible") == "b false" and is_current():
         _kb("call", *KB, "forceActivate")
 
 
@@ -89,9 +125,64 @@ class Shell(QObject):
     def __init__(self):
         super().__init__()
         self._pinned = False
-        timer = QTimer(self)    # Plasma hides its keyboard when focus moves on; while pinned it is put back
-        timer.timeout.connect(lambda: self._pinned and threading.Thread(target=keyboard_show, daemon=True).start())
+        self._desired = False
+        self._generation = 0
+        self._lock = threading.Lock()
+        self._busy = self._reconcile = self._raise_window = self._probe = False
+        timer = QTimer(self)
+        timer.timeout.connect(self._tick)
         timer.start(800)
+        self._activation = QTimer(self)
+        self._activation.setSingleShot(True)
+        self._activation.setInterval(250)
+        self._activation.timeout.connect(lambda: self._queue(activate=True))
+        QTimer.singleShot(0, self._tick)
+
+    def _tick(self):
+        with _bus_lock:
+            probe = time.monotonic() >= _probe_after
+        self._queue(reconcile=self._pinned, probe=probe)
+
+    def _queue(self, reconcile=False, activate=False, probe=False):
+        with self._lock:
+            self._reconcile |= reconcile
+            self._raise_window |= activate
+            self._probe |= probe
+            if self._busy or not (self._reconcile or self._raise_window or self._probe):
+                return
+            self._busy = True
+        threading.Thread(target=self._drain, daemon=True).start()
+
+    def _drain(self):
+        while True:
+            with self._lock:
+                reconcile, activate, probe = self._reconcile, self._raise_window, self._probe
+                self._reconcile = self._raise_window = self._probe = False
+                if not (reconcile or activate or probe):
+                    self._busy = False
+                    return
+                desired, generation = self._desired, self._generation
+
+            if reconcile:
+                if desired:
+                    keyboard_show(lambda: self._current(generation))
+                elif self._current(generation):
+                    keyboard_hide()
+            if activate:
+                activate_window()
+            elif probe:
+                session_bus()
+
+    def _current(self, generation):
+        with self._lock:
+            return self._generation == generation
+
+    def _sync_keyboard(self, desired):
+        with self._lock:
+            if desired != self._desired:
+                self._desired = desired
+                self._generation += 1
+        self._queue(reconcile=True)
 
     @Property(bool, notify=keyboardChanged)
     def keyboardPinned(self):
@@ -101,24 +192,21 @@ class Shell(QObject):
     def keyboard(self):
         """Shows the on-screen keyboard and keeps it up until this is called again."""
         self._pinned = not self._pinned
+        self._sync_keyboard(self._pinned)
         self.keyboardChanged.emit()
-        threading.Thread(target=keyboard_show if self._pinned else keyboard_hide, daemon=True).start()
 
     @Slot(bool)
     def textFocus(self, on):
-        """A text field got or lost focus: show the on-screen keyboard (Plasma does not do it for this window) and hide it again, unless the Keyboard tile holds it."""
-        if on:
-            threading.Thread(target=keyboard_show, daemon=True).start()
-        elif not self._pinned:
-            threading.Thread(target=keyboard_hide, daemon=True).start()
+        """Reconcile text focus with the keyboard tile's pinned state."""
+        if on or not self._pinned:
+            self._sync_keyboard(on)
 
     @Slot(result=bool)
     def hasKwin(self):
-        """Whether a Plasma KWin can be asked to raise the window. Without one (the bare X11 side of the bottom screen) there is nothing that can hide
-        the window and bring it back, so the AYN tap only ever brings it up."""
-        return _find_bus() is not None
+        """Use the last worker discovery so controller input never waits for busctl."""
+        return _cached_bus() is not None
 
     @Slot()
     def activate(self):
-        # the window has just been shown; give KWin a moment to list it
-        QTimer.singleShot(250, lambda: threading.Thread(target=activate_window, daemon=True).start())
+        # The window has just been shown; give KWin time to list it.
+        self._activation.start()
