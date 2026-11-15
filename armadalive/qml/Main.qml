@@ -322,7 +322,8 @@ Window {
     Connections {
         target: rules
         function onNotice(code, detail) {
-            const text = ({ saved: Tr.t("Rule saved"), removed: Tr.t("Rule removed"), loaded: Tr.t("Rule loaded") })[code]
+            const text = ({ saved: Tr.t("Rule saved"), removed: Tr.t("Rule removed"), loaded: Tr.t("Rule loaded"),
+                            resolutionNextLaunch: Tr.t("Resolution rule applies on the next launch") })[code]
             toast.show(text + ": " + detail, false)
         }
     }

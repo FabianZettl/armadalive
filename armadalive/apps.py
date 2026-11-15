@@ -130,6 +130,8 @@ class Apps(QObject):
     # --- what a tile or a list row shows ---
     def _resolve(self, key, rec):
         """The catalog id of a game from the play history, None when it cannot be started from here any more."""
+        if key.startswith("esde:"):
+            return key if key in self._esde else None
         if rec.get("path") in self._by_path:
             return self._by_path[rec["path"]]
         if key.startswith("steam/") and key[6:].isdigit():

@@ -32,6 +32,31 @@ class Command(unittest.TestCase):
 
 
 class Games(unittest.TestCase):
+    def test_nested_games_keep_their_own_names_visibility_and_launch_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = f"{directory}/collection"
+            one, two = f"{folder}/a/Shared.sfc", f"{folder}/b/Shared.sfc"
+            touch(one)
+            touch(two)
+            gamelists = f"{directory}/gamelists"
+            gamelist = f"{gamelists}/snes/gamelist.xml"
+            games = """<gameList>
+                <game><path>./a/Shared.sfc</path><name>Game A</name><altemulator>A</altemulator></game>
+                <game><path>{}</path><name>Game B</name><altemulator>B</altemulator></game>
+                </gameList>""".format(two)
+            touch(gamelist, games)
+            definitions = {"snes": dict(path=folder, extensions={".sfc"}, commands=[("A", "emu_a %ROM%"), ("B", "emu_b %ROM%")])}
+            with (mock.patch.object(esdelib, "GAMELISTS", gamelists),
+                  mock.patch.object(esdelib, "_rom_dir", return_value=f"{directory}/roms"),
+                  mock.patch.object(esdelib, "_rules", return_value={})):
+                rows = esdelib.games(definitions)["snes"]
+                self.assertEqual([(row["id"], row["name"]) for row in rows],
+                                 [("esde:snes/a/Shared.sfc", "Game A"), ("esde:snes/b/Shared.sfc", "Game B")])
+                self.assertEqual(esdelib.command("snes", one, definitions), ["emu_a", one])
+                self.assertEqual(esdelib.command("snes", two, definitions), ["emu_b", two])
+                touch(gamelist, games.replace("<name>Game A</name>", "<name>Game A</name><hidden>true</hidden>"))
+                self.assertEqual([row["name"] for row in esdelib.games(definitions)["snes"]], ["Game B"])
+
     def test_games_are_found_by_extension_with_gamelist_names_and_hidden_ones_left_out(self):
         root, es = tempfile.mkdtemp(prefix="armadalive-roms-"), tempfile.mkdtemp(prefix="armadalive-es-")
         for f in ("snes/Chrono.sfc", "snes/Hidden.sfc", "snes/notes.txt", "snes/sub/Deep.SFC", "gba/x.gba"):

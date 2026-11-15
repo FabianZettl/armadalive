@@ -30,17 +30,18 @@ class Cheats(QObject):
 
     def _write_config(self, game_key):
         """Write active cheats to RetroArch's .opt config file for a game."""
-        # game_key format: "system/gamename" for emulated, "steam/appid" for Steam
-        if not game_key.startswith("snes/") and not game_key.startswith("nes/") and \
-           not game_key.startswith("genesis/") and not game_key.startswith("n64/"):
+        canonical = game_key.startswith("esde:")
+        system, sep, relative = game_key.removeprefix("esde:").partition("/")
+        if not sep or not relative or system not in ("snes", "nes", "genesis", "n64"):
             return  # only write for emulated games, not Steam
-
-        system = game_key.split("/")[0]
+        filename = os.path.basename(relative)
+        if canonical:
+            filename = os.path.splitext(filename)[0]
         # assume RetroArch core names match system (snes -> Snes9x, etc)
         # this is a simplification; real mapping would be more complex
         core_name = {"snes": "Snes9x", "nes": "Nestopia", "genesis": "Genesis-Plus-GX"}.get(system, system)
 
-        opt_file = os.path.join(CONFIG, "config", core_name, game_key.split("/")[1] + ".opt")
+        opt_file = os.path.join(CONFIG, "config", core_name, filename + ".opt")
         os.makedirs(os.path.dirname(opt_file), exist_ok=True)
 
         # read existing opt file if it exists

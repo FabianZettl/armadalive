@@ -1,4 +1,6 @@
 import json, os, tempfile, unittest
+from unittest import mock
+from armadalive import cheats
 from armadalive.cheats import Cheats
 
 
@@ -45,3 +47,13 @@ class TestCheats(unittest.TestCase):
         c.toggle_cheat("steam/570", 0)
         opt_file = os.path.expanduser("~/.config/retroarch/config/steam/570.opt")
         self.assertFalse(os.path.exists(opt_file))
+
+    def test_nested_canonical_game_keeps_the_emulator_option_filename(self):
+        key = "esde:snes/Region/Game.1.sfc"
+        with mock.patch.object(cheats, "CONFIG", self.temp_dir):
+            backend = Cheats()
+            backend.toggle_cheat(key, 2)
+        self.assertTrue(backend.is_active(key, 2))
+        self.assertFalse(backend.is_active("esde:snes/Other/Game.1.sfc", 2))
+        with open(os.path.join(self.temp_dir, "config", "Snes9x", "Game.1.opt")) as config:
+            self.assertIn('cheat2_enable = "true"', config.read())

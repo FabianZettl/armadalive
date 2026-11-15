@@ -1,12 +1,13 @@
 """Shared set-up: Qt without a display, and a small fake ES-DE folder so the tests do not depend on anybody's collection."""
-import os, sys, tempfile
+import os, sys, tempfile, time
+from contextlib import contextmanager
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ESDE = tempfile.mkdtemp(prefix="armadalive-esde-")
 os.environ["ARMADALIVE_ESDE_DIR"] = ESDE   # read when armadalive.nowplaying is imported
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PySide6.QtCore import QCoreApplication, QObject, Signal  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QThreadPool, Signal  # noqa: E402
 
 app = QCoreApplication.instance() or QCoreApplication(sys.argv)
 
@@ -32,3 +33,29 @@ class Fake(QObject):
     focusChanged = Signal(str)
     selected = Signal(object, str)
     state = {"focus": ""}
+
+
+def wait_for(predicate):
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        app.processEvents()
+        if predicate():
+            return
+        time.sleep(0.005)
+    raise AssertionError("Asynchronous update did not arrive")
+
+
+def dispose_qt(obj):
+    # Keep the parent alive through queued signal emission and delete its timers on their owner.
+    if not QThreadPool.globalInstance().waitForDone(5000):
+        raise AssertionError("Runtime workers did not finish before fixture teardown")
+    obj.deleteLater()
+    app.sendPostedEvents(obj, QEvent.Type.DeferredDelete)
+
+
+@contextmanager
+def runtime_object(obj):
+    try:
+        yield obj
+    finally:
+        dispose_qt(obj)

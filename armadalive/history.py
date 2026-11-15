@@ -3,9 +3,12 @@
 It follows NowPlaying: a game that runs starts a session, anything else ends it. Steam's own play times and ES-DE's `lastplayed` are read once, so the lists are
 not empty on the first day. Kept in ~/.config/armadalive/history.json; sessions older than a year are dropped."""
 import glob, json, os, re, time
-import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
+
+from . import nowplaying as esde
+from .poller import Poller
+
 
 CONFIG = os.path.expanduser("~/.config/armadalive/history.json")
 MIN_SESSION = 10          # seconds: a game that was started by mistake and closed again is not a play
@@ -30,18 +33,24 @@ def _read_steam():
 
 
 def _read_esde(gamelists):
-    """[(system, file name, lastplayed epoch, playcount)] for every game ES-DE has a `lastplayed` for."""
+    """Canonical game identity and play counts from ES-DE's dated gamelist entries."""
+    root, definitions = esde._rom_configuration()
     out = []
-    for f in glob.glob(os.path.join(gamelists, "*", "gamelist.xml")):
+    for f in glob.glob(glob.escape(gamelists) + "/*/gamelist.xml"):
         system = os.path.basename(os.path.dirname(f))
-        try:
-            for g in ET.parse(f).getroot().iter("game"):
-                stamp = g.findtext("lastplayed") or ""
-                if stamp:
-                    when = datetime.strptime(stamp[:15], "%Y%m%dT%H%M%S").timestamp()
-                    out.append((system, os.path.basename(g.findtext("path") or ""), when, int(g.findtext("playcount") or 0)))
-        except (OSError, ET.ParseError, ValueError):
-            continue
+        folder = esde._system_folder(system, root, definitions.get(system))
+        entries, _ = esde._gamelist(system, folder, gamelists)
+        for relative, game in entries.items():
+            stamp = game.findtext("lastplayed") or ""
+            if not stamp:
+                continue
+            try:
+                when = datetime.strptime(stamp[:15], "%Y%m%dT%H%M%S").timestamp()
+                plays = int(game.findtext("playcount") or 0)
+            except ValueError:
+                continue
+            title = game.findtext("name") or os.path.splitext(os.path.basename(relative))[0]
+            out.append((esde.rom_key(system, relative), title, system, os.path.join(folder, relative), when, plays))
     return out
 
 
@@ -54,6 +63,8 @@ class History(QObject):
         self._np = nowplaying
         self._games, self._sessions, self._open = {}, [], None      # _open: [key, start epoch, seconds counted so far, monotonic of the last count]
         self._steam_titles = steam_titles or (lambda: {})
+        self._legacy_scan = None
+        self._file_version = self._version()
         try:
             with open(self._path) as f:
                 saved = json.load(f)
@@ -71,6 +82,10 @@ class History(QObject):
         timer.timeout.connect(self._tick)
         timer.start(30000)       # a session in progress is written now and then: a crash or a power cut loses at most half a minute
         self._seen()
+        legacy_keys = tuple(key for key in self._games if esde.legacy_key_parts(key))
+        if legacy_keys:
+            source = gamelists or esde.GAMELISTS
+            self._legacy_scan = Poller(self, lambda: esde.resolve_legacy_keys(legacy_keys, source), self._legacy_ready, 2000)
 
     # --- reading what the other programs know ---
     def _import(self, gamelists):
@@ -79,35 +94,96 @@ class History(QObject):
             key = f"steam/{appid}"
             if f"steam:{appid}" in titles:      # installed games and shortcuts only: the account has hundreds of owned ones
                 self._games[key] = dict(title=titles[f"steam:{appid}"], system="steam", path="", total=seconds, plays=1, last=last)
-        from .nowplaying import GAMELISTS
-        for system, name, when, plays in _read_esde(gamelists or GAMELISTS):
-            key = f"{system}/{os.path.splitext(name)[0]}"
-            rec = self._games.setdefault(key, dict(title=os.path.splitext(name)[0], system=system, path="", total=0, plays=0))
+        for key, title, system, path, when, plays in _read_esde(gamelists or esde.GAMELISTS):
+            rec = self._games.setdefault(key, dict(title=title, system=system, path=path, total=0, plays=0))
             rec["last"], rec["plays"] = max(rec.get("last", 0), when), max(rec.get("plays", 0), plays)
+
+    def _version(self):
+        try:
+            info = os.stat(self._path)
+            return info.st_dev, info.st_ino, info.st_mtime_ns, info.st_size
+        except OSError:
+            return None
+
+    def _legacy_ready(self, aliases):
+        scan, self._legacy_scan = self._legacy_scan, None
+        scan.deleteLater()
+        self._use_legacy_proof(aliases)
+
+    def _use_legacy_proof(self, aliases):
+        # A backup restore can replace history while this proof is pending.
+        # Leave the restored data in place for the new application instance.
+        if self._file_version == self._version() and self._migrate_legacy(aliases):
+            self._save()
+            self.changed.emit()
+
+    def _migrate_legacy(self, aliases):
+        migrated = {}
+        for legacy, (key, path) in aliases.items():
+            old = self._games.get(legacy)
+            if old is None:
+                continue
+            old_path = old.get("path")
+            system, _, relative = key.removeprefix("esde:").partition("/")
+            folder = path[:-len(relative)].rstrip("/") or "/"
+            if old_path and (not isinstance(old_path, str) or esde.rom_relative(system, old_path, folder) != relative):
+                continue  # a previous location disagrees with the only candidate still present
+            current = self._games.get(key, {})
+            self._games[key] = dict(old, **current)
+            self._games[key].update(system=system, path=path, total=old.get("total", 0) + current.get("total", 0),
+                                    plays=old.get("plays", 0) + current.get("plays", 0),
+                                    last=max(old.get("last", 0), current.get("last", 0)))
+            del self._games[legacy]
+            migrated[legacy] = key
+        if migrated:
+            for session in self._sessions:
+                session[0] = migrated.get(session[0], session[0])
+            if self._open is not None:
+                self._open[0] = migrated.get(self._open[0], self._open[0])
+        return bool(migrated)
 
     def _save(self, imported=True):
         os.makedirs(os.path.dirname(self._path), exist_ok=True)
         with open(self._path, "w") as f:
             json.dump(dict(imported=imported, games=self._games, sessions=self._sessions), f)
+        self._file_version = self._version()
 
     # --- tracking ---
     def _seen(self):
         s = self._np.state
+        if s.get("legacyKey") in self._games and s.get("romPath"):
+            self._use_legacy_proof({s["legacyKey"]: (s["key"], s["romPath"])})
         if s.get("kind") == "game" and s.get("playing") and s.get("key") and s.get("system") != "":
             if self._open is None or self._open[0] != s["key"]:
                 self._end()
                 self._begin(s)
+            elif not s.get("metadataPending"):
+                rec = self._games[s["key"]]
+                fields = {field: value for field, value in self._game_details(s).items() if value}
+                if any(rec.get(field) != value for field, value in fields.items()) and self._file_version == self._version():
+                    rec.update(fields)
+                    self._save()
+                    self.changed.emit()
         else:
             self._end()
 
     def _begin(self, s):
         rec = self._games.setdefault(s["key"], dict(total=0, plays=0))
-        rec.update(title=s.get("title") or s["key"], system=s.get("system", ""), path=s.get("path", ""), art=s.get("fanart") or s.get("logo") or "", last=time.time())
+        details = self._game_details(s)
+        if s.get("metadataPending"):
+            # Keep already known metadata until the authoritative result arrives.
+            details = {field: value for field, value in details.items() if not rec.get(field)}
+        rec.update(details, last=time.time())
         rec["plays"] = rec.get("plays", 0) + 1
         self._sessions.append([s["key"], int(time.time()), 0])
         self._open = [s["key"], int(time.time()), 0, time.monotonic()]
         self._save()
         self.changed.emit()
+
+    @staticmethod
+    def _game_details(s):
+        return dict(title=s.get("title") or s["key"], system=s.get("system", ""), path=s.get("romPath") or s.get("path", ""),
+                    art=s.get("fanart") or s.get("logo") or "")
 
     def _count(self):
         """Adds what has passed since the last count to the open session and the game's total."""
@@ -148,7 +224,7 @@ class History(QObject):
 
     def recent(self, limit=12):
         """[(key, record)], the most recently played first."""
-        items = [(k, r) for k, r in self._games.items() if r.get("last")]
+        items = [(k, self._launch_record(k, r)) for k, r in self._games.items() if r.get("last")]
         return sorted(items, key=lambda kr: kr[1]["last"], reverse=True)[:limit]
 
     def title_of(self, key):
@@ -158,6 +234,8 @@ class History(QObject):
             return t
         if key.startswith("steam/"):
             return self._steam_titles().get("steam:" + key[6:], "")
+        if key.startswith("esde:"):
+            return os.path.splitext(os.path.basename(key))[0]
         return key.split("/", 1)[1] if "/" in key else ""
 
     def total_for(self, key):
@@ -172,13 +250,21 @@ class History(QObject):
 
     def favorites(self):
         """[(key, record)] of the games marked as favorite."""
-        return [(k, r) for k, r in self._games.items() if r.get("favorite")]
+        return [(k, self._launch_record(k, r)) for k, r in self._games.items() if r.get("favorite")]
+
+    @staticmethod
+    def _launch_record(key, record):
+        # Legacy records might contain the last sibling played, not the game
+        # that earned the favorite or accumulated the earlier play time.
+        return dict(record, path="") if esde.legacy_key_parts(key) else record
 
     @Slot(str, str, str, str)
     def toggleFavorite(self, key, title, system, path):
         """Heart or un-heart a game; a game never played gets a record without a play time or a last-played date."""
         if not key:
             return
+        if self._np.state.get("key") == key:
+            path = self._np.state.get("romPath") or path
         rec = self._games.setdefault(key, dict(title=title or key, system=system, path=path, total=0, plays=0))
         rec["favorite"] = not rec.get("favorite")
         self._save()

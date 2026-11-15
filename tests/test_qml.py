@@ -33,11 +33,16 @@ class Metadata(QObject):
     def __init__(self):
         super().__init__()
         self.reads = []
+        self.suspensions = 0
 
     @Slot(str, str, str, str, result="QVariant")
     def of(self, system, path, key, title):
         self.reads.append((key, title))
         return dict(name=title)
+
+    @Slot()
+    def suspend(self):
+        self.suspensions += 1
 
 app = QGuiApplication([])
 engine = QQmlEngine()
@@ -58,7 +63,9 @@ assert metadata.reads == [], metadata.reads
 page.setProperty("presentationActive", True)
 assert metadata.reads[-1] == ("steam/10", "First"), metadata.reads
 previous = page.property("d")
+suspensions = metadata.suspensions
 page.setProperty("presentationActive", False)
+assert metadata.suspensions == suspensions + 1
 metadata.reads.clear()
 selection.current = dict(system="steam", path="", key="steam/20", title="Second")
 selection.changed.emit()
@@ -71,6 +78,7 @@ page.setProperty("presentationActive", True)
 assert metadata.reads == [("steam/20", "Second")], metadata.reads
 assert page.property("d")["name"] == "Second"
 page.setProperty("visible", False)
+assert metadata.suspensions == suspensions + 2
 metadata.reads.clear()
 metadata.changed.emit()
 metadata.updated.emit()

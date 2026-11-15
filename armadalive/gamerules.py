@@ -12,7 +12,7 @@ IDLE, BASE = "default:idle", "default:base"   # rule keys that belong to no game
 
 class GameRules(QObject):
     changed = Signal()
-    notice = Signal(str, str)   # saved | removed | loaded, and what it was about
+    notice = Signal(str, str)   # saved | removed | loaded | resolutionNextLaunch
 
     def __init__(self, nowplaying, gamescope, system):
         super().__init__()
@@ -25,15 +25,20 @@ class GameRules(QObject):
         except (OSError, ValueError, AttributeError):
             self._rules, self._on, self._base = {}, True, {}
         self._applied, self._loaded = "", ""
+        self._scopes = self._current_scopes(nowplaying.state)
         self.history = None      # set by the app: lets a rule show the name of its game, not only the key
         nowplaying.changed.connect(self._check)
+        self._watch_legacy_rules()
 
     @Property("QVariant", notify=changed)
     def state(self):
-        cur = self._np.state
+        game, system, resolution = self._current_scopes(self._np.state)
         return dict(enabled=self._on, rules=sorted((dict(v, key=k, **self._describe(k, v)) for k, v in self._rules.items()), key=lambda r: (r["kind"], r["name"].lower())),
-                    gameKey=self._game_key(cur), systemKey=self._system_key(cur), resOk=cur.get("system") in emusettings.SPECS,
+                    gameKey=game, systemKey=system, resOk=resolution,
                     idleKey=IDLE, baseKey=BASE, loaded=self._loaded)
+
+    def _current_scopes(self, state):
+        return self._game_key(state), self._system_key(state), state.get("system") in emusettings.SPECS
 
     def _describe(self, key, rule):
         """What the rules list shows for a key: its kind and the name of the game or system, never only the Steam id."""
@@ -45,8 +50,29 @@ class GameRules(QObject):
         return dict(kind="system", name=rest)
 
     @staticmethod
-    def _game_key(state):
+    def _canonical_game_key(state):
         return f"game:{state['key']}" if state.get("key") else ""
+
+    @staticmethod
+    def _legacy_game_key(state):
+        legacy = state.get("legacyKey")
+        return f"game:{legacy}" if legacy and (state.get("key") or "").startswith("esde:") else ""
+
+    def _game_key(self, state):
+        canonical, legacy = self._canonical_game_key(state), self._legacy_game_key(state)
+        return legacy if canonical not in self._rules and legacy in self._rules else canonical
+
+    def _pending_legacy_rule(self, state):
+        identity = state.get("key") or ""
+        if not state.get("legacyPending") or not identity.startswith("esde:") or self._game_key(state) in self._rules:
+            return ""
+        system, _, path = identity[5:].partition("/")
+        stem = os.path.splitext(os.path.basename(path))[0]
+        legacy = f"game:{system}/{stem}"
+        return legacy if legacy in self._rules else ""
+
+    def _watch_legacy_rules(self):
+        self._np.watch_legacy_rules([key[5:] for key in self._rules if key.startswith("game:") and not key.startswith("game:esde:")])
 
     @staticmethod
     def _system_key(state):
@@ -56,6 +82,7 @@ class GameRules(QObject):
         os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
         with open(CONFIG, "w") as f:
             json.dump({"enabled": self._on, "rules": self._rules, "base": self._base}, f, indent=1)
+        self._watch_legacy_rules()
         self.changed.emit()
 
     @staticmethod
@@ -75,6 +102,8 @@ class GameRules(QObject):
             return
         if key in self._rules:
             del self._rules[key]
+            if scope == "game" and key == self._canonical_game_key(cur):
+                self._rules.pop(self._legacy_game_key(cur), None)
             code = "removed"
         else:
             self._rules[key] = dict(profile=self._sys.stats.get("profile", ""), fps=self._gs.state.get("limit", 0))
@@ -111,18 +140,22 @@ class GameRules(QObject):
         self._on = bool(on)
         self._save()
 
+    def _resolution(self, cur):
+        rule = self._rules.get(self._game_key(cur)) or self._rules.get(self._system_key(cur)) or {}
+        return rule.get("res")
+
     def _emulator(self, cur):
         """Just before a game starts (while it is selected in ES-DE) its emulator gets the saved resolution; a game without one
         gets back what the emulator had before. shortcut: only the first override remembers the original value."""
         system = cur.get("system")
         if cur.get("kind") != "game" or cur.get("playing") or system not in emusettings.SPECS:
             return
-        rule = self._rules.get(self._game_key(cur)) or self._rules.get(self._system_key(cur)) or {}
-        if rule.get("res"):
+        resolution = None if self._pending_legacy_rule(cur) else self._resolution(cur)
+        if resolution:
             if system not in self._base:
                 self._base[system] = emusettings.read(system)
             if self._base[system] is not None:
-                emusettings.write(system, rule["res"])
+                emusettings.write(system, resolution)
         elif self._base.get(system) is not None:
             emusettings.write(system, self._base.pop(system))
 
@@ -137,6 +170,10 @@ class GameRules(QObject):
 
     def _check(self):
         cur = self._np.state
+        scopes = self._current_scopes(cur)
+        if self._scopes != scopes:
+            self._scopes = scopes
+            self.changed.emit()
         if self._on:
             self._emulator(cur)
         if not cur.get("playing"):
@@ -146,9 +183,13 @@ class GameRules(QObject):
                 if self._on and IDLE in self._rules:
                     self._apply(self._rules[IDLE], "idle")
             return
-        if not self._on or cur.get("key") == self._applied:
+        if not self._on or not cur.get("key") or cur.get("key") == self._applied or self._pending_legacy_rule(cur):
             return
         self._applied = cur.get("key", "")
+        system = cur.get("system")
+        if system in emusettings.SPECS and (resolution := self._resolution(cur)):
+            if emusettings.read(system) != emusettings.SPECS[system][3].format(resolution):
+                self.notice.emit("resolutionNextLaunch", cur.get("title") or self._applied)
         for key, label in ((self._game_key(cur), "game"), (self._system_key(cur), "system"), (BASE, "base")):
             if key in self._rules:
                 self._apply(self._rules[key], f"{cur.get('title') or cur.get('key')}" if label == "game" else label)

@@ -97,8 +97,8 @@ _live = set()
 MAX_EVALS = 8
 
 
-def eval_js(expression, done, timeout=30000):
-    """Run a script in Steam's SharedJSContext; done(value) gets its awaited result or None."""
+def eval_js(expression, done, timeout=30000, *, valid=None):
+    """Run a Steam script while valid; done(value) gets its awaited result or None."""
     if len(_live) >= MAX_EVALS:
         QTimer.singleShot(0, lambda: done(None))
         return
@@ -132,8 +132,16 @@ def eval_js(expression, done, timeout=30000):
         except (ValueError, AttributeError):
             return
 
-    ws.connected.connect(lambda: ws.sendTextMessage(json.dumps(
-        {"id": 7, "method": "Runtime.evaluate", "params": {"expression": expression, "awaitPromise": True, "returnByValue": True}})))
+    def send():
+        if ws not in _live:
+            return
+        if valid is not None and not valid():
+            finish(None)
+            return
+        ws.sendTextMessage(json.dumps(
+            {"id": 7, "method": "Runtime.evaluate", "params": {"expression": expression, "awaitPromise": True, "returnByValue": True}}))
+
+    ws.connected.connect(send)
     ws.textMessageReceived.connect(reply)
     ws.errorOccurred.connect(lambda *_: finish(None))
     ws.disconnected.connect(lambda: finish(None))

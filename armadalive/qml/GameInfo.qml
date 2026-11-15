@@ -5,16 +5,20 @@ import QtQuick
 Flickable {
     id: page
     property bool presentationActive: true
+    readonly property bool presented: presentationActive && visible
     readonly property var s: nowPlaying.state
     property var d: ({})
     function refresh() {
-        if (presentationActive && visible)
+        if (presented)
             d = gameinfo.of(s.system || "", s.path || "", s.key || "", s.title || "")
     }
     onSChanged: refresh()
-    onPresentationActiveChanged: refresh()
-    onVisibleChanged: refresh()
+    onPresentedChanged: {
+        if (presented) refresh()
+        else gameinfo.suspend()
+    }
     Component.onCompleted: refresh()
+    Component.onDestruction: if (gameinfo) gameinfo.suspend()
     Connections { target: gameinfo; function onUpdated() { page.refresh() } }
     Connections { target: history; function onChanged() { page.refresh() } }
     Timer {
@@ -113,7 +117,8 @@ Flickable {
             wrapMode: Text.WordWrap
             color: Theme.muted
             font.pixelSize: 14
-            text: (steamGame ? Tr.t("Steam has not sent this game's data yet. It needs an internet connection and shows up here after a moment.")
+            text: page.d.loading ? Tr.t("Loading…")
+                  : (steamGame ? Tr.t("Steam has not sent this game's data yet. It needs an internet connection and shows up here after a moment.")
                              : Tr.t("ES-DE has no description for this game. Scrape it there (media and metadata) and it shows up here."))
                   + "\n\n" + (page.s.system || "?") + "  ·  " + (page.s.path || page.s.key || "?")
         }

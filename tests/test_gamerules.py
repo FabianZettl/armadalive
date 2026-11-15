@@ -1,7 +1,7 @@
 import os, tempfile, unittest
 from unittest import mock
 
-from tests.common import app, Fake  # noqa: F401
+from tests.common import app, Fake, touch  # noqa: F401
 from PySide6.QtCore import QObject, Signal
 from armadalive import gamerules
 
@@ -14,6 +14,10 @@ class FakeNow(QObject):
     def __init__(self):
         super().__init__()
         self.state = dict(GAME)
+        self.watched_legacy = set()
+
+    def watch_legacy_rules(self, keys):
+        self.watched_legacy = set(keys)
 
 
 class FakeGs:
@@ -59,6 +63,47 @@ class Rules(unittest.TestCase):
         with mock.patch("subprocess.Popen") as popen:
             self.now.state = dict(GAME, key="snes/Another Game"); self.now.changed.emit()
         self.assertEqual(popen.call_args[0][0], ["armada-power", "profile", "Eco"])
+
+    def test_canonical_rule_wins_and_only_a_proved_sibling_can_use_a_legacy_rule(self):
+        self.rules._rules = {"game:snes/Unique": {"fps": 40}, "game:esde:snes/b/Unique.sfc": {"fps": 50}}
+        self.now.state = dict(GAME, key="esde:snes/a/Unique.sfc", legacyKey="")
+        self.now.changed.emit()
+        self.assertEqual(self.gs.set, [])
+        self.now.state = dict(GAME, key="esde:snes/b/Unique.sfc", legacyKey="snes/Unique")
+        self.now.changed.emit()
+        self.assertEqual(self.gs.set, [50])
+        self.now.state = dict(GAME, key="esde:snes/c/Unique.sfc", legacyKey="snes/Unique")
+        self.now.changed.emit()
+        self.assertEqual(self.gs.set, [50, 40])
+
+    def test_external_start_before_legacy_proof_reports_next_launch(self):
+        config = os.path.join(os.path.dirname(gamerules.CONFIG), "ppsspp.ini")
+        touch(config, "[Graphics]\nInternalResolution = 1\n")
+        self.rules._rules = {"game:psp/Unique": {"res": 3, "fps": 45}, "default:base": {"fps": 30}}
+        notices = []
+        self.rules.notice.connect(lambda code, detail: notices.append((code, detail)))
+        with mock.patch.object(gamerules.emusettings, "SPECS", {"psp": (config, "Graphics", "InternalResolution", "{}")}):
+            self.now.state = dict(GAME, key="esde:psp/Unique.iso", system="psp", title="Unique",
+                                  legacyKey="", legacyPending=True, metadataPending=True)
+            self.now.changed.emit()
+            self.assertEqual(self.gs.set, [])
+            self.now.state.update(legacyPending=False, legacyKey="psp/Unique")
+            self.now.changed.emit()
+            self.assertEqual(self.gs.set, [45])
+            self.assertEqual(gamerules.emusettings.read("psp"), "1")
+        self.assertEqual(notices.count(("resolutionNextLaunch", "Unique")), 1)
+
+    def test_proved_rule_sets_resolution_while_presentation_is_pending(self):
+        config = os.path.join(os.path.dirname(gamerules.CONFIG), "ppsspp.ini")
+        touch(config, "[Graphics]\nInternalResolution = 1\n")
+        self.rules._rules = {"game:psp/Unique": {"res": 3}}
+        self.rules._watch_legacy_rules()
+        self.assertEqual(self.now.watched_legacy, {"psp/Unique"})
+        with mock.patch.object(gamerules.emusettings, "SPECS", {"psp": (config, "Graphics", "InternalResolution", "{}")}):
+            self.now.state = dict(GAME, key="esde:psp/Region/Unique.iso", system="psp", title="Unique", playing=False,
+                                  legacyKey="psp/Unique", legacyPending=False, metadataPending=True)
+            self.now.changed.emit()
+            self.assertEqual(gamerules.emusettings.read("psp"), "3")
 
     def test_nothing_is_applied_while_browsing_or_when_switched_off(self):
         self.rules.toggle("system")

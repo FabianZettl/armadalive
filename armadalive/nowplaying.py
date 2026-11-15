@@ -33,35 +33,170 @@ def _system_logo(system):
     return _first(glob.escape(ES) + f"/themes/*/_inc/systems/logos/{glob.escape(system)}.svg")
 
 
-def rom_relative(system, path):
-    """Match an absolute launcher path and an ES-DE relative gamelist path."""
-    path = os.path.normpath(path)
-    if os.path.isabs(path):
-        folder = os.path.normpath(os.path.join(_rom_dir(), system)) + os.sep
-        if path.startswith(folder):
-            return path[len(folder):]
-        parts = path.split("/")
-        for index, part in enumerate(parts[:-2]):
-            if part == "roms" and parts[index + 1] == system:
-                return "/".join(parts[index + 2:])
-        for index, part in enumerate(parts[:-1]):
-            if part == system:
-                return "/".join(parts[index + 1:])
-        return os.path.basename(path)
-    return path if path != ".." and not path.startswith("../") else os.path.basename(path)
+def _rom_configuration():
+    from . import esdelib
+
+    return _rom_dir(), esdelib.cached_systems(ES)
 
 
-def _game_title(system, path):
-    """The name ES-DE's gamelist gives a game (empty if it has no entry)."""
-    f = f"{GAMELISTS}/{system}/gamelist.xml"
+def _system_folder(system, root, definition):
+    from .esdelib import system_folder
+
+    return os.path.abspath(system_folder(system, root, definition))
+
+
+def _rom_folder(system):
+    root, definitions = _rom_configuration()
+    return _system_folder(system, root, definitions.get(system))
+
+
+def _relative_below(path, folder):
+    prefix = folder.rstrip("/") + "/"
+    return path[len(prefix):] if path.startswith(prefix) else ""
+
+
+def _same_file(path, candidate):
     try:
-        mtime = os.stat(f).st_mtime_ns
-        if _gamelists.get(f, (None,))[0] != mtime:
-            _gamelists[f] = (mtime, {rom_relative(system, g.findtext("path") or ""): g.findtext("name") or ""
-                                    for g in ET.parse(f).getroot().iter("game")})
-        return _gamelists[f][1].get(rom_relative(system, path), "")
+        return os.path.samefile(path, candidate)
+    except OSError:
+        return False
+
+
+def rom_relative(system, path, folder=None):
+    """Normalize a ROM path under its system folder, or return empty if unknown."""
+    expanded = os.path.expanduser(path)
+    path = os.path.normpath(expanded)
+    if not os.path.isabs(expanded):
+        return path if path not in (".", "..") and not path.startswith("../") else ""
+    folder = folder if folder is not None else _rom_folder(system)
+    relative = _relative_below(path, folder) if ".." not in expanded.split("/") else ""
+    if relative:
+        return relative
+    physical = os.path.realpath(expanded)
+    if relative := _relative_below(physical, os.path.realpath(folder)):
+        return relative
+    # Bind mounts need an inode check once the other spelling supplies a candidate.
+    alternate = physical.partition(f"/roms/{system}/")[2]
+    if alternate and _same_file(expanded, os.path.join(folder, alternate)):
+        return alternate
+    return ""
+
+
+def rom_key(system, relative):
+    return f"esde:{system}/{relative}" if relative else ""
+
+
+def legacy_key_parts(key):
+    system, sep, stem = key.partition("/")
+    if (sep and stem and "/" not in stem and re.fullmatch(r"[\w.-]+", system)
+            and system not in (".", "..", "steam", "ludo")):
+        return system, stem
+    return None
+
+
+def _raise_walk_error(error):
+    raise error
+
+
+def _legacy_roms(folder, extensions, entries, basenames, stems):
+    """Map old basename stems to their ROM path only when one candidate exists."""
+    from .esdelib import rom_files
+
+    ambiguous = {os.path.splitext(base)[0] for base, relative in basenames.items() if not relative}
+    stems = stems - ambiguous
+    if not stems:
+        return {}
+    matches = {}
+    try:
+        for relative in rom_files(folder, extensions or None, onerror=_raise_walk_error, stems=stems):
+            stem = os.path.splitext(os.path.basename(relative))[0]
+            matches[stem] = relative if stem not in matches else ""
+    except OSError:
+        return {}
+    for relative in entries:
+        stem = os.path.splitext(os.path.basename(relative))[0]
+        if stem in matches and matches[stem] != relative:
+            matches[stem] = ""
+    return {stem: relative for stem, relative in matches.items() if relative}
+
+
+def _gamelist(system, folder, gamelists=None):
+    f = f"{gamelists or GAMELISTS}/{system}/gamelist.xml"
+    try:
+        info = os.stat(f)
+        # Absolute gamelist paths can normalize differently if a mounted or
+        # symlinked collection changes behind the same configured path.
+        try:
+            root = os.stat(folder)
+            location = root.st_dev, root.st_ino
+        except OSError:
+            location = None
+        stamp = (folder, location, info.st_dev, info.st_ino, info.st_mtime_ns, info.st_size)
+        indexed = _gamelists.get(f)
+        if indexed is None or indexed[0] != stamp:
+            entries, basenames = {}, {}
+            for game in ET.parse(f).getroot().iter("game"):
+                raw = game.findtext("path") or ""
+                path = rom_relative(system, raw, folder)
+                if path:
+                    entries[path] = game
+                elif os.path.isabs(os.path.expanduser(raw)):
+                    # A record outside the active root is evidence against
+                    # assigning its legacy basename to a different collection.
+                    basenames[os.path.basename(raw)] = ""
+            for path in entries:
+                base = os.path.basename(path)
+                basenames[base] = "" if base in basenames else path
+            indexed = _gamelists[f] = stamp, entries, basenames
+        return indexed[1:]
     except (OSError, ET.ParseError):
+        return {}, {}
+
+
+def _gamelist_path(system, path, folder, basenames):
+    relative = rom_relative(system, path, folder)
+    if not relative and os.path.isabs(os.path.expanduser(path)):
+        return basenames.get(os.path.basename(path), "")
+    return relative
+
+
+def _game_title(system, path, folder=None, index=None):
+    """The name ES-DE's gamelist gives a game (empty if it has no entry)."""
+    folder = folder if folder is not None else _rom_folder(system)
+    entries, basenames = index if index is not None else _gamelist(system, folder)
+    entry = entries.get(_gamelist_path(system, path, folder, basenames))
+    return (entry.findtext("name") or "") if entry is not None else ""
+
+
+def resolve_legacy_keys(keys, gamelists):
+    """Return verified legacy identities and their canonical key and absolute path."""
+    by_system = {}
+    for key in keys:
+        if parts := legacy_key_parts(key):
+            system, stem = parts
+            by_system.setdefault(system, set()).add(stem)
+    if not by_system:
+        return {}
+    root, definitions = _rom_configuration()
+    aliases = {}
+    for system, stems in by_system.items():
+        definition = definitions.get(system) or {}
+        folder = _system_folder(system, root, definition)
+        entries, basenames = _gamelist(system, folder, gamelists)
+        for stem, relative in _legacy_roms(folder, definition.get("extensions"), entries, basenames, stems).items():
+            aliases[f"{system}/{stem}"] = rom_key(system, relative), os.path.join(folder, relative)
+    return aliases
+
+
+def _rule_lookup(keys):
+    return (keys, resolve_legacy_keys(keys, GAMELISTS)) if keys else None
+
+
+def _legacy_key_for_game(key):
+    if not key.startswith("esde:"):
         return ""
+    system, _, relative = key.removeprefix("esde:").partition("/")
+    return f"{system}/{os.path.splitext(os.path.basename(relative))[0]}"
 
 
 def _cheat_file(path):
@@ -92,20 +227,51 @@ def _rom_dir():
     return os.path.expanduser(value or "/run/media/armada/EXT/Emulation/roms").rstrip("/")
 
 
-def _rom_path(path, root):
-    """Find the system and its relative game path under either ROM mount."""
-    for marker in (root + "/", "/roms/"):
-        _, found, relative = path.partition(marker)
-        if found:
-            system, sep, game = relative.partition("/")
-            if sep and system and game:
-                return system, game
+def _custom_folders(root, definitions):
+    return sorted(((_system_folder(system, root, definition), system) for system, definition in definitions.items()
+                   if definition.get("path")), key=lambda pair: len(pair[0]), reverse=True)
+
+
+def _split_rom_path(path):
+    system, sep, game = path.partition("/")
+    if sep and game and re.fullmatch(r"[\w.-]+", system) and system not in (".", ".."):
+        return system, game
+    return "", ""
+
+
+def _rom_path(path, root, custom=()):
+    """Resolve emulator paths against the active collection, including physical spellings."""
+    if not os.path.isabs(path):
+        path = path.partition("=")[2] if path.startswith("-") else ""
+        if not os.path.isabs(path):
+            return "", ""
+    root = os.path.abspath(root or "/")
+    configured = {system: folder for folder, system in custom}
+    if ".." not in path.split("/"):
+        lexical = os.path.normpath(path)
+        for folder, system in custom:
+            if relative := _relative_below(lexical, folder):
+                return system, relative
+        system, relative = _split_rom_path(_relative_below(lexical, root))
+        if system and system not in configured:
+            return system, relative
+    physical = os.path.realpath(path)
+    for folder, system in custom:
+        if relative := _relative_below(physical, os.path.realpath(folder)):
+            return system, relative
+    system, relative = _split_rom_path(_relative_below(physical, os.path.realpath(root)))
+    if system and system not in configured:
+        return system, relative
+    system, relative = _split_rom_path(physical.partition("/roms/")[2])
+    if system and _same_file(path, os.path.join(configured.get(system, os.path.join(root, system)), relative)):
+        return system, relative
     return "", ""
 
 
 def running_game():
     """The ES-DE style event of an emulator that is running right now, found by the ROM it was started with."""
-    rom_dir, best = _rom_dir(), None
+    rom_dir, definitions = _rom_configuration()
+    custom, best = _custom_folders(rom_dir, definitions), None
     for pid in os.listdir("/proc"):
         if not pid.isdigit():
             continue
@@ -117,13 +283,14 @@ def running_game():
             continue
         for arg in args[1:]:
             text = arg.decode(errors="replace")
-            system, game = _rom_path(text, rom_dir)
+            system, game = _rom_path(text, rom_dir, custom)
             if game and (best is None or int(pid) > best[0]):  # the newest process wins
                 best = (int(pid), system, game)
     if not best:
         return None
     _, system, game = best
-    return dict(event="game-start", system=system, path=f"{rom_dir}/{system}/{game}", name=os.path.splitext(os.path.basename(game))[0], pid=best[0])
+    folder = _system_folder(system, rom_dir, definitions.get(system))
+    return dict(event="game-start", system=system, path=os.path.join(folder, game), name=os.path.splitext(os.path.basename(game))[0], pid=best[0])
 
 
 def steam_running():
@@ -181,24 +348,33 @@ def _ludo_library():
     return _ludo[1:]
 
 
-def describe_ludo(appid, name, screenshot):
-    """A game highlighted in the Ludo plugin: a downloaded one has the ES-DE art of its ROM, any other the server's screenshot."""
+def _ludo_selection(appid, name):
+    rom_id = int(appid.split(":")[1])
+    return dict(kind="game", title=name or str(rom_id), logo="", fanart="", manual="", hasCheats=False,
+                playing=False, key=f"ludo/{rom_id}", system="steam", path="")
+
+
+def _ludo_art(appid, screenshot):
+    """Prefer the local ROM's ES-DE artwork, otherwise use the server's screenshot."""
     rom_id = int(appid.split(":")[1])
     server, games = _ludo_library()
     path = (games.get(rom_id) or {}).get("local_path", "")
-    out = {}
+    art = dict(logo="", fanart="", manual="")
     if path:
-        system, relative = _rom_path(path, _rom_dir())
-        if system:
-            out = describe(dict(event="game-select", system=system, path=relative))
-        else:
-            out = describe(dict(event="game-select", system=os.path.basename(os.path.dirname(path)), path=path))
-    if out.get("kind") != "game":
-        out = dict(kind="game", logo="", fanart="", manual="")
-    if not out["fanart"] and server and screenshot:
-        out["fanart"] = server + screenshot
-    out.update(title=name or str(rom_id), hasCheats=False, playing=False, key=f"ludo/{rom_id}", system="steam", path="")
-    return out
+        root, definitions = _rom_configuration()
+        system, relative = _rom_path(path, root, _custom_folders(root, definitions))
+        if not system:  # Remote paths can still hint at local artwork, without identifying a ROM.
+            system, relative = _split_rom_path(path.partition("/roms/")[2])
+        system = system or os.path.basename(os.path.dirname(path))
+        if re.fullmatch(r"[\w.-]+", system) and system not in (".", ".."):
+            art = _game_art(system, os.path.splitext(relative or os.path.basename(path))[0])
+    if not art["fanart"] and server and screenshot:
+        art["fanart"] = server + screenshot
+    return art
+
+
+def describe_ludo(appid, name, screenshot):
+    return dict(_ludo_selection(appid, name), **_ludo_art(appid, screenshot))
 
 
 def describe_steam(appid):
@@ -213,31 +389,75 @@ def describe_steam(appid):
     return None
 
 
-def describe(event):
-    """Reduce an ES-DE event to what the UI shows."""
+def _esde_selection(event):
+    """Foreground identity and play state, available before title or artwork lookups."""
     ev, system, path = event.get("event", "idle"), event.get("system", ""), event.get("path", "")
     out = dict(kind="idle", title="ArmadaLive", logo="", fanart="", manual="", hasCheats=False, playing=False, key="", system="", path="")
-    if ev == "system-select" and re.fullmatch(r"[\w.-]+", system):
+    request = None
+    if not re.fullmatch(r"[\w.-]+", system) or system in (".", ".."):
+        return out, request
+    if ev == "system-select":
+        out.update(kind="system", system=system, title=event.get("systemName") or system)
+        request = ("system", system, event.get("t", 0))
+    elif path and ev not in ("quit", "startup"):
+        root, definitions = _rom_configuration()
+        definition = definitions.get(system) or {}
+        folder = _system_folder(system, root, definition)
+        rom = rom_relative(system, path, folder)
+        out.update(kind="game", system=system, path=path, playing=ev == "game-start",
+                   title=event.get("name") or os.path.splitext(os.path.basename(path))[0],
+                   key=rom_key(system, rom), legacyKey="", romPath=os.path.join(folder, rom) if rom else "")
+        request = ("game", system, path, folder, frozenset(definition.get("extensions", ())), rom)
+    return out, request
+
+
+def _game_art(system, relative):
+    def media(kind):
+        folder = glob.escape(f"{MEDIA}/{system}/{kind}/")
+        return _first(folder + glob.escape(relative) + ".*") or _first(folder + glob.escape(os.path.basename(relative)) + ".*")
+
+    return dict(logo=_url(media("marquees")), fanart=_url(media("fanart") or media("screenshots")), manual=_url(media("manuals")))
+
+
+def _esde_game_metadata(system, path, folder, extensions, rom):
+    entries, basenames = _gamelist(system, folder)
+    relative = _gamelist_path(system, path, folder, basenames) or os.path.basename(path)
+    fields = _game_art(system, os.path.splitext(relative)[0])
+    title = _game_title(system, path, folder, index=(entries, basenames))
+    if title:
+        fields["title"] = title
+    stem = os.path.splitext(os.path.basename(path))[0]
+    legacy = f"{system}/{stem}" if rom and _legacy_roms(folder, extensions, entries, basenames, {stem}).get(stem) == rom else ""
+    return dict(fields, hasCheats=bool(_cheat_file(path)), legacyKey=legacy)
+
+
+def _read_metadata(request):
+    if request is None:
+        return None
+    kind, *args = request
+    if kind == "game":
+        fields = _esde_game_metadata(*args)
+    elif kind == "ludo":
+        fields = _ludo_art(*args)
+    else:
+        system, seed = args
         fan = sorted(glob.glob(glob.escape(f"{MEDIA}/{system}/fanart") + "/*"))
-        out.update(kind="system", system=system, title=event.get("systemName") or system, logo=_url(_system_logo(system)),
-                   fanart=_url(random.Random(event.get("t", 0)).choice(fan) if fan else ""))
-    elif path and re.fullmatch(r"[\w.-]+", system) and system not in (".", "..") and ev not in ("quit", "startup"):
-        relative = os.path.splitext(rom_relative(system, path))[0]
+        fields = dict(logo=_url(_system_logo(system)), fanart=_url(random.Random(seed).choice(fan) if fan else ""))
+    return request, fields
 
-        def media(kind):
-            folder = glob.escape(f"{MEDIA}/{system}/{kind}/")
-            return _first(folder + glob.escape(relative) + ".*") or _first(folder + glob.escape(os.path.basename(relative)) + ".*")
 
-        out.update(kind="game", title=_game_title(system, path) or event.get("name", ""), logo=_url(media("marquees")),
-                   fanart=_url(media("fanart") or media("screenshots")), manual=_url(media("manuals")),
-                   hasCheats=bool(_cheat_file(path)), playing=ev == "game-start",
-                   key=f"{system}/{os.path.splitext(os.path.basename(path))[0]}", system=system, path=path)
+def describe(event):
+    """Synchronous snapshot for callers that explicitly want a complete description."""
+    out, request = _esde_selection(event)
+    if request is not None:
+        out.update(_read_metadata(request)[1])
     return out
 
 
 class NowPlaying(QObject):
     changed = Signal()
     selection = Signal()
+    legacyRulesChanged = Signal()
 
     def __init__(self, gamescope, steamui):
         super().__init__()
@@ -250,6 +470,14 @@ class NowPlaying(QObject):
         self._steamui = steamui
         steamui.selected.connect(self._ui_selected)
         self._state, self._mtime, self._key, self._path = describe({}), 0, "", ""
+        self._base_state, self._metadata_fields = self._state, None
+        # The worker reads one immutable request and returns pure presentation
+        # fields. It never owns or changes foreground selection or play state.
+        request = self._metadata_request = [None]
+        self._metadata = Poller(self, lambda: _read_metadata(request[0]), self._metadata_ready, 2000, now=False)
+        rule_request = self._legacy_rule_request = [frozenset()]
+        self._legacy_rule_proofs = {}
+        self._legacy_rules = Poller(self, lambda: _rule_lookup(rule_request[0]), self._legacy_rules_ready, 15000, now=False)
         self.history = None      # set by the app: the one playtime record (history.py)
         gamescope.focusChanged.connect(self._focus)
         self._focus(gamescope.state["focus"])  # the first reading happened before we were listening
@@ -262,6 +490,48 @@ class NowPlaying(QObject):
     @Property("QVariant", notify=changed)
     def state(self):
         return self._state
+
+    def watch_legacy_rules(self, keys):
+        """Resolve older saved rule identities eagerly, independently of presentation."""
+        wanted = frozenset(key for key in keys if legacy_key_parts(key))
+        if wanted != self._legacy_rule_request[0]:
+            self._legacy_rule_request[0] = wanted
+            self._legacy_rule_proofs = {key: value for key, value in self._legacy_rule_proofs.items() if key in wanted}
+            self._legacy_rules.refresh()
+            self._republish_rule_status()
+            self.legacyRulesChanged.emit()
+
+    def legacy_rule_identity(self, key):
+        """The canonical target, empty when unresolved, or None while proof is pending."""
+        return self._legacy_rule_proofs.get(key) if key in self._legacy_rule_request[0] else ""
+
+    def esde_launch_state(self, system, path, title):
+        """Identity and rule readiness for an ArmadaLive-owned launch."""
+        state, _ = _esde_selection(dict(event="game-select", system=system, path=path, name=title))
+        self._legacy_rule_fields(state)
+        return state
+
+    def _legacy_rules_ready(self, result):
+        keys, aliases = result
+        if keys != self._legacy_rule_request[0]:
+            return
+        proofs = {key: aliases.get(key, ("",))[0] for key in keys}
+        if self._legacy_rule_proofs != proofs:
+            self._legacy_rule_proofs = proofs
+            self._republish_rule_status()
+            self.legacyRulesChanged.emit()
+
+    def _legacy_rule_fields(self, state):
+        key = _legacy_key_for_game(state["key"])
+        state["legacyPending"] = False
+        if key in self._legacy_rule_request[0]:
+            proof = self.legacy_rule_identity(key)
+            state["legacyPending"] = proof is None
+            state["legacyKey"] = key if proof == state["key"] else ""
+
+    def _republish_rule_status(self):
+        if self._base_state["key"].startswith("esde:"):
+            self._publish_state()
 
     @Slot(result="QVariant")
     def cheats(self):
@@ -312,34 +582,58 @@ class NowPlaying(QObject):
         self._proc, self._steam, self._esde = None, None, True
         self._ui_focus, self._ui_app = bool(ui), tuple(ui) if ui else (0, "")
         self._event = event or {}
-        self._update()
+        self._update(synchronous=True)
         self._pinned = True
 
-    def _update(self):
+    def _selected_ui(self):
+        appid, name = self._ui_app
+        if not appid:
+            return describe({}), None
+        if isinstance(appid, str):
+            return _ludo_selection(appid, name), ("ludo", appid, getattr(self._steamui, "screenshot", ""))
+        return describe_steam_ui(appid, name), None
+
+    def _update(self, synchronous=False):
         """What the bottom screen shows follows what is in front: Steam's UI, a Steam game, or ES-DE and its emulators."""
         if self._pinned:
             return
-        ludo = isinstance(self._ui_app[0], str)
-        ui = (describe_ludo(*self._ui_app, getattr(self._steamui, "screenshot", "")) if ludo else describe_steam_ui(*self._ui_app)) if self._ui_app[0] else None
+        request = None
         if self._ui_focus:                  # browsing Steam: the highlighted app, whatever runs in the background
-            self._path, state, key = "", ui or describe({}), None
+            state, request = self._selected_ui()
+            self._path, key = "", None
         elif self._steam:                   # a Steam game is in front
             self._path, state, key = "", dict(self._steam), self._steam["key"].partition("/")[2]
         elif self._sgame and not self._proc:   # a shortcut that is a game itself, and no emulator of ES-DE's behind it
             self._path, state, key = "", dict(self._sgame), "sgame|" + self._sgame["key"]
-        elif ui and time.monotonic() < self._hold and not self._shortcut:  # that game is still starting
-            self._path, state, key = "", ui, None
+        elif self._ui_app[0] and time.monotonic() < self._hold and not self._shortcut:  # that game is still starting
+            state, request = self._selected_ui()
+            self._path, key = "", None
         else:                               # ES-DE's own world
             # while ES-DE is browsing, what it announces wins over an emulator that may still be running behind it
             browsing = self._esde and self._event.get("event") in ("game-select", "system-select")
             shown = (self._event if browsing else None) or self._proc or (self._event if self._esde else {})
             self._path = shown.get("path", "")
-            state = describe(shown)
+            state, request = _esde_selection(shown)
             key = ("run|" + shown["path"]) if shown is self._proc else (shown.get("event", "") + "|" + (shown.get("path") or shown.get("system") or ""))
-        self._state = state
-        # the playtime of this game, for the Now page; History does the counting
-        self._state["playtime"] = self.history.total_for(state.get("key")) if self.history else 0
-        self.changed.emit()
+        self._base_state = state
+        if synchronous or request != self._metadata_request[0]:
+            self._metadata_request[0] = None if synchronous else request
+            self._metadata_fields = _read_metadata(request)[1] if synchronous and request is not None else None
+            self._metadata.refresh()
+        self._publish_state()
         if key is not None and key != self._key:  # browsing Steam's library must not throw the user back to the first page
             self._key = key
             self.selection.emit()
+
+    def _publish_state(self):
+        self._state = dict(self._base_state, **(self._metadata_fields or {}))
+        self._state["metadataPending"] = self._metadata_request[0] is not None and self._metadata_fields is None
+        self._legacy_rule_fields(self._state)
+        self._state["playtime"] = self.history.total_for(self._state["key"]) if self.history else 0
+        self.changed.emit()
+
+    def _metadata_ready(self, result):
+        request, fields = result
+        if request == self._metadata_request[0] and not self._pinned and self._metadata_fields != fields:
+            self._metadata_fields = fields
+            self._publish_state()
