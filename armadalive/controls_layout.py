@@ -1,56 +1,54 @@
-"""Emulator-specific control layouts and hotkeys."""
-from PySide6.QtCore import QObject, Slot, Signal
+"""Emulator-specific actions for the Controls page."""
+from PySide6.QtCore import QObject, Slot
+
+
+def canonical_system(system):
+    """Use the ES-DE identifiers for GameCube and PlayStation."""
+    return {"gamecube": "gc", "ps1": "psx"}.get(system, system)
+
+
+def emulator_family(system):
+    system = canonical_system(system)
+    if system in ("snes", "nes", "genesis", "n64", "psx"):
+        return "retroarch"
+    if system in ("gc", "wii"):
+        return "dolphin"
+    if system == "ps2":
+        return "armsx2"
+    return ""
+
+
+_ACTIONS = {
+    "retroarch": (
+        ("screenshot", "📸 Shot"),
+        ("toggle_cheats", "🎮 Cheats"),
+        ("fast_forward", "⏩ Fast"),
+        ("save_state", "💾 Save"),
+        ("load_state", "📂 Load"),
+    ),
+    "dolphin": (
+        ("screenshot", "📸 Shot"),
+        ("toggle_widescreen", "📐 Wide"),
+        ("increase_resolution", "⬆️ Res"),
+        ("decrease_resolution", "⬇️ Res"),
+        ("toggle_aspect", "🔄 Ratio"),
+    ),
+    "armsx2": (
+        ("toggle_widescreen", "📐 Wide"),
+        ("increase_upscaling", "⬆️ Scale"),
+        ("decrease_upscaling", "⬇️ Scale"),
+        ("toggle_interlace", "🔄 Interlace"),
+    ),
+}
 
 
 class ControlsLayout(QObject):
-    """Provides hotkey buttons based on the running emulator/system."""
-    changed = Signal()
+    """Provides hotkey buttons based on the emulator system."""
 
-    def __init__(self):
-        super().__init__()
-        self._current_system = None
-
+    @Slot(str, result="QVariantMap")
     def layout_for(self, system):
-        """Get hotkeys for a given system."""
-        if not system:
-            return {"trackpad": True, "hotkeys": []}
-
-        layouts = {
-            "snes": {"trackpad": False, "hotkeys": self._retroarch_hotkeys()},
-            "genesis": {"trackpad": False, "hotkeys": self._retroarch_hotkeys()},
-            "n64": {"trackpad": False, "hotkeys": self._retroarch_hotkeys()},
-            "nes": {"trackpad": False, "hotkeys": self._retroarch_hotkeys()},
-            "ps1": {"trackpad": False, "hotkeys": self._retroarch_hotkeys()},
-            "ps2": {"trackpad": True, "hotkeys": self._armsx2_hotkeys()},
-            "gamecube": {"trackpad": True, "hotkeys": self._dolphin_hotkeys()},
-            "wii": {"trackpad": True, "hotkeys": self._dolphin_hotkeys()},
-            "steam": {"trackpad": True, "hotkeys": []},
+        family = emulator_family(system)
+        return {
+            "trackpad": family != "retroarch",
+            "hotkeys": [{"id": action, "label": label, "icon": ""} for action, label in _ACTIONS.get(family, ())],
         }
-        return layouts.get(system, {"trackpad": True, "hotkeys": []})
-
-    def _retroarch_hotkeys(self):
-        """RetroArch hotkeys: save/load state, etc."""
-        return [
-            {"id": "save_state", "label": "🔒 Save", "icon": ""},
-            {"id": "load_state", "label": "🔓 Load", "icon": ""},
-            {"id": "toggle_cheats", "label": "🎮 Cheats", "icon": ""},
-            {"id": "fast_forward", "label": "⏩ Fast", "icon": ""},
-        ]
-
-    def _dolphin_hotkeys(self):
-        """Dolphin hotkeys: widescreen, resolution, etc."""
-        return [
-            {"id": "toggle_widescreen", "label": "📐 Wide", "icon": ""},
-            {"id": "increase_resolution", "label": "⬆️ Res", "icon": ""},
-            {"id": "decrease_resolution", "label": "⬇️ Res", "icon": ""},
-            {"id": "toggle_fullscreen", "label": "🖥️ Full", "icon": ""},
-        ]
-
-    def _armsx2_hotkeys(self):
-        """ARMSX2 hotkeys: upscaling, widescreen, etc."""
-        return [
-            {"id": "toggle_widescreen", "label": "📐 Wide", "icon": ""},
-            {"id": "increase_upscaling", "label": "⬆️ Scale", "icon": ""},
-            {"id": "decrease_upscaling", "label": "⬇️ Scale", "icon": ""},
-            {"id": "toggle_interlace", "label": "🔄 Interlace", "icon": ""},
-        ]

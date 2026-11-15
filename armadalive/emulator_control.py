@@ -1,178 +1,200 @@
-"""Execute emulator-specific hotkey actions."""
-import os, re, struct, fcntl
-from PySide6.QtCore import QObject, Slot, Signal
+"""Send emulator hotkeys and update supported emulator configuration options."""
+import math
 
-# from trackpad.py: uinput event codes
-EV_KEY = 1
-EV_SYN = 0
-BTN_LEFT = 0x110
-KEY_F2 = 60
-KEY_F4 = 62
-KEY_C = 46
-KEY_SPACE = 57
-KEY_F1 = 59
+from PySide6.QtCore import QCoreApplication, QObject, QTimer, Qt, Signal, Slot
 
-EVENT = struct.Struct("@llHHi")
+from . import emusettings
+from .controls_layout import canonical_system, emulator_family
+from .trackpad import EV_KEY, KEYS, Virtual
+
+# Defaults from RetroArch's retroarch.cfg and Dolphin's HotkeyManager.cpp.
+_HOTKEYS = {
+    "retroarch": {
+        "screenshot": 66,       # F8
+        "save_state": 60,       # F2
+        "load_state": 62,       # F4
+        "toggle_cheats": 22,    # U
+        "fast_forward": KEYS["space"],
+    },
+    "dolphin": {"screenshot": 67},  # F9
+}
+_KEYS = tuple(sorted({key for actions in _HOTKEYS.values() for key in actions.values()}))
+# Userspace discovers a newly created uinput device asynchronously. Then hold
+# the key over several polls so keyboard-state readers can observe it.
+_KEYBOARD_DISCOVERY_MS = 1000
+_KEY_HOLD_MS = 80
+
+
+def _dolphin_widescreen(current):
+    if current is None or current.lower() in ("false", "0"):
+        return "True"
+    if current.lower() in ("true", "1"):
+        return "False"
+    raise ValueError("Unrecognized Dolphin widescreen value.")
+
+
+def _dolphin_aspect(current):
+    # Dolphin's Rotate Aspect Ratio hotkey cycles Auto, Force Wide, Force Standard, Stretch.
+    value = 0 if current is None else int(current)
+    if not 0 <= value <= 6:
+        raise ValueError("Unrecognized Dolphin aspect ratio.")
+    return str((value + 1) % 4)
+
+
+def _armsx2_aspect(current):
+    return "Auto 4:3/3:2" if current == "16:9" else "16:9"
+
+
+def _armsx2_interlace(current):
+    # The ARMSX2 GSInterlaceMode enum starts with Automatic (0) and Off (1).
+    if current in (None, "0"):
+        return "1"
+    if current == "1":
+        return "0"
+    raise ValueError("Choose Automatic or Off in ARMSX2 before using this toggle.")
+
+
+_CONFIG_ACTIONS = {
+    "dolphin": {
+        "toggle_widescreen": ("wideScreenHack", _dolphin_widescreen),
+        "toggle_aspect": ("AspectRatio", _dolphin_aspect),
+    },
+    "armsx2": {
+        "toggle_widescreen": ("AspectRatio", _armsx2_aspect),
+        "toggle_interlace": ("deinterlace_mode", _armsx2_interlace),
+    },
+}
+_RESOLUTION_ACTIONS = {
+    "dolphin": {"increase_resolution": 1, "decrease_resolution": -1},
+    "armsx2": {"increase_upscaling": 1, "decrease_upscaling": -1},
+}
+
+
+def _resolution_step(current, direction, fmt, fractional):
+    try:
+        value = 1 if current is None else (float(current) if fractional else int(current))
+        next_value = math.floor(value) + 1 if direction > 0 else math.ceil(value) - 1
+    except (ValueError, OverflowError):
+        raise ValueError("Unrecognized emulator resolution.") from None
+    if value < 0 or not 1 <= next_value <= emusettings.MAX:
+        raise ValueError(f"Controls can set resolutions from 1× to {emusettings.MAX}×.")
+    return fmt.format(next_value)
+
 
 class EmulatorControl(QObject):
-    """Execute hotkey actions for different emulators."""
+    """Execute the shortcuts available on the Controls page."""
     notice = Signal(str, str)  # message, type
 
     def __init__(self):
         super().__init__()
-        self._current_system = None
         self._keyboard = None
-        self._init_keyboard()
+        self._ready = False
+        self._key = None
+        self._key_timer = QTimer(self)
+        self._key_timer.setSingleShot(True)
+        self._key_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._key_timer.timeout.connect(self._advance_keyboard)
+        self._open_keyboard()
+        app = QCoreApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._close_keyboard)
 
-    def _init_keyboard(self):
-        """Initialize virtual keyboard device."""
+    def _open_keyboard(self):
         try:
-            self._keyboard = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
-            # setup keyboard device
-            fcntl.ioctl(self._keyboard, 0x40045564, EV_KEY)  # UI_SET_EVBIT
-            for key in (KEY_F2, KEY_F4, KEY_C, KEY_SPACE):
-                fcntl.ioctl(self._keyboard, 0x40045565, key)  # UI_SET_KEYBIT
-        except Exception:
-            self._keyboard = None
+            self._keyboard = Virtual("ArmadaLive Emulator Keys", keys=_KEYS)
+        except OSError:
+            return False
+        self._key_timer.start(_KEYBOARD_DISCOVERY_MS)
+        return True
+
+    def _close_keyboard(self):
+        self._key_timer.stop()
+        if self._keyboard is not None:
+            if self._ready and self._key is not None:
+                try:
+                    self._write_key(0)
+                except OSError:
+                    pass
+            self._keyboard.close()
+        self._keyboard = None
+        self._ready = False
+        self._key = None
+
+    def _write_key(self, value):
+        self._keyboard.emit(EV_KEY, self._key, value)
+        self._keyboard.sync()
+
+    def _input_failed(self):
+        self._close_keyboard()
+        self.notice.emit("Could not send the emulator shortcut through /dev/uinput.", "warn")
+
+    def _press_key(self):
+        try:
+            self._write_key(1)
+        except OSError:
+            self._input_failed()
+        else:
+            self._key_timer.start(_KEY_HOLD_MS)
+
+    def _advance_keyboard(self):
+        if not self._ready:
+            self._ready = True
+            if self._key is not None:
+                self._press_key()
+            return
+
+        try:
+            self._write_key(0)
+        except OSError:
+            self._input_failed()
+        else:
+            self._key = None
+            self.notice.emit("Emulator shortcut sent to the virtual keyboard.", "info")
+
+    def _send_key(self, key):
+        if self._key is not None:
+            self.notice.emit("An emulator shortcut is already in progress.", "warn")
+            return
+        if self._keyboard is None and not self._open_keyboard():
+            self._input_failed()
+            return
+
+        self._key = key
+        if self._ready:
+            self._press_key()
 
     @Slot(str, str, str)
     def execute(self, system, action_id, game_path=""):
-        """Execute a hotkey action."""
-        if system in ("snes", "nes", "genesis", "n64", "ps1"):
-            self._retroarch_action(action_id)
-        elif system in ("gamecube", "wii"):
-            self._dolphin_action(action_id, game_path)
-        elif system == "ps2":
-            self._armsx2_action(action_id, game_path)
+        family = emulator_family(system)
+        key = _HOTKEYS.get(family, {}).get(action_id)
+        if key is not None:
+            self._send_key(key)
+            return
 
-    def _send_key(self, keycode):
-        """Send keyboard key via uinput."""
-        if not self._keyboard:
-            return False
-        try:
-            os.write(self._keyboard, EVENT.pack(0, 0, EV_KEY, keycode, 1))  # press
-            os.write(self._keyboard, EVENT.pack(0, 0, EV_SYN, 0, 0))        # sync
-            os.write(self._keyboard, EVENT.pack(0, 0, EV_KEY, keycode, 0))  # release
-            os.write(self._keyboard, EVENT.pack(0, 0, EV_SYN, 0, 0))        # sync
-            return True
-        except Exception:
-            return False
-
-    def _retroarch_action(self, action_id):
-        """RetroArch actions: send hotkeys to RetroArch."""
-        # Note: these assume RetroArch hotkeys are configured; adjust keycodes if your hotkeys differ
-        actions = {
-            "screenshot": (KEY_F1, "📸 Screenshot saved"),
-            "save_state": (KEY_F2, "💾 State saved"),
-            "load_state": (KEY_F4, "📂 State loaded"),
-            "toggle_cheats": (KEY_C, "🎮 Cheats toggled"),
-            "fast_forward": (KEY_SPACE, "⏩ Fast forward toggled"),
-        }
-        if action_id in actions:
-            keycode, msg = actions[action_id]
-            if self._send_key(keycode):
-                self.notice.emit(msg, "info")
+        change = _CONFIG_ACTIONS.get(family, {}).get(action_id)
+        direction = _RESOLUTION_ACTIONS.get(family, {}).get(action_id)
+        if change is None and direction is None:
+            if family == "armsx2" and action_id == "screenshot":
+                self.notice.emit("ARMSX2 does not provide a supported screenshot shortcut.", "warn")
             else:
-                self.notice.emit(f"⚠️ {msg} (uinput failed)", "warn")
-
-    def _dolphin_action(self, action_id, game_path=""):
-        """Dolphin actions: modify GameSettings.ini."""
-        if action_id == "screenshot":
-            if self._send_key(KEY_F1):
-                self.notice.emit("📸 Screenshot saved", "info")
+                self.notice.emit("Unsupported emulator action.", "warn")
             return
-
         if not game_path:
-            self.notice.emit("⚠️ No game running", "warn")
+            self.notice.emit("No game selected.", "warn")
             return
 
-        # Get Dolphin game ID from game path (e.g. /roms/gamecube/zelda.gcm -> ZELDA)
-        game_id = os.path.splitext(os.path.basename(game_path))[0].upper()[:6]
-        config_dir = os.path.expanduser("~/.config/dolphin-emu/GameSettings/")
-        config_file = os.path.join(config_dir, f"{game_id}.ini")
-
+        path, section, option, fmt = emusettings.SPECS[canonical_system(system)]
+        if change is None:
+            def transform(current):
+                return _resolution_step(current, direction, fmt, family == "armsx2")
+        else:
+            option, transform = change
         try:
-            os.makedirs(config_dir, exist_ok=True)
-            if not os.path.exists(config_file):
-                open(config_file, 'a').close()
-
-            # Read current settings
-            settings = {}
-            if os.path.exists(config_file):
-                for line in open(config_file):
-                    if '=' in line:
-                        k, v = line.strip().split('=', 1)
-                        settings[k.strip()] = v.strip()
-
-            # Modify settings
-            if action_id == "toggle_widescreen":
-                current = settings.get("Aspect Ratio", "0")
-                settings["Aspect Ratio"] = "3" if current != "3" else "0"
-                self.notice.emit("📐 Widescreen toggled", "info")
-            elif action_id == "increase_resolution":
-                # Internal resolution: 1=1x, 2=2x, etc.
-                current = int(settings.get("InternalResolution", "1"))
-                settings["InternalResolution"] = str(min(current + 1, 5))
-                self.notice.emit("⬆️ Resolution increased", "info")
-            elif action_id == "decrease_resolution":
-                current = int(settings.get("InternalResolution", "1"))
-                settings["InternalResolution"] = str(max(current - 1, 1))
-                self.notice.emit("⬇️ Resolution decreased", "info")
-
-            # Write back
-            with open(config_file, 'w') as f:
-                for k, v in settings.items():
-                    f.write(f"{k} = {v}\n")
-        except Exception as e:
-            self.notice.emit(f"⚠️ Config error: {str(e)[:30]}", "warn")
-
-    def _armsx2_action(self, action_id, game_path=""):
-        """ARMSX2 actions: modify inis."""
-        if action_id == "screenshot":
-            if self._send_key(KEY_F1):
-                self.notice.emit("📸 Screenshot saved", "info")
+            updated = emusettings.update_setting((path, section, option, fmt), transform)
+        except ValueError as error:
+            self.notice.emit(str(error), "warn")
             return
-
-        if not game_path:
-            self.notice.emit("⚠️ No game running", "warn")
-            return
-
-        config_file = os.path.expanduser("~/.config/PCSX2/inis/PCSX2_vm.ini")
-
-        try:
-            os.makedirs(os.path.dirname(config_file), exist_ok=True)
-            if not os.path.exists(config_file):
-                open(config_file, 'a').close()
-
-            # Read current settings
-            settings = {}
-            if os.path.exists(config_file):
-                for line in open(config_file):
-                    if '=' in line and not line.startswith('['):
-                        k, v = line.strip().split('=', 1)
-                        settings[k.strip()] = v.strip()
-
-            # Modify settings
-            if action_id == "toggle_widescreen":
-                current = settings.get("widescreen", "0")
-                settings["widescreen"] = "0" if current != "0" else "1"
-                self.notice.emit("📐 Widescreen toggled", "info")
-            elif action_id == "increase_upscaling":
-                current = int(settings.get("upscale_multiplier", "1"))
-                settings["upscale_multiplier"] = str(min(current + 1, 5))
-                self.notice.emit("⬆️ Upscaling increased", "info")
-            elif action_id == "decrease_upscaling":
-                current = int(settings.get("upscale_multiplier", "1"))
-                settings["upscale_multiplier"] = str(max(current - 1, 1))
-                self.notice.emit("⬇️ Upscaling decreased", "info")
-            elif action_id == "toggle_interlace":
-                current = settings.get("deinterlace", "0")
-                settings["deinterlace"] = "0" if current != "0" else "1"
-                self.notice.emit("🔄 Interlace toggled", "info")
-
-            # Write back
-            with open(config_file, 'w') as f:
-                for k, v in settings.items():
-                    f.write(f"{k} = {v}\n")
-        except Exception as e:
-            self.notice.emit(f"⚠️ Config error: {str(e)[:30]}", "warn")
+        if updated:
+            self.notice.emit("Global emulator setting saved on disk. A running game may not reload it.", "info")
+        else:
+            self.notice.emit("Could not update the emulator configuration file.", "warn")
