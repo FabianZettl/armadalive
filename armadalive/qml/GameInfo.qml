@@ -4,11 +4,23 @@ import QtQuick
 // Reached by tapping the Game page and then Info.
 Flickable {
     id: page
+    property bool presentationActive: true
+    readonly property bool presented: presentationActive && visible
     readonly property var s: nowPlaying.state
-    property var d: gameinfo.of(s.system || "", s.path || "", s.key || "", s.title || "")
-    onSChanged: d = gameinfo.of(s.system || "", s.path || "", s.key || "", s.title || "")
-    Connections { target: gameinfo; function onUpdated() { page.d = gameinfo.of(page.s.system || "", page.s.path || "", page.s.key || "", page.s.title || "") } }
-    Connections { target: history; function onChanged() { page.d = gameinfo.of(page.s.system || "", page.s.path || "", page.s.key || "", page.s.title || "") } }
+    property var d: ({})
+    function refresh() {
+        if (presented)
+            d = gameinfo.of(s.system || "", s.path || "", s.key || "", s.title || "")
+    }
+    onSChanged: refresh()
+    onPresentedChanged: {
+        if (presented) refresh()
+        else gameinfo.suspend()
+    }
+    Component.onCompleted: refresh()
+    Component.onDestruction: if (gameinfo) gameinfo.suspend()
+    Connections { target: gameinfo; function onUpdated() { page.refresh() } }
+    Connections { target: history; function onChanged() { page.refresh() } }
     readonly property real m: 16
     contentHeight: col.height + 2 * m
     clip: true
@@ -99,7 +111,8 @@ Flickable {
             wrapMode: Text.WordWrap
             color: Theme.muted
             font.pixelSize: 14
-            text: (steamGame ? Tr.t("Steam has not sent this game's data yet. It needs an internet connection and shows up here after a moment.")
+            text: page.d.loading ? Tr.t("Loading…")
+                  : (steamGame ? Tr.t("Steam has not sent this game's data yet. It needs an internet connection and shows up here after a moment.")
                              : Tr.t("ES-DE has no description for this game. Scrape it there (media and metadata) and it shows up here."))
                   + "\n\n" + (page.s.system || "?") + "  ·  " + (page.s.path || page.s.key || "?")
         }

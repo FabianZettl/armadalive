@@ -97,17 +97,32 @@ class History(QObject):
             if self._open is None or self._open[0] != s["key"]:
                 self._end()
                 self._begin(s)
+            elif not s.get("metadataPending"):
+                # The already-open session can receive title and artwork after its start.
+                rec = self._games[s["key"]]
+                fields = {field: value for field, value in self._presentation(s).items() if value}
+                if any(rec.get(field) != value for field, value in fields.items()):
+                    rec.update(fields)
+                    self._save()
+                    self.changed.emit()
         else:
             self._end()
 
     def _begin(self, s):
         rec = self._games.setdefault(s["key"], dict(total=0, plays=0))
-        rec.update(title=s.get("title") or s["key"], system=s.get("system", ""), path=s.get("path", ""), art=s.get("fanart") or s.get("logo") or "", last=time.time())
+        fields = self._presentation(s)
+        if s.get("metadataPending"):
+            fields = {field: value for field, value in fields.items() if not rec.get(field)}
+        rec.update(fields, system=s.get("system", ""), path=s.get("path", ""), last=time.time())
         rec["plays"] = rec.get("plays", 0) + 1
         self._sessions.append([s["key"], int(time.time()), 0])
         self._open = [s["key"], int(time.time()), 0, time.monotonic()]
         self._save()
         self.changed.emit()
+
+    @staticmethod
+    def _presentation(state):
+        return dict(title=state.get("title") or state["key"], art=state.get("fanart") or state.get("logo") or "")
 
     def _count(self):
         """Adds what has passed since the last count to the open session and the game's total."""
