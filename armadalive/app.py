@@ -81,10 +81,19 @@ def main():
     engine.load(QUrl.fromLocalFile(HERE + "/qml/Main.qml"))
     if not engine.rootObjects():
         return 1
+    window = engine.rootObjects()[0]
+    presentation = (monitor, gamescope, backends["admin"], backends["controls"], backends["health"], backends["media"])
+
+    def update_presentation():
+        active = window.property("presentationActive")
+        for backend in presentation:
+            backend.set_active(active)
+
+    window.presentationActiveChanged.connect(update_presentation)
+    update_presentation()
     if "--snapshot" in sys.argv:  # render the first frames to a PNG and exit, for docs and tests
         out = sys.argv[sys.argv.index("--snapshot") + 1]
         page = int(sys.argv[sys.argv.index("--page") + 1]) if "--page" in sys.argv else 0
-        window = engine.rootObjects()[0]
         # a snapshot always shows a fixed game state, otherwise whatever ES-DE or Steam is doing at that moment throws the page
         # back to "Game": {"event": {...}} like ES-DE sends, or {"ui": [appid, "name"]} for Steam's UI; none means idle
         demo = json.loads(sys.argv[sys.argv.index("--demo") + 1]) if "--demo" in sys.argv else {}

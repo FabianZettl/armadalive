@@ -1,19 +1,73 @@
-"""Gamescope on the main screen: FPS and focused app from its stats pipe, FPS limit and refresh rate from X properties."""
-import os, subprocess, threading, time
-from PySide6.QtCore import Property, QObject, Signal, Slot
+"""Gamescope frame rate from its stats pipe and focus and display settings from X properties."""
+import collections, math, os, select, subprocess, threading, time
+from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 from .poller import Poller
 
 PIPE = f"/run/user/{os.getuid()}/gamescope-stats/stats.pipe"
 ENV = dict(os.environ, DISPLAY=os.environ.get("ARMADALIVE_GAMESCOPE_DISPLAY", ":0"))
 
 
-def _xprop(name):
+DISPLAY_PROPERTIES = ("GAMESCOPE_FPS_LIMIT", "GAMESCOPE_DISPLAY_REFRESH_RATE_FEEDBACK", "GAMESCOPE_DYNAMIC_REFRESH")
+
+
+def _xprops(*names):
     try:
-        out = subprocess.run(["xprop", "-root", name], env=ENV, capture_output=True, text=True, timeout=3).stdout
+        reply = subprocess.run(["xprop", "-root", *names], env=ENV, capture_output=True, text=True, timeout=3)
     except (OSError, subprocess.TimeoutExpired):
-        return 0
-    value = out.partition("=")[2].strip().split(",")[0]
-    return int(value) if value.isdigit() else 0
+        return None
+    if reply.returncode:
+        return None
+    props = {}
+    out = reply.stdout
+    for line in out.splitlines():
+        name, _, value = line.partition("=")
+        value = value.strip().split(",")[0]
+        if value.isdecimal():
+            props[name.partition("(")[0].strip()] = int(value)
+    return props
+
+
+def _xprop(name):
+    props = _xprops(name)
+    return None if props is None else props.get(name, 0)
+
+
+def _read_fps(samples, stopped):
+    """Keep only the latest reading. Reopen the pipe if Gamescope restarts."""
+    while not stopped.is_set():
+        try:
+            with os.fdopen(os.open(PIPE, os.O_RDONLY | os.O_NONBLOCK), "rb", buffering=0) as pipe:
+                pending = b""
+                while not stopped.is_set():
+                    if not select.select([pipe], [], [], 1)[0]:
+                        continue
+                    chunk = pipe.read(4096)
+                    if chunk is None:
+                        continue
+                    if not chunk:
+                        samples.append((0.0, 0.0))
+                        break
+                    pending += chunk
+                    *lines, pending = pending.split(b"\n")
+                    if len(pending) >= 4096:
+                        pending = b""
+                    for line in lines:
+                        key, _, value = line.strip().partition(b"=")
+                        if key == b"fps":
+                            try:
+                                fps = float(value)
+                                if math.isfinite(fps):
+                                    samples.append((fps, time.monotonic()))
+                            except ValueError:
+                                pass
+        except OSError:
+            pass
+        stopped.wait(1)
+
+
+def _read_display():
+    props = _xprops(*DISPLAY_PROPERTIES)
+    return None if props is None else tuple(props.get(name, 0) for name in DISPLAY_PROPERTIES)
 
 
 class Gamescope(QObject):
@@ -22,47 +76,48 @@ class Gamescope(QObject):
 
     def __init__(self):
         super().__init__()
-        self._fps, self._seen, self._focus, self._limit, self._refresh, self._hz, self._n = 0.0, 0.0, "", 0, 0, 0, 0
-        threading.Thread(target=self._read, daemon=True).start()
-        self._poller = Poller(self, self._read_x, self._apply, 1000)   # xprop runs here: not on the UI thread
+        self._focus, self._limit, self._refresh, self._hz = "", 0, 0, 0
+        self._samples = collections.deque([(0.0, 0.0)], maxlen=1)
+        self._published_fps = 0
+        stopped = threading.Event()
+        self.destroyed.connect(stopped.set)
+        threading.Thread(target=_read_fps, args=(self._samples, stopped), daemon=True).start()
+        self._focus_poller = Poller(self, lambda: _xprop("GAMESCOPE_FOCUSED_APP"), self._apply_focus, 1000)
+        self._display_poller = Poller(self, _read_display, self._apply_display, 3000, idle_ms=15000)
+        # Pipe samples and their expiry remain visible even when X queries fail.
+        timer = QTimer(self)
+        timer.timeout.connect(self._publish_fps)
+        timer.start(1000)
+
+    def set_active(self, active):
+        self._display_poller.set_active(active)
 
     @Property("QVariant", notify=changed)
     def state(self):
-        return dict(fps=round(self._fps), focus=self._focus, limit=self._limit, refresh=self._refresh, hz=self._hz)
+        fps, seen = self._samples[-1]
+        # The pipe publishes about every five seconds.
+        fps = round(fps) if time.monotonic() - seen <= 12 else 0
+        return dict(fps=fps, focus=self._focus, limit=self._limit, refresh=self._refresh, hz=self._hz)
 
-    def _read(self):
-        # blocks until gamescope writes "fps=<n>" lines (the pipe is shared: every reader takes lines away from the others)
-        while True:
-            try:
-                with open(PIPE) as pipe:
-                    for line in pipe:
-                        key, _, value = line.strip().partition("=")
-                        if key == "fps":
-                            try:
-                                self._fps, self._seen = float(value), time.monotonic()
-                            except ValueError:
-                                pass
-                self._seen = 0.0    # the writer closed the pipe (gamescope restarted): show 0 until it is back
-            except Exception:   # a bad line or a vanished pipe must never end this thread: the FPS display would stay dead
-                pass
-            time.sleep(1)
+    @Slot()
+    def _publish_fps(self):
+        if self.state["fps"] != self._published_fps:
+            self._publish()
 
-    def _read_x(self):
-        app = _xprop("GAMESCOPE_FOCUSED_APP")
-        x = dict(focus=str(app) if app else "")
-        if self._n % 3 == 0:  # X properties change rarely
-            x.update(limit=_xprop("GAMESCOPE_FPS_LIMIT"), refresh=_xprop("GAMESCOPE_DISPLAY_REFRESH_RATE_FEEDBACK"), hz=_xprop("GAMESCOPE_DYNAMIC_REFRESH"))
-        self._n += 1
-        return x
-
-    def _apply(self, x):
-        if time.monotonic() - self._seen > 12:
-            self._fps = 0.0  # gamescope writes fps= every 5 s (not every second): zero only after two samples are missing
-        if x["focus"] != self._focus:
-            self._focus = x["focus"]
-            self.focusChanged.emit(self._focus)
-        self._limit, self._refresh, self._hz = x.get("limit", self._limit), x.get("refresh", self._refresh), x.get("hz", self._hz)
+    def _publish(self):
+        self._published_fps = self.state["fps"]
         self.changed.emit()
+
+    def _apply_focus(self, app):
+        focus = str(app) if app else ""
+        if focus != self._focus:
+            self._focus = focus
+            self.focusChanged.emit(focus)
+            self._publish()
+
+    def _apply_display(self, display):
+        self._limit, self._refresh, self._hz = display
+        self._publish()
 
     @Slot(int)
     def setFpsLimit(self, fps):
