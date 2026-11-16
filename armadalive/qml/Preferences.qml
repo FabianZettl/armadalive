@@ -341,8 +341,12 @@ Item {
             Body { color: Theme.muted; font.pixelSize: 13; text: Tr.t("Settings, game rules, tile order, apps, folders and play time in one file:") + " " + page.bk.path }
             Row {
                 spacing: 10
-                PillButton { label: Tr.t("Save backup"); onClicked: backup.save() }
-                PillButton { label: Tr.t("Restore"); enabled: page.bk.exists; onClicked: backup.restore() }
+                PillButton { label: Tr.t("Save backup"); enabled: !page.bk.busy && !page.bk.restartRequired; onClicked: backup.save() }
+                PillButton {
+                    label: page.bk.restartRequired ? Tr.t("Retry restart") : Tr.t("Restore")
+                    enabled: !page.bk.busy && (page.bk.exists || page.bk.restartRequired)
+                    onClicked: backup.restore()
+                }
             }
             Body { visible: page.bk.message !== ""; color: Theme.muted; font.pixelSize: 13
                    text: page.bk.message === "saved" ? Tr.t("Saved.") : (page.bk.message === "restored" ? Tr.t("Restored. The app restarts.") : page.bk.message) }

@@ -40,6 +40,8 @@ QtObject {
         "gamescope's stats pipe is missing: FPS cannot be read": "Die Stats-Pipe von gamescope fehlt: FPS lassen sich nicht lesen",
         "Screens": "Bildschirme", "General": "Allgemein", "Close game": "Spiel beenden", "Hold Start + Select for 2 s": "Start + Select 2 s halten", "Theme": "Theme", "Changing the LEDs needs the root helper (Settings → Setup).": "Zum Ändern der LEDs braucht es den Root-Helper (Einstellungen → Setup).",
         "Keyboard": "Tastatur", "Add to Steam": "Zu Steam", "In Steam": "In Steam", "Shortcut created": "Shortcut erstellt", "Already in Steam": "Schon in Steam",
+        "App layout could not be saved": "App-Anordnung konnte nicht gespeichert werden",
+        "Retry restart": "Neustart erneut versuchen",
         "Launch the game from ES-DE once first": "Spiel erst einmal aus ES-DE starten", "Steam is not reachable": "Steam nicht erreichbar",
         "Checking saves…": "Prüfe Spielstände …", "Syncing saves": "Spielstände werden abgeglichen", "Starting": "Startet", "Uploading saves…": "Spielstände werden hochgeladen …",
         "Trackpad": "Trackpad", "Glide": "Gleiten",

@@ -1,9 +1,9 @@
 """The app grid on the idle screen: installed apps from their .desktop files (launched on the bottom screen) and Steam games and
 shortcuts (launched through Steam on the main screen) and ES-DE games (through a Steam shortcut they get on the first tap), as many as you add; the grid scrolls sideways."""
-import configparser, json, logging, os, random, re, subprocess, threading
+import configparser, json, logging, os, random, re, subprocess, threading, time
 from PySide6.QtCore import Property, QObject, Qt, QUrl, Signal, Slot
 
-from . import esdelib, steamlib, steamshortcuts, steamui
+from . import esdelib, persistence, steamlib, steamshortcuts, steamui
 from .nowplaying import ES
 
 CONFIG = os.path.expanduser("~/.config/armadalive/apps.json")
@@ -129,6 +129,9 @@ class Apps(QObject):
     changed = Signal()
     catalogChanged = Signal()
     catalogLoadingChanged = Signal()
+    layoutEditingBlockedChanged = Signal()
+    saveFailed = Signal(str)
+    _saveFailed = Signal(object)
     _scanned = Signal(int, object)
     _artReady = Signal(int, object)
 
@@ -149,6 +152,10 @@ class Apps(QObject):
         self._art_generation = 0
         self._tile_art = {}
         self._art_attempted = set()
+        self._save_lock = threading.Lock()
+        self._pending_save = self._writer = self._save_error = None
+        self._writes_paused = self._layout_editing_blocked = self._deferred_save = False
+        self._saveFailed.connect(self._report_save_error, Qt.QueuedConnection)
         self._scanned.connect(self._accept_scan, Qt.QueuedConnection)
         self._artReady.connect(self._accept_art, Qt.QueuedConnection)
         if getattr(history, "changed", None) is not None:
@@ -285,9 +292,101 @@ class Apps(QObject):
         return slots
 
     def _save(self):
-        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
-        with open(CONFIG, "w") as f:
-            json.dump({"slots": self._slots, "folders": self._folders, "next": self._next}, f)
+        if self._writes_paused:
+            self._deferred_save = True
+            return
+        snapshot = {
+            "slots": tuple(self._slots),
+            "folders": {key: dict(name=folder["name"], items=tuple(folder["items"]))
+                        for key, folder in self._folders.items()},
+            "next": self._next,
+        }
+        with self._save_lock:
+            self._pending_save = (CONFIG, snapshot)
+            if self._writer is None:
+                self._start_writer()
+
+    def _start_writer(self, *, retry=True):
+        # Caller holds the lock, including when resubmitting a failed snapshot.
+        self._save_error = None
+        self._writer = threading.Thread(target=self._write_pending, args=(retry,), daemon=True)
+        self._writer.start()
+
+    def _write_pending(self, retry):
+        failed = None
+        while True:
+            with self._save_lock:
+                pending = self._pending_save
+                if pending is None:
+                    self._writer = None
+                    return
+            path, snapshot = pending
+            try:
+                persistence.write_json(path, snapshot, follow_symlinks=True, require_writable=True)
+            except (OSError, ValueError) as error:
+                log.error("Failed to save app layout to %s: %s", path, error)
+                with self._save_lock:
+                    if self._pending_save is not pending:
+                        continue  # A newer snapshot already includes this edit.
+                    if not retry or failed is pending:
+                        self._save_error = error
+                        self._writer = None
+                        self._saveFailed.emit(pending)
+                        return
+                failed = pending
+                time.sleep(0.1)
+            else:
+                with self._save_lock:
+                    if self._pending_save is pending:
+                        self._pending_save = None
+
+    @Slot(object)
+    def _report_save_error(self, pending):
+        with self._save_lock:
+            error = self._save_error if self._pending_save is pending else None
+        if error is not None:
+            self.saveFailed.emit(str(error))
+
+    @Property(bool, notify=layoutEditingBlockedChanged)
+    def layoutEditingBlocked(self):
+        return self._layout_editing_blocked
+
+    def pauseWrites(self, *, restoring=False):
+        """Hold new submissions while accepted snapshots finish."""
+        self._writes_paused = True
+        self._layout_editing_blocked = restoring
+        with self._save_lock:
+            if self._pending_save is not None and self._writer is None:
+                self._start_writer()
+        if restoring:
+            self.layoutEditingBlockedChanged.emit()
+
+    def writesPending(self):
+        with self._save_lock:
+            if self._save_error is not None:
+                raise self._save_error
+            return self._writer is not None
+
+    def resumeWrites(self):
+        self._writes_paused = False
+        if self._deferred_save:
+            self._deferred_save = False
+            self._save()
+        if self._layout_editing_blocked:
+            self._layout_editing_blocked = False
+            self.layoutEditingBlockedChanged.emit()
+
+    def flush(self, timeout=3.0):
+        """Wait for accepted snapshots and retry an exhausted snapshot once."""
+        with self._save_lock:
+            if self._pending_save is not None and self._writer is None and timeout > 0:
+                self._start_writer(retry=False)
+            writer = self._writer
+        if writer is not None:
+            writer.join(timeout)
+            if writer.is_alive():
+                raise TimeoutError("Timed out saving app layout")
+        self.writesPending()
 
     # --- what a tile or a list row shows ---
     def _resolve(self, key, rec):
@@ -384,7 +483,7 @@ class Apps(QObject):
     # --- changing the grid ---
     @Slot(int, str)
     def assign(self, slot, app_id):
-        if not 0 <= slot <= len(self._slots):
+        if self._layout_editing_blocked or not 0 <= slot <= len(self._slots):
             return
         if app_id == "folder:new":
             app_id = self._create_folder()
@@ -414,6 +513,8 @@ class Apps(QObject):
 
     @Slot(str, str)
     def addToFolder(self, folder_id, app_id):
+        if self._layout_editing_blocked:
+            return
         f = self._folders.get(folder_id[7:]) if folder_id.startswith("folder:") else None
         if f is not None and self._plain(app_id) and app_id not in f["items"]:
             f["items"].append(app_id)
@@ -423,6 +524,8 @@ class Apps(QObject):
 
     @Slot(str, str)
     def removeFromFolder(self, folder_id, app_id):
+        if self._layout_editing_blocked:
+            return
         f = self._folders.get(folder_id[7:]) if folder_id.startswith("folder:") else None
         if f is not None and app_id in f["items"]:
             f["items"].remove(app_id)
@@ -432,6 +535,8 @@ class Apps(QObject):
 
     @Slot(str, str)
     def renameFolder(self, folder_id, name):
+        if self._layout_editing_blocked:
+            return
         f = self._folders.get(folder_id[7:]) if folder_id.startswith("folder:") else None
         if f is not None:
             f["name"] = name.strip()[:40]
