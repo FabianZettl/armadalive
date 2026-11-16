@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.common import app  # noqa: F401
+from tests.test_runtime import wait_for
 from PySide6.QtGui import QColor, QImage
 
 from armadalive import backup, battery, closer, controls, emusettings, gamepad, media, palette, thermal
@@ -42,8 +43,10 @@ class Battery(unittest.TestCase):
         b = self.make()
         b.supported = True
         with mock.patch.object(battery.privileged, "available", return_value=True), mock.patch.object(battery.privileged, "run", return_value="the battery did not accept the limit"), \
-                mock.patch.object(battery, "CONFIG", "/tmp/armadalive-test-battery.json"):
+                tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(battery, "CONFIG", os.path.join(directory, "battery.json")):
             b.setLimit(80)
+            self.assertTrue(wait_for(lambda: not b._commands._running))
         self.assertTrue(b.state["refused"])
         self.assertFalse(b.state["supported"])
         self.assertEqual(b.state["limit"], 100)

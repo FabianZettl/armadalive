@@ -373,7 +373,8 @@ Window {
         function onNotice(code, detail) {
             const text = ({ tson: Tr.t("Tailscale connected"), tsoff: Tr.t("Tailscale off"), tslogin: Tr.t("Tailscale needs a login"),
                             tsmissing: Tr.t("Tailscale is not running"), tsfail: Tr.t("Tailscale did not switch"),
-                            tsdenied: Tr.t("Run once: sudo tailscale set --operator=armada") })[code]
+                            tsdenied: Tr.t("Run once: sudo tailscale set --operator=armada"),
+                            commandfail: Tr.t("Setting could not be changed") })[code]
             toast.show(text, code !== "tson" && code !== "tsoff")
         }
     }
@@ -390,8 +391,9 @@ Window {
     Connections {
         target: rules
         function onNotice(code, detail) {
-            const text = ({ saved: Tr.t("Rule saved"), removed: Tr.t("Rule removed"), loaded: Tr.t("Rule loaded") })[code]
-            toast.show(text + ": " + detail, false)
+            const text = ({ saved: Tr.t("Rule saved"), removed: Tr.t("Rule removed"), loaded: Tr.t("Rule loaded"),
+                            failed: Tr.t("Rule failed") })[code]
+            toast.show(text + ": " + detail, code === "failed")
         }
     }
     Rectangle {

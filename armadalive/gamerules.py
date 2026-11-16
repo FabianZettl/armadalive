@@ -1,6 +1,6 @@
 """Remembers a power profile and FPS limit for a game, a whole system, every other game (the base rule) or for when no game runs
 (the idle rule), and applies it when that game starts or the last game ends."""
-import json, os, subprocess
+import json, os
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 from . import emusettings
 
@@ -12,7 +12,7 @@ IDLE, BASE = "default:idle", "default:base"   # rule keys that belong to no game
 
 class GameRules(QObject):
     changed = Signal()
-    notice = Signal(str, str)   # saved | removed | loaded, and what it was about
+    notice = Signal(str, str)   # saved | removed | loaded | failed, and what it was about
 
     def __init__(self, nowplaying, gamescope, system):
         super().__init__()
@@ -25,8 +25,13 @@ class GameRules(QObject):
         except (OSError, ValueError, AttributeError):
             self._rules, self._on, self._base = {}, True, {}
         self._applied, self._loaded = "", ""
+        self._pending_rule = None
         self.history = None      # set by the app: lets a rule show the name of its game, not only the key
         nowplaying.changed.connect(self._check)
+        system.profileFinished.connect(self._profile_finished)
+        gamescope.fpsLimitFinished.connect(self._fps_finished)
+        system.profileRequested.connect(self._profile_requested)
+        gamescope.fpsLimitRequested.connect(self._fps_requested)
 
     @Property("QVariant", notify=changed)
     def state(self):
@@ -75,6 +80,7 @@ class GameRules(QObject):
             return
         if key in self._rules:
             del self._rules[key]
+            self._cancel_pending_rule(key)
             code = "removed"
         else:
             self._rules[key] = dict(profile=self._sys.stats.get("profile", ""), fps=self._gs.state.get("limit", 0))
@@ -103,12 +109,15 @@ class GameRules(QObject):
     @Slot(str)
     def remove(self, key):
         if self._rules.pop(key, None) is not None:
+            self._cancel_pending_rule(key)
             self._save()
             self.notice.emit("removed", self._label(key, self._np.state))
 
     @Slot(bool)
     def setEnabled(self, on):
         self._on = bool(on)
+        if not self._on:
+            self._cancel_pending_rule()
         self._save()
 
     def _emulator(self, cur):
@@ -126,14 +135,78 @@ class GameRules(QObject):
         elif self._base.get(system) is not None:
             emusettings.write(system, self._base.pop(system))
 
-    def _apply(self, rule, label):
+    def _apply(self, key, label):
+        rule = self._rules[key]
+        self._cancel_pending_rule()
+        detail = f"{label} · {self._summary(rule)}"
+        requests = {}
         if rule.get("profile"):
-            subprocess.Popen(["armada-power", "profile", rule["profile"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            requests["profile"] = self._sys.setProfile(rule["profile"])
         if rule.get("fps"):
-            self._gs.setFpsLimit(int(rule["fps"]))
-        self._loaded = f"{label} · {self._summary(rule)}"
+            requests["fps"] = self._gs.setFpsLimit(int(rule["fps"]))
+        self._pending_rule = (key, requests, set(requests), detail) if requests else None
+        if self._loaded:
+            self._loaded = ""
+            self.changed.emit()
+        # Resolution-only rules retain their existing preparation path in _emulator.
+        if not requests:
+            self._show_loaded(detail)
+
+    def _show_loaded(self, detail):
+        self._loaded = detail
         self.changed.emit()
-        self.notice.emit("loaded", self._loaded)
+        self.notice.emit("loaded", detail)
+
+    def _cancel_pending_rule(self, key=None):
+        if self._pending_rule is None:
+            return
+        origin, requests, _, _ = self._pending_rule
+        if key is not None and key != origin:
+            return
+        self._pending_rule = None
+        # Cancel waiting requests owned by this rule. Dispatched writes finish.
+        if "profile" in requests:
+            self._sys.cancelProfile(requests["profile"])
+        if "fps" in requests:
+            self._gs.cancelFpsLimit(requests["fps"])
+
+    @Slot(object, bool)
+    def _profile_finished(self, request, succeeded):
+        self._finish_request("profile", request, succeeded)
+
+    @Slot(object, bool)
+    def _fps_finished(self, request, succeeded):
+        self._finish_request("fps", request, succeeded)
+
+    @Slot(object)
+    def _profile_requested(self, request):
+        self._superseded("profile", request)
+
+    @Slot(object)
+    def _fps_requested(self, request):
+        self._superseded("fps", request)
+
+    def _superseded(self, channel, request):
+        if self._pending_rule is not None:
+            key, requests, remaining, _ = self._pending_rule
+            if channel in requests and requests[channel] != request:
+                # The remaining write can still apply while this rule is relevant.
+                remaining.discard(channel)
+                self._pending_rule = (key, requests, remaining, None) if remaining else None
+
+    def _finish_request(self, channel, request, succeeded):
+        if self._pending_rule is None:
+            return
+        key, requests, remaining, detail = self._pending_rule
+        if requests.get(channel) != request or channel not in remaining:
+            return
+        remaining.discard(channel)
+        self._pending_rule = (key, requests, remaining, detail if succeeded else None) if remaining else None
+        if detail is not None:
+            if not succeeded:
+                self.notice.emit("failed", detail)
+            elif not remaining:
+                self._show_loaded(detail)
 
     def _check(self):
         cur = self._np.state
@@ -144,12 +217,15 @@ class GameRules(QObject):
             if self._applied and not getattr(self._np, "running", False):
                 self._applied = ""      # the next game that starts gets its rule again
                 if self._on and IDLE in self._rules:
-                    self._apply(self._rules[IDLE], "idle")
+                    self._apply(IDLE, "idle")
+                else:
+                    self._cancel_pending_rule()
             return
         if not self._on or cur.get("key") == self._applied:
             return
         self._applied = cur.get("key", "")
         for key, label in ((self._game_key(cur), "game"), (self._system_key(cur), "system"), (BASE, "base")):
             if key in self._rules:
-                self._apply(self._rules[key], f"{cur.get('title') or cur.get('key')}" if label == "game" else label)
+                self._apply(key, f"{cur.get('title') or cur.get('key')}" if label == "game" else label)
                 return
+        self._cancel_pending_rule()
