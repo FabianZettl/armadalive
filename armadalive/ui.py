@@ -1,6 +1,7 @@
 """Look of the app: theme and accent, remembered between runs."""
-import json, os
+import os
 from PySide6.QtCore import Property, QObject, Signal, Slot
+from . import persistence
 
 CONFIG = os.path.expanduser("~/.config/armadalive/ui.json")
 
@@ -13,13 +14,11 @@ class UiSettings(QObject):
 
     def __init__(self):
         super().__init__()
-        try:
-            with open(CONFIG) as f:
-                saved = json.load(f)
-        except (OSError, ValueError):
-            saved = {}
+        saved = persistence.read_json(CONFIG, lambda data: isinstance(data, dict), {})
         # saved values win over the defaults; keys we do not know are dropped
-        self._s = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}} if isinstance(saved, dict) else dict(DEFAULTS)
+        self._s = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}}
+        if self._s["heat"] and not isinstance(self._s["heat"], (int, float)):
+            self._s["heat"] = DEFAULTS["heat"]
         if not saved:      # a fresh install (no settings yet) gets the first-run setup; an install that already has settings does not
             self._s["onboarded"] = False
 
@@ -28,9 +27,7 @@ class UiSettings(QObject):
         return self._s
 
     def _save(self):
-        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
-        with open(CONFIG, "w") as f:
-            json.dump(self._s, f)
+        persistence.write_json(CONFIG, self._s, follow_symlinks=True, require_writable=True, allow_nan=True)
         self.changed.emit()
 
     @Slot(str)
