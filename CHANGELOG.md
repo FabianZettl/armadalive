@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.1
+
+The first release with changes from the community: a set of robustness and speed fixes by Brendan Noble (thank you), reviewed and tried on a Thor.
+
+- **Smoother and lighter**: status values (system, controls, media, game focus) are read in the background, so a slow command no longer stalls the screen; the app catalog (apps, covers, ES-DE, Steam) is scanned in the background and pins of an unplugged library are kept; animations pause while the screen is dimmed or blank; artwork is decoded at the size it is shown (#7, #18, #19, #22).
+- **Safer settings**: appearance, tile order and battery settings are written atomically with a backup copy, so a power cut cannot leave an empty file (#21).
+- **Emulator hotkeys and settings**: emulator config files keep their unrelated sections and symlinks when ArmadaLive edits them, and key presses are held long enough for emulators that poll their input (#15).
+- **Power changes report failures**: if `armada-power reload` fails after a tuning change, the app now says so and keeps the undo (#17). **Needs the new root helper: Settings, Setup, Root helper, Update.**
+- **Task manager and keyboard**: delayed "end program" checks that it is still the same program, and keyboard and window actions run in order (#10).
+- **Cheats follow the game** you switch to, and buttons show keyboard focus (#14).
+- **Better health check** (`scripts/armada-check.sh`): it no longer reports success after a failed command and only reads the charge limit (#13). Tests: a flaky palette test is fixed (#16).
+
 ## 1.0.0
 
 ArmadaLive 1.0: the bottom screen of the Thor as a companion with a game page, game info, an app and game launcher with folders, a System page with rules, tuning, graphs, tasks and play time, a first-run setup and 55 themes. The README and its screenshots are new.
