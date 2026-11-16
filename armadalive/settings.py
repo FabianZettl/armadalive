@@ -153,9 +153,9 @@ class Settings(QObject):
 
     def _apply_profile(self, profile, pairs):
         before = [((("profile", profile, k)), self._previous(profile, k)) for k, v in pairs]
-        err = privileged.run("profile", profile, *[f"{k}={v}" for k, v in pairs])
+        status, err = privileged.run_with_status("profile", profile, *[f"{k}={v}" for k, v in pairs])
         self.message.emit(err)
-        if not err:
+        if status in (0, privileged.RELOAD_FAILED):
             self._arm([(k, old) for (k, old), (_, new) in zip(before, pairs) if old is not None and str(old) != str(new)])
         self.refresh()
 
@@ -172,9 +172,9 @@ class Settings(QObject):
     @Slot(str, str)
     def saveFanCurve(self, name, points):
         old = next((c for c in self._data.get("curves", []) if c["id"] == name), None)
-        err = privileged.run("fan-curve", name, points)
+        status, err = privileged.run_with_status("fan-curve", name, points)
         self.message.emit(err)
-        if not err and old:
+        if status in (0, privileged.RELOAD_FAILED) and old:
             self._arm([(("curve", name, ""), ",".join(f"{t}:{p}" for t, p in sorted(old["points"], reverse=True)))])
         self.refresh()
 

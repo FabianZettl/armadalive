@@ -1,4 +1,5 @@
 import os, subprocess, sys, tempfile, unittest
+from pathlib import Path
 
 HELPER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "armadalive-helper")
 
@@ -7,15 +8,23 @@ class Helper(unittest.TestCase):
     """The root helper validates every value. Runs against a temp folder, never touches /etc."""
 
     def setUp(self):
-        self.etc = tempfile.mkdtemp()
-        self.env = dict(os.environ, ARMADALIVE_ETC=self.etc, ARMADALIVE_NO_RELOAD="1")
+        self.etc = self.enterContext(tempfile.TemporaryDirectory())
+        self.commands = Path(self.etc, "bin")
+        self.commands.mkdir()
+        self.env = dict(os.environ, ARMADALIVE_ETC=self.etc, ARMADALIVE_NO_RELOAD="1", PATH=str(self.commands))
 
     def run_helper(self, *args):
-        return subprocess.run([sys.executable, HELPER, *args], env=self.env, capture_output=True, text=True)
+        return subprocess.run([sys.executable, HELPER, *args], env=self.env, capture_output=True, text=True, timeout=12)
 
     def conf(self):
         with open(os.path.join(self.etc, "power-profiles.conf")) as f:
             return f.read()
+
+    def use_reload(self, script):
+        self.env.pop("ARMADALIVE_NO_RELOAD")
+        command = self.commands / "armada-power"
+        command.write_text(script, encoding="utf-8")
+        command.chmod(0o755)
 
     def test_a_valid_fan_curve_is_written_sorted(self):
         r = self.run_helper("fan-curve", "silent", "60:60,90:255,70:90", "Silent")
@@ -58,6 +67,69 @@ class Helper(unittest.TestCase):
 
     def test_unknown_action(self):
         self.assertEqual(self.run_helper("rm").returncode, 2)
+
+    def test_save_reports_reload_failure_after_writing_configuration(self):
+        self.use_reload("#!/bin/sh\n[ \"$#:$1\" = 1:reload ] || exit 3\n"
+                        "echo 'fixture rejected reload' >&2\nexit 7\n")
+        result = self.run_helper("fan", "min_pwm=21")
+        self.assertIn("min_pwm = 21", self.conf())
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("reload failed (exit status 7)", result.stderr)
+        self.assertIn("fixture rejected reload", result.stderr)
+        self.assertIn("on disk may have changed", result.stderr)
+
+    def test_reset_reports_reload_failure_after_moving_configuration(self):
+        self.use_reload("#!/bin/sh\nexit 7\n")
+        config = Path(self.etc, "power-profiles.conf")
+        original = "[fan]\nmin_pwm = 21\n"
+        config.write_text(original, encoding="utf-8")
+        result = self.run_helper("reset")
+        self.assertFalse(config.exists())
+        self.assertEqual(config.with_suffix(".conf.armadalive-bak").read_text(encoding="utf-8"), original)
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("reload failed", result.stderr)
+        self.assertIn("on disk may have changed", result.stderr)
+
+    def test_save_succeeds_after_reload_observes_configuration(self):
+        self.use_reload("#!/bin/sh\n[ \"$#:$1\" = 1:reload ] || exit 3\n"
+                        "[ -f \"$ARMADALIVE_ETC/power-profiles.conf\" ] || exit 4\n"
+                        "echo 'fixture acknowledged reload'\n"
+                        "echo 'fixture diagnostic' >&2\n")
+        result = self.run_helper("fan", "min_pwm=21")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "fixture acknowledged reload\n")
+        self.assertEqual(result.stderr, "fixture diagnostic\n")
+        self.assertIn("min_pwm = 21", self.conf())
+
+    def test_hanging_reload_reports_a_timeout(self):
+        self.use_reload(f"#!{sys.executable}\n"
+                        "import os, time\n"
+                        "parent = os.getppid()\n"
+                        "while parent != 1 and os.getppid() == parent:\n"
+                        "    time.sleep(0.05)\n")
+        try:
+            result = self.run_helper("fan", "min_pwm=21")
+        except subprocess.TimeoutExpired:
+            self.fail("The helper failed to bound its reload command")
+        self.assertIn("min_pwm = 21", self.conf())
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("reload timed out", result.stderr)
+        self.assertIn("on disk may have changed", result.stderr)
+
+    def test_save_reports_missing_reload_command_after_writing_configuration(self):
+        self.env.pop("ARMADALIVE_NO_RELOAD")
+        result = self.run_helper("fan", "min_pwm=21")
+        self.assertIn("min_pwm = 21", self.conf())
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("reload could not run", result.stderr)
+        self.assertIn("on disk may have changed", result.stderr)
+
+    def test_reset_succeeds_without_reload_in_test_mode(self):
+        config = Path(self.etc, "power-profiles.conf")
+        config.write_text("[fan]\nmin_pwm = 21\n", encoding="utf-8")
+        result = self.run_helper("reset")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(config.exists())
 
 
 if __name__ == "__main__":
