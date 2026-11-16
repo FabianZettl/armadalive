@@ -7,9 +7,14 @@ ESDE = tempfile.mkdtemp(prefix="armadalive-esde-")
 os.environ["ARMADALIVE_ESDE_DIR"] = ESDE   # read when armadalive.nowplaying is imported
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, QThreadPool, Signal  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Signal  # noqa: E402
 
 app = QCoreApplication.instance() or QCoreApplication(sys.argv)
+
+
+def delete_qobject(obj):
+    obj.deleteLater()
+    app.sendPostedEvents(obj, QEvent.Type.DeferredDelete)
 
 
 def touch(path, text=""):
@@ -47,11 +52,12 @@ def wait_for(predicate):
 
 
 def dispose_qt(obj):
+    from PySide6.QtCore import QThreadPool
+
     # Keep the parent alive through queued signal emission and delete its timers on their owner.
     if not QThreadPool.globalInstance().waitForDone(5000):
         raise AssertionError("Runtime workers did not finish before fixture teardown")
-    obj.deleteLater()
-    app.sendPostedEvents(obj, QEvent.Type.DeferredDelete)
+    delete_qobject(obj)
 
 
 @contextmanager
