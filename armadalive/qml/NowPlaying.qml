@@ -88,8 +88,10 @@ Item {
                     axis { x: 0; y: 1; z: 0 }
                     angle: 3 * l.sway * l.k
                 }
-                source: l.visible ? Artwork.source(l.st.logo, l.st.kind === "game" ? sourceSize : null) : ""
-                sourceSize: Qt.size(1024, 768)
+                // Loading a source can update sourceSize, so use the decode request to select it.
+                readonly property size logoDecodeSize: Qt.size(1024, 768)
+                source: l.visible ? Artwork.source(l.st.logo, l.st.kind === "game" ? logoDecodeSize : null) : ""
+                sourceSize: logoDecodeSize
                 asynchronous: true
                 // Stretch keeps the decode bounded. Fit the item itself to keep the artwork's proportions.
                 readonly property real maxWidth: l.st.kind === "game" ? Math.min(implicitWidth * 1.5, l.width * 0.72) : l.width * 0.6

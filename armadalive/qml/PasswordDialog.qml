@@ -1,7 +1,7 @@
 import QtQuick
 
 // Asks for the user's password for one root step. The password only ever goes to sudo (see admin.py).
-Item {
+FocusScope {
     id: d
     property string action
     signal accepted(string password)
@@ -17,7 +17,21 @@ Item {
         field.text += shift && !symbols ? ch.toUpperCase() : ch
         if (shift) shift = false
     }
-    onVisibleChanged: if (visible) { field.text = ""; shift = false; symbols = false }
+    onVisibleChanged: {
+        field.text = ""
+        shift = false
+        symbols = false
+        if (visible && enabled) cancelButton.forceActiveFocus()
+    }
+    onEnabledChanged: if (visible && enabled) cancelButton.forceActiveFocus()
+
+    Keys.onPressed: event => {
+        if (event.key !== Qt.Key_Tab && event.key !== Qt.Key_Backtab) return
+        event.accepted = true
+        const reason = event.key === Qt.Key_Backtab ? Qt.BacktabFocusReason : Qt.TabFocusReason
+        const next = cancelButton.activeFocus && confirmButton.enabled ? confirmButton : cancelButton
+        next.forceActiveFocus(reason)
+    }
 
     Rectangle { anchors.fill: parent; color: "#000000"; opacity: 0.7 }
     MouseArea { anchors.fill: parent }          // modal: nothing behind it reacts
@@ -71,8 +85,8 @@ Item {
             }
             Row {
                 spacing: 10
-                PillButton { label: Tr.t("Cancel"); onClicked: d.cancelled() }
-                PillButton { label: Tr.t("Confirm"); primary: true; enabled: field.text !== ""; onClicked: d.accepted(field.text) }
+                PillButton { id: cancelButton; label: Tr.t("Cancel"); onClicked: d.cancelled() }
+                PillButton { id: confirmButton; label: Tr.t("Confirm"); primary: true; enabled: field.text !== ""; onClicked: d.accepted(field.text) }
             }
         }
     }

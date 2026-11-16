@@ -4,6 +4,7 @@ import QtQuick
 Rectangle {
     id: p
     property int slot: -1
+    property int layoutSlot: slot  // -1 appends after any layout loaded while the picker was open
     property string folder: ""     // set: the picker adds to this folder instead of filling a grid slot
     property var items: []
     property var groups: []
@@ -12,7 +13,24 @@ Rectangle {
     signal closed()
 
     color: Theme.bg
-    onVisibleChanged: if (visible) { query = ""; search.text = ""; items = apps.catalog().concat(apps.folderChoices()); groups = apps.groups().filter(g => p.folder === "" || g.id !== "folders"); if (folder !== "" && group === "folders") group = "apps" }
+    function reload() {
+        items = apps.catalog().concat(apps.folderChoices())
+        groups = apps.groups().filter(g => p.folder === "" || g.id !== "folders")
+        if (!groups.some(g => g.id === group))
+            group = "apps"
+    }
+    onVisibleChanged: if (visible) {
+        search.text = ""
+        query = ""
+        reload()
+        if (!apps.catalogLoading)
+            apps.refreshCatalog()
+    }
+    Connections {
+        target: apps
+        enabled: p.visible
+        function onCatalogChanged() { p.reload() }
+    }
     MouseArea { anchors.fill: parent }      // swallow touches so the grid below stays untouched
 
     Item {
@@ -30,7 +48,7 @@ Rectangle {
             anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
             spacing: 8
             Repeater {
-                model: p.folder !== "" ? [{ l: Tr.t("Cancel"), remove: false }] : [{ l: Tr.t("Remove"), remove: true }, { l: Tr.t("Cancel"), remove: false }]
+                model: p.folder !== "" || p.layoutSlot < 0 ? [{ l: Tr.t("Cancel"), remove: false }] : [{ l: Tr.t("Remove"), remove: true }, { l: Tr.t("Cancel"), remove: false }]
                 delegate: Rectangle {
                     width: t.width + 28
                     height: 38
@@ -40,7 +58,7 @@ Rectangle {
                     Text { id: t; anchors.centerIn: parent; color: modelData.remove ? Theme.hot : Theme.text; font.pixelSize: 15; text: modelData.l }
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: { if (modelData.remove) apps.assign(p.slot, ""); p.closed() }
+                        onClicked: { if (modelData.remove) apps.assign(p.layoutSlot, ""); p.closed() }
                     }
                 }
             }
@@ -100,6 +118,7 @@ Rectangle {
         }
     }
     ListView {
+        id: choices
         anchors { left: parent.left; right: parent.right; top: searchBox.bottom; topMargin: 6; bottom: parent.bottom }
         clip: true
         model: p.items.filter(function (i) { return p.query !== "" ? (i.name || "").toLowerCase().indexOf(p.query) >= 0 && (p.folder === "" || i.group !== "folders") : i.group === p.group })
@@ -135,7 +154,22 @@ Rectangle {
                 font.pixelSize: 17
                 text: modelData.folder || modelData.glyph ? Tr.t(modelData.name) : modelData.name
             }
-            MouseArea { anchors.fill: parent; onClicked: { if (p.folder !== "") apps.addToFolder(p.folder, modelData.id); else apps.assign(p.slot, modelData.id); p.closed() } }
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (p.folder !== "")
+                        apps.addToFolder(p.folder, modelData.id)
+                    else
+                        apps.assign(p.layoutSlot < 0 ? apps.layoutSlot(apps.slots.length - 1) : p.layoutSlot, modelData.id)
+                    p.closed()
+                }
+            }
         }
+    }
+    Text {
+        anchors.centerIn: choices
+        visible: apps.catalogLoading && choices.count === 0
+        color: Theme.muted
+        text: Tr.t("Loading…")
     }
 }

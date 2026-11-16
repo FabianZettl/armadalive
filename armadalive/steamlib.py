@@ -1,6 +1,6 @@
 """Steam's installed games and non-Steam shortcuts, read from its files, with the cover Steam already cached for each."""
 import glob, hashlib, os, re, struct
-from PySide6.QtCore import QRectF, QUrl, Qt
+from PySide6.QtCore import QIODevice, QRectF, QSaveFile, QUrl, Qt
 from PySide6.QtGui import QImage, QPainter, QPainterPath
 
 STEAM = next((p for p in (os.path.expanduser("~/.local/share/Steam"), os.path.expanduser("~/.steam/steam")) if os.path.isdir(p)), "")
@@ -57,23 +57,60 @@ def _url(path):
             painter.drawImage(0, 0, src)
             painter.end()
             os.makedirs(CACHE, exist_ok=True)
-            img.save(out)
+            target = QSaveFile(out)
+            if not target.open(QIODevice.WriteOnly) or not img.save(target, "PNG") or not target.commit():
+                return ""
         return QUrl.fromLocalFile(out).toString()
     except OSError:
         return ""
 
 
-def _first(patterns):
-    for p in patterns:
-        hit = sorted(glob.glob(p, recursive=True))
-        if hit:
-            return hit[0]
-    return ""
+def _installed_art(cache):
+    """Index all installed game artwork, keeping the same priority as the old glob searches."""
+    try:
+        root = os.stat(cache)
+    except OSError:
+        return {}
+    root_identity = (root.st_dev, root.st_ino)
+    covers, visited = {}, set()
+    for here, dirs, files in os.walk(cache, followlinks=True):
+        appid = os.path.relpath(here, cache).split(os.sep, 1)[0] if here != cache else ""
+        if appid:
+            for priority, filename in enumerate(("library_600x900.jpg", "header.jpg")):
+                if filename in files:
+                    candidate = (priority, os.path.join(here, filename))
+                    if appid not in covers or candidate < covers[appid]:
+                        covers[appid] = candidate
+        descend = []
+        for directory in sorted(dirs):
+            if (not appid and not directory.isdecimal()) or directory.startswith("."):
+                continue
+            try:
+                info = os.stat(os.path.join(here, directory))
+            except OSError:
+                continue
+            # Each game may link the same artwork, but no game needs to visit
+            # one physical directory twice (including links to its ancestors).
+            identity = (info.st_dev, info.st_ino)
+            game_directory = (appid or directory, identity)
+            if identity != root_identity and game_directory not in visited:
+                visited.add(game_directory)
+                descend.append(directory)
+        dirs[:] = descend
+    return {appid: cover for appid, (_, cover) in covers.items()}
+
+
+def _shortcut_art(grid):
+    try:
+        return set(os.listdir(grid))
+    except OSError:
+        return set()
 
 
 def _libraries():
     try:
-        text = open(os.path.join(STEAM, "steamapps", "libraryfolders.vdf"), encoding="utf-8", errors="replace").read()
+        with open(os.path.join(STEAM, "steamapps", "libraryfolders.vdf"), encoding="utf-8", errors="replace") as stream:
+            text = stream.read()
     except OSError:
         text = ""
     return {os.path.join(STEAM)} | set(re.findall(r'"path"\s+"([^"]+)"', text))
@@ -91,7 +128,8 @@ def shortcut(appid):
         found = {}
         for f, _ in stamp:
             try:
-                entries = _vdf_map(open(f, "rb").read())[0].get("shortcuts", {})
+                with open(f, "rb") as stream:
+                    entries = _vdf_map(stream.read())[0].get("shortcuts", {})
             except (OSError, ValueError, struct.error):
                 continue
             for e in entries.values():
@@ -101,31 +139,36 @@ def shortcut(appid):
     return _shortcuts[1].get(int(appid))
 
 
-def games():
-    """[{id: "steam:<gameid>", name, icon (cover url)}]: installed games, then non-Steam shortcuts; the id's number is what RunGame takes."""
+def games(*, art=True):
+    """Installed games and shortcuts with their launch IDs, names, and optional cover URLs."""
     if not STEAM:
         return []
     found = []
-    for lib in _libraries():
+    covers = _installed_art(os.path.join(STEAM, "appcache", "librarycache")) if art else {}
+    for lib in sorted(_libraries()):
         for f in glob.glob(os.path.join(lib, "steamapps", "appmanifest_*.acf")):
             try:
-                text = open(f, encoding="utf-8", errors="replace").read()
+                with open(f, encoding="utf-8", errors="replace") as stream:
+                    text = stream.read()
                 appid, name = re.search(r'"appid"\s+"(\d+)"', text).group(1), re.search(r'"name"\s+"([^"]*)"', text).group(1)
             except (OSError, AttributeError):
                 continue
             if not SKIP.match(name):
-                cache = os.path.join(STEAM, "appcache", "librarycache", appid)
-                found.append(dict(id=f"steam:{appid}", name=name, icon=_url(_first([cache + "/**/library_600x900.jpg", cache + "/**/header.jpg"]))))
+                icon = _url(covers.get(appid, "")) if art else ""
+                found.append(dict(id=f"steam:{appid}", name=name, icon=icon))
     for f in glob.glob(os.path.join(STEAM, "userdata", "*", "config", "shortcuts.vdf")):
         try:
-            entries = _vdf_map(open(f, "rb").read())[0].get("shortcuts", {})
+            with open(f, "rb") as stream:
+                entries = _vdf_map(stream.read())[0].get("shortcuts", {})
         except (OSError, ValueError, struct.error):
             continue
         grid = os.path.join(os.path.dirname(f), "grid")
+        filenames = _shortcut_art(grid) if art else set()
         for e in entries.values():
             appid = e.get("appid", e.get("AppId"))
             name = e.get("AppName", e.get("appname"))
             if isinstance(appid, int) and name:
-                found.append(dict(id=f"steam:{(appid << 32) | 0x02000000}", name=name,
-                                  icon=_url(_first([f"{grid}/{appid}p.png", f"{grid}/{appid}p.jpg", f"{grid}/{appid}.png", f"{grid}/{appid}_icon.png"]))))
+                candidates = (f"{appid}p.png", f"{appid}p.jpg", f"{appid}.png", f"{appid}_icon.png")
+                cover = next((os.path.join(grid, filename) for filename in candidates if filename in filenames), "")
+                found.append(dict(id=f"steam:{(appid << 32) | 0x02000000}", name=name, icon=_url(cover) if art else ""))
     return sorted({g["id"]: g for g in found}.values(), key=lambda g: g["name"].lower())

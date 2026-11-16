@@ -1,4 +1,5 @@
 import os, tempfile, unittest
+from pathlib import Path
 from unittest import mock
 
 from tests.common import app, touch  # noqa: F401
@@ -54,6 +55,29 @@ class Games(unittest.TestCase):
         with mock.patch.object(esdelib, "systems", lambda: defs), mock.patch.object(esdelib, "_rom_dir", lambda: root):
             found = esdelib.games()
         self.assertEqual([g["rom"] for g in found["switch2"]], [f"{other}/Game.nup"])
+
+    def test_artwork_directories_are_each_listed_once_for_a_large_system(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            roms = root / "roms" / "snes"
+            roms.mkdir(parents=True)
+            media = root / "media" / "snes"
+            for kind in esdelib.COVERS:
+                (media / kind).mkdir(parents=True)
+            for number in range(100):
+                (roms / f"Game{number}.sfc").touch()
+                (media / "covers" / f"Game{number}.png").touch()
+                (media / "screenshots" / f"Game{number}.jpg").touch()
+            (media / "covers" / "Game0.jpg").touch()
+            definitions = {"snes": dict(fullname="SNES", extensions={".sfc"})}
+            with mock.patch.object(esdelib, "systems", return_value=definitions), \
+                    mock.patch.object(esdelib, "_rom_dir", return_value=str(roms.parent)), \
+                    mock.patch.object(esdelib, "MEDIA", str(media.parent)), \
+                    mock.patch.object(os, "listdir", wraps=os.listdir) as listdir:
+                games = esdelib.games()["snes"]
+            self.assertEqual(listdir.call_args_list, [mock.call(str(media / kind)) for kind in esdelib.COVERS])
+            self.assertEqual(len(games), 100)
+            self.assertTrue(games[0]["cover"].endswith("/covers/Game0.jpg"))
 
 
 if __name__ == "__main__":

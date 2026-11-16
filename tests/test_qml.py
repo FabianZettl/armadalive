@@ -23,6 +23,79 @@ class Qml(unittest.TestCase):
                 bad[os.path.basename(f)] = errors
         self.assertEqual(bad, {})
 
+    def test_open_picker_populates_from_a_pending_scan_without_resetting_search(self):
+        script = textwrap.dedent(r"""
+            import sys, threading, time
+            from tempfile import TemporaryDirectory
+            from unittest import mock
+            from PySide6.QtCore import QObject, QUrl, Slot
+            from PySide6.QtGui import QGuiApplication
+            from PySide6.QtQml import QQmlComponent, QQmlEngine
+            from PySide6.QtQuick import QQuickItem
+            from armadalive import apps
+
+            class Shell(QObject):
+                @Slot(bool)
+                def textFocus(self, active):
+                    pass
+
+            owner = threading.get_ident()
+            started, release = threading.Event(), threading.Event()
+
+            def desktop():
+                assert threading.get_ident() != owner, "picker scan ran on the window thread"
+                started.set()
+                assert release.wait(3), "test never released the scan"
+                return {"new-app": {"name": "New App", "iconName": ""}}
+
+            def wait_for(predicate):
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    app.processEvents()
+                    if predicate():
+                        return
+                    time.sleep(0.005)
+                raise AssertionError("Picker did not display the catalog")
+
+            app = QGuiApplication([])
+            engine = QQmlEngine()
+            shell = Shell()
+            window_component = QQmlComponent(engine)
+            window_component.setData(b"import QtQuick\nWindow { width: 620; height: 540; visible: true }", QUrl())
+            window = window_component.create()
+            with TemporaryDirectory() as directory, mock.patch.multiple(
+                apps, CONFIG=directory + "/apps.json", _catalog=desktop, ICON_ROOTS=[]
+            ), mock.patch.object(apps.esdelib, "systems", return_value={}), mock.patch.object(
+                apps.steamlib, "games", return_value=[]
+            ):
+                backend = apps.Apps()
+                engine.rootContext().setContextProperty("apps", backend)
+                engine.rootContext().setContextProperty("shell", shell)
+                component = QQmlComponent(engine, QUrl.fromLocalFile(sys.argv[1]))
+                picker = component.createWithInitialProperties({"visible": False, "width": 620, "height": 540})
+                assert isinstance(picker, QQuickItem), component.errors()
+                picker.setParentItem(window.contentItem())
+                try:
+                    assert started.wait(1)
+                    picker.setVisible(True)
+                    app.processEvents()
+                    assert backend.catalogLoading
+                    assert picker.isVisible()
+                    assert not any(item["id"] == "new-app" for item in picker.property("items").toVariant())
+                    picker.setProperty("query", "new")
+                finally:
+                    release.set()
+                wait_for(lambda: not backend.catalogLoading)
+                assert picker.property("query") == "new"
+                assert any(item["id"] == "new-app" for item in picker.property("items").toVariant())
+                picker.deleteLater()
+                window.deleteLater()
+                app.processEvents()
+        """)
+        result = subprocess.run([sys.executable, "-c", script, QML + "/AppPicker.qml"],
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_now_playing_motion_and_marquee_rendering(self):
         # This suite uses QCoreApplication. The component needs a real offscreen window.
         script = textwrap.dedent(r"""
@@ -203,6 +276,106 @@ class Qml(unittest.TestCase):
             with open(f) as fh:
                 text = fh.read()
             self.assertIsNone(re.search(r"font \{|\}; ", text), f)
+
+    def test_now_playing_resumes_vector_marquee_without_a_source_binding_loop(self):
+        # The offscreen window follows Main's page loader and selection routing.
+        script = textwrap.dedent(r"""
+            import sys, tempfile
+            from pathlib import Path
+            from PySide6.QtCore import QEventLoop, QTimer, QUrl
+            from PySide6.QtGui import QGuiApplication
+            from PySide6.QtQml import QQmlEngine, QQmlComponent
+            from PySide6.QtQuick import QQuickItem
+            from armadalive.artwork import VectorArtwork
+
+            def wait(milliseconds):
+                loop = QEventLoop()
+                QTimer.singleShot(milliseconds, loop.quit)
+                loop.exec()
+
+            def visible_artwork(page):
+                return [item for item in page.findChildren(QQuickItem)
+                        if item.inherits("QQuickImage") and item.isVisible()
+                        and not item.property("source").isEmpty()]
+
+            app = QGuiApplication([])
+            engine = QQmlEngine()
+            engine.addImageProvider("vectors", VectorArtwork())
+            component = QQmlComponent(engine)
+            component.setData(b'''
+                import QtQuick
+                Window {
+                    id: win
+                    width: 620
+                    height: 540
+                    visible: true
+                    property bool blanked: false
+                    readonly property bool presentationActive: visible && !blanked
+                    property string page: "now"
+                    property alias nowPage: loader.item
+                    property var selectedGame: ({kind: "game", title: "", logo: "", fanart: "", manual: "", hasCheats: false})
+                    onSelectedGameChanged: nowPlaying.selection()
+                    QtObject {
+                        id: nowPlaying
+                        readonly property var state: win.selectedGame
+                        signal selection()
+                    }
+                    QtObject { id: ui; readonly property var state: ({animate: true}) }
+                    QtObject { id: apps; readonly property var slots: []; signal changed() }
+                    Connections {
+                        target: nowPlaying
+                        function onSelection() { win.page = "now" }
+                    }
+                    Loader {
+                        id: loader
+                        anchors.fill: parent
+                        source: win.page === "now" ? "NowPlaying.qml" : ""
+                        onLoaded: item.presentationActive = Qt.binding(() => win.presentationActive)
+                    }
+                }
+            ''', QUrl.fromLocalFile(sys.argv[1]))
+            window = component.create()
+            assert window is not None, component.errors()
+
+            with tempfile.TemporaryDirectory() as directory:
+                logos = [Path(directory) / name for name in ("first.svg", "last.svg")]
+                for logo in logos:
+                    logo.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="200">'
+                                    '<rect width="800" height="200" fill="green"/></svg>')
+
+                # Resume once to populate the image cache, then repeat with the same artwork.
+                for _ in range(3):
+                    assert window.setProperty("page", "system")
+                    assert window.property("nowPage") is None
+                    assert window.setProperty("blanked", True)
+                    for logo in logos:
+                        assert window.setProperty("selectedGame", dict(
+                            kind="game", title=logo.stem, logo=QUrl.fromLocalFile(str(logo)).toString(),
+                            fanart="", manual="", hasCheats=False))
+                    assert window.property("page") == "now"
+                    page = window.property("nowPage")
+                    assert page is not None and not page.property("presentationActive")
+                    assert not visible_artwork(page)
+
+                    assert window.setProperty("blanked", False)
+                    for _ in range(100):
+                        if any(item.property("source").toString().endswith("last.svg")
+                               and item.implicitWidth() == 800 and item.implicitHeight() == 200
+                               for item in visible_artwork(page)):
+                            break
+                        wait(20)
+                    else:
+                        raise AssertionError("The last selected marquee did not render at its natural size")
+                window.deleteLater()
+                wait(0)
+        """)
+        for scale in ("1", "2"):
+            with self.subTest(screen_scale=scale):
+                result = subprocess.run([sys.executable, "-c", script, QML + "/MarqueeTestWindow.qml"],
+                                        env=dict(os.environ, QT_SCALE_FACTOR=scale),
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotRegex(result.stderr, r'NowPlaying\.qml[^\n]*Binding loop detected for property "source"')
 
 
 class Translations(unittest.TestCase):
