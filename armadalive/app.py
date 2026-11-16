@@ -26,7 +26,7 @@ from .controls import Controls
 from .gamescope import Gamescope
 from .health import Health
 from .nowplaying import NowPlaying
-from .settings import Settings
+from .settings import CONFIRM_S, Settings
 from .shell import Shell
 from .steamshortcuts import SteamShortcuts
 from .steamui import SteamUi
@@ -123,9 +123,7 @@ def main():
             ms, later = sys.argv[sys.argv.index("--demo-later") + 1].split(":", 1)
             QTimer.singleShot(int(ms), lambda: backends["nowPlaying"].pin(json.loads(later).get("event"), json.loads(later).get("ui")))
         if "--keep-demo" in sys.argv:  # show the keep-or-undo bar with 11 s left (nothing is changed or reverted)
-            st = backends["settings"]
-            st._undo, st._left = {("profile", "demo", "demo"): "x"}, 11
-            st.changed.emit()
+            window.setProperty("tuningDemo", dict(active=True, seconds=11, total=CONFIRM_S, busy=False, recovery=False))
         if "--ask" in sys.argv:
             window.setProperty("askDemo", sys.argv[sys.argv.index("--ask") + 1])
         if "--notice" in sys.argv:  # code:title, show that popup message 600 ms in
