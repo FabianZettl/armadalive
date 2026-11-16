@@ -24,6 +24,11 @@ class Cheats(QObject):
         self._write_config(game_key)
         self.changed.emit()
 
+    @Property("QVariantMap", notify=changed)
+    def active(self):
+        return {key: sorted(indices) for key, indices in self._active.items() if indices}
+
+    @Slot(str, int, result=bool)
     def is_active(self, game_key, cheat_index):
         """Check if a cheat is active."""
         return cheat_index in self._active.get(game_key, set())
