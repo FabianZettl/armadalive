@@ -23,6 +23,79 @@ class Qml(unittest.TestCase):
                 bad[os.path.basename(f)] = errors
         self.assertEqual(bad, {})
 
+    def test_open_picker_populates_from_a_pending_scan_without_resetting_search(self):
+        script = textwrap.dedent(r"""
+            import sys, threading, time
+            from tempfile import TemporaryDirectory
+            from unittest import mock
+            from PySide6.QtCore import QObject, QUrl, Slot
+            from PySide6.QtGui import QGuiApplication
+            from PySide6.QtQml import QQmlComponent, QQmlEngine
+            from PySide6.QtQuick import QQuickItem
+            from armadalive import apps
+
+            class Shell(QObject):
+                @Slot(bool)
+                def textFocus(self, active):
+                    pass
+
+            owner = threading.get_ident()
+            started, release = threading.Event(), threading.Event()
+
+            def desktop():
+                assert threading.get_ident() != owner, "picker scan ran on the window thread"
+                started.set()
+                assert release.wait(3), "test never released the scan"
+                return {"new-app": {"name": "New App", "iconName": ""}}
+
+            def wait_for(predicate):
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    app.processEvents()
+                    if predicate():
+                        return
+                    time.sleep(0.005)
+                raise AssertionError("Picker did not display the catalog")
+
+            app = QGuiApplication([])
+            engine = QQmlEngine()
+            shell = Shell()
+            window_component = QQmlComponent(engine)
+            window_component.setData(b"import QtQuick\nWindow { width: 620; height: 540; visible: true }", QUrl())
+            window = window_component.create()
+            with TemporaryDirectory() as directory, mock.patch.multiple(
+                apps, CONFIG=directory + "/apps.json", _catalog=desktop, ICON_ROOTS=[]
+            ), mock.patch.object(apps.esdelib, "systems", return_value={}), mock.patch.object(
+                apps.steamlib, "games", return_value=[]
+            ):
+                backend = apps.Apps()
+                engine.rootContext().setContextProperty("apps", backend)
+                engine.rootContext().setContextProperty("shell", shell)
+                component = QQmlComponent(engine, QUrl.fromLocalFile(sys.argv[1]))
+                picker = component.createWithInitialProperties({"visible": False, "width": 620, "height": 540})
+                assert isinstance(picker, QQuickItem), component.errors()
+                picker.setParentItem(window.contentItem())
+                try:
+                    assert started.wait(1)
+                    picker.setVisible(True)
+                    app.processEvents()
+                    assert backend.catalogLoading
+                    assert picker.isVisible()
+                    assert not any(item["id"] == "new-app" for item in picker.property("items").toVariant())
+                    picker.setProperty("query", "new")
+                finally:
+                    release.set()
+                wait_for(lambda: not backend.catalogLoading)
+                assert picker.property("query") == "new"
+                assert any(item["id"] == "new-app" for item in picker.property("items").toVariant())
+                picker.deleteLater()
+                window.deleteLater()
+                app.processEvents()
+        """)
+        result = subprocess.run([sys.executable, "-c", script, QML + "/AppPicker.qml"],
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_now_playing_motion_and_marquee_rendering(self):
         # This suite uses QCoreApplication. The component needs a real offscreen window.
         script = textwrap.dedent(r"""

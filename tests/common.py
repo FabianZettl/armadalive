@@ -1,5 +1,5 @@
 """Shared set-up: Qt without a display, and a small fake ES-DE folder so the tests do not depend on anybody's collection."""
-import os, sys, tempfile
+import os, sys, tempfile, time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ESDE = tempfile.mkdtemp(prefix="armadalive-esde-")
@@ -32,3 +32,13 @@ class Fake(QObject):
     focusChanged = Signal(str)
     selected = Signal(object, str)
     state = {"focus": ""}
+
+
+def wait_for(predicate):
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        app.processEvents()
+        if predicate():
+            return
+        time.sleep(0.005)
+    raise AssertionError("Asynchronous update did not arrive")
