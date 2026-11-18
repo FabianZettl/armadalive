@@ -6,9 +6,14 @@ ESDE = tempfile.mkdtemp(prefix="armadalive-esde-")
 os.environ["ARMADALIVE_ESDE_DIR"] = ESDE   # read when armadalive.nowplaying is imported
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PySide6.QtCore import QCoreApplication, QObject, Signal  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Signal  # noqa: E402
 
 app = QCoreApplication.instance() or QCoreApplication(sys.argv)
+
+
+def delete_qobject(obj):
+    obj.deleteLater()
+    app.sendPostedEvents(obj, QEvent.Type.DeferredDelete)
 
 
 def touch(path, text=""):

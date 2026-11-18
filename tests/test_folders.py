@@ -1,7 +1,7 @@
 import json, os, tempfile, unittest
 from unittest import mock
 
-from tests.common import wait_for
+from tests.common import delete_qobject, wait_for
 from armadalive import apps
 
 
@@ -31,6 +31,13 @@ class Folders(unittest.TestCase):
 
     def make(self, rows=()):
         backend = apps.Apps(FakeHistory(list(rows)))
+
+        def cleanup():
+            wait_for(lambda: not backend.catalogLoading and not backend._art_running)
+            backend.flush()
+            delete_qobject(backend)
+
+        self.addCleanup(cleanup)
         wait_for(lambda: not backend.catalogLoading)
         return backend
 
@@ -45,11 +52,13 @@ class Folders(unittest.TestCase):
         a.renameFolder(fid, "  Tools  ")
         self.assertEqual([i["name"] for i in a.folderItems(fid)], ["Firefox", "Counter-Strike"])
         self.assertEqual(a.slots[0]["name"], "Tools")
+        a.flush()
         again = self.make()                                  # it survives a restart
         self.assertEqual(again.slots[0]["count"], 2)
         a.removeFromFolder(fid, "firefox")
         self.assertEqual(a.slots[0]["count"], 1)
         a.assign(0, "")
+        a.flush()
         self.assertEqual(json.load(open(f"{self.dir}/apps.json"))["folders"], {})
 
     def test_the_favorites_folder_and_a_random_start_inside_a_folder(self):

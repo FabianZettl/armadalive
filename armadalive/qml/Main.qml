@@ -377,6 +377,12 @@ Window {
             toast.show(text, code !== "tson" && code !== "tsoff")
         }
     }
+    Connections {
+        target: apps
+        function onSaveFailed(detail) {
+            toast.show(Tr.t("App layout could not be saved") + (detail ? ": " + detail : ""), true)
+        }
+    }
     // short messages from the app: something was done (accent colour) or went wrong (red)
     Connections {
         target: steamShortcuts
