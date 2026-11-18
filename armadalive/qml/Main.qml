@@ -373,8 +373,15 @@ Window {
         function onNotice(code, detail) {
             const text = ({ tson: Tr.t("Tailscale connected"), tsoff: Tr.t("Tailscale off"), tslogin: Tr.t("Tailscale needs a login"),
                             tsmissing: Tr.t("Tailscale is not running"), tsfail: Tr.t("Tailscale did not switch"),
-                            tsdenied: Tr.t("Run once: sudo tailscale set --operator=armada") })[code]
+                            tsdenied: Tr.t("Run once: sudo tailscale set --operator=armada"),
+                            commandfail: Tr.t("Setting could not be changed") })[code]
             toast.show(text, code !== "tson" && code !== "tsoff")
+        }
+    }
+    Connections {
+        target: apps
+        function onSaveFailed(detail) {
+            toast.show(Tr.t("App layout could not be saved") + (detail ? ": " + detail : ""), true)
         }
     }
     // short messages from the app: something was done (accent colour) or went wrong (red)
@@ -390,8 +397,9 @@ Window {
     Connections {
         target: rules
         function onNotice(code, detail) {
-            const text = ({ saved: Tr.t("Rule saved"), removed: Tr.t("Rule removed"), loaded: Tr.t("Rule loaded") })[code]
-            toast.show(text + ": " + detail, false)
+            const text = ({ saved: Tr.t("Rule saved"), removed: Tr.t("Rule removed"), loaded: Tr.t("Rule loaded"),
+                            failed: Tr.t("Rule failed") })[code]
+            toast.show(text + ": " + detail, code === "failed")
         }
     }
     Rectangle {
@@ -455,8 +463,11 @@ Window {
     }
 
     // a tuning change (fan curve, governor, GPU or CPU limit) is taken back unless it is kept, like a new screen resolution
-    readonly property var tuning: settings.pending
-    onTuningChanged: if (tuning.active) wake()
+    property var tuningDemo: null
+    readonly property var tuning: tuningDemo || settings.pending
+    readonly property bool tuningRecovery: tuning.recovery
+    onTuningChanged: if (tuning.active && tuning.seconds > 0) wake()
+    onTuningRecoveryChanged: if (tuningRecovery) wake()
     Rectangle {
         id: keep
         enabled: win.pageInteractive && win.tuning.active === true
@@ -478,16 +489,28 @@ Window {
             width: parent.width - 28 * win.u
             spacing: 8 * win.u
             Text { width: parent.width; color: Theme.text; font.pixelSize: 16 * win.u; wrapMode: Text.WordWrap
-                   text: Tr.t("Keep this setting?") + "  ·  " + Tr.t("back to the old one in") + " " + win.tuning.seconds + " s" }
+                   text: win.tuning.recovery
+                         ? Tr.t(win.tuning.busy ? "Restoring previous tuning settings…" : "Previous tuning settings still need to be restored.")
+                         : Tr.t("Keep this setting?") + "  ·  " + Tr.t("back to the old one in") + " " + win.tuning.seconds + " s" }
             Rectangle {
+                visible: !win.tuning.recovery
                 width: parent.width; height: 6 * win.u; radius: height / 2; color: Theme.circle
                 Rectangle { width: parent.width * win.tuning.seconds / Math.max(1, win.tuning.total); height: parent.height; radius: height / 2; color: Theme.warm
                             Behavior on width { NumberAnimation { duration: 900 } } }
             }
             Row {
                 spacing: 10 * win.u
-                PillButton { primary: true; label: Tr.t("Keep"); onClicked: settings.confirm() }
-                PillButton { label: Tr.t("Undo"); onClicked: settings.revert() }
+                PillButton {
+                    primary: true; label: Tr.t("Keep")
+                    visible: !win.tuning.recovery
+                    enabled: !win.tuning.busy && win.tuning.seconds > 0
+                    onClicked: if (!win.tuningDemo) settings.confirm()
+                }
+                PillButton {
+                    label: Tr.t(win.tuning.recovery ? "Retry restore" : "Undo")
+                    enabled: !win.tuning.busy
+                    onClicked: if (!win.tuningDemo) settings.revert()
+                }
             }
         }
     }

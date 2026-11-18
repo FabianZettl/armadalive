@@ -7,6 +7,7 @@ QtObject {
     function t(s) { return lang === "de" && de[s] !== undefined ? de[s] : s }
 
     readonly property var de: ({
+        "Setting could not be changed": "Einstellung konnte nicht geändert werden",
         "Game": "Spiel", "Manual": "Handbuch", "Mode": "Modus", "Settings": "Einstellungen", "Tuning": "Tuning",
         "CURRENT FPS": "AKTUELLE FPS", "TEMP": "TEMP", "FAN": "LÜFTER",
         "Clear RAM": "RAM leeren", "Stick LEDs": "Stick-LEDs", "Wi-Fi": "WLAN", "Airplane": "Flugmodus", "Sound": "Ton",
@@ -31,6 +32,7 @@ QtObject {
         "Graphs": "Graphen", "Temperature": "Temperatur", "Power": "Leistung", "Battery": "Akku", "last 2 minutes": "letzte 2 Minuten",
         "Screen off": "Bildschirm aus", "Tap two tiles to swap": "Zwei Kacheln antippen zum Tauschen", "Done": "Fertig", "Reset": "Zurücksetzen", "Game rule": "Spielregel", "System rule": "Systemregel", "Idle rule": "Leerlauf-Regel", "Base rule": "Basisregel",
         "Rule saved": "Regel gespeichert", "Rule removed": "Regel entfernt", "Rule loaded": "Regel geladen", "Loaded last": "Zuletzt geladen",
+        "Rule failed": "Regel konnte nicht geladen werden",
         "Health check": "Einrichtungs-Check", "ES-DE hooks": "ES-DE-Hooks", "ES-DE event scripts": "ES-DE-Ereignisskripte", "ES-DE media": "ES-DE-Medien",
         "Steam Big Picture link": "Steam-Big-Picture-Verbindung", "FPS source": "FPS-Quelle",
         "Run install.sh again: the ES-DE hooks are missing": "install.sh erneut ausführen: die ES-DE-Hooks fehlen",
@@ -40,12 +42,17 @@ QtObject {
         "gamescope's stats pipe is missing: FPS cannot be read": "Die Stats-Pipe von gamescope fehlt: FPS lassen sich nicht lesen",
         "Screens": "Bildschirme", "General": "Allgemein", "Close game": "Spiel beenden", "Hold Start + Select for 2 s": "Start + Select 2 s halten", "Theme": "Theme", "Changing the LEDs needs the root helper (Settings → Setup).": "Zum Ändern der LEDs braucht es den Root-Helper (Einstellungen → Setup).",
         "Keyboard": "Tastatur", "Add to Steam": "Zu Steam", "In Steam": "In Steam", "Shortcut created": "Shortcut erstellt", "Already in Steam": "Schon in Steam",
+        "App layout could not be saved": "App-Anordnung konnte nicht gespeichert werden",
+        "Retry restart": "Neustart erneut versuchen",
         "Launch the game from ES-DE once first": "Spiel erst einmal aus ES-DE starten", "Steam is not reachable": "Steam nicht erreichbar",
         "Checking saves…": "Prüfe Spielstände …", "Syncing saves": "Spielstände werden abgeglichen", "Starting": "Startet", "Uploading saves…": "Spielstände werden hochgeladen …",
         "Trackpad": "Trackpad", "Glide": "Gleiten",
         "Controls": "Steuerung",
         "Apps page": "Apps-Seite", "The app grid in the bar": "Das App-Raster in der Leiste", "Manuals need PyMuPDF (pip install pymupdf).": "Handbücher brauchen PyMuPDF (pip install pymupdf).", "This manual could not be read.": "Dieses Handbuch konnte nicht gelesen werden.", "Loading…": "Lädt…",
         "Presets for this profile": "Voreinstellungen für dieses Profil", "Keep this setting?": "Einstellung behalten?", "back to the old one in": "zurück zur alten in", "Keep": "Behalten", "Undo": "Zurücksetzen",
+        "Restoring previous tuning settings…": "Vorherige Tuning-Einstellungen werden wiederhergestellt …",
+        "Previous tuning settings still need to be restored.": "Die vorherigen Tuning-Einstellungen müssen noch wiederhergestellt werden.",
+        "Retry restore": "Wiederherstellung erneut versuchen",
         "Every change is taken back after 15 s unless you keep it.": "Jede Änderung wird nach 15 s zurückgenommen, wenn du sie nicht behältst.",
         "Fan starts earlier, CPU and GPU held back": "Lüfter startet früher, CPU und GPU gebremst", "Slower fan, CPU and GPU held back": "Langsamerer Lüfter, CPU und GPU gebremst", "No CPU or GPU limits, fan starts early": "Keine CPU- und GPU-Grenzen, Lüfter startet früh",
         "Cool": "Kühl", "Quiet": "Leise", "Fast": "Schnell",

@@ -1,7 +1,9 @@
 """Live device stats and power controls for the AYN Thor on Armada OS."""
 import collections, glob, json, subprocess
+from functools import partial
 from PySide6.QtCore import Property, QObject, Signal, Slot
 from .poller import Poller
+from .commands import Commands, run
 
 GPU_DEVFREQ = "/sys/class/devfreq/3d00000.gpu/cur_freq"
 BATTERY = "/sys/class/power_supply/battery"
@@ -69,6 +71,8 @@ def _essential():
 
 class SystemMonitor(QObject):
     changed = Signal()
+    profileFinished = Signal(object, bool)
+    profileRequested = Signal(object)
 
     def __init__(self, fps=None):
         super().__init__()
@@ -76,6 +80,8 @@ class SystemMonitor(QObject):
         self._hist = {k: collections.deque(maxlen=120) for k in ("fps", "cpu", "temp", "watts", "battery")}
         self._amps = collections.deque(maxlen=20)
         self._cpu = None
+        self._commands = Commands(self, ("profile", "gpu"))
+        self._commands.completed.connect(self._command_completed)
         power = {key: default for key, (_, default) in POWER.items()}
         self._stats = dict(power, profiles=[], cpu=0, ramUsed=0, ramTotal=0, cpuGhz=0, cpuMaxGhz=0,
                            gpuMhz=0, battery=0, charging=False, watts=0, led=False, eta=-1)
@@ -135,18 +141,28 @@ class SystemMonitor(QObject):
         except (OSError, ValueError):
             return False
 
-    @staticmethod
-    def _power_cli(*args):
-        subprocess.Popen(["armada-power", *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    @Slot(str, object, object)
+    def _command_completed(self, channel, request, result):
+        self._power_poller.refresh()
+        if channel == "profile" and result.current:
+            self.profileFinished.emit(request, result.succeeded)
+
+    def _power_cli(self, channel, *args, target=None):
+        return self._commands.submit(channel, partial(run, "armada-power", *args), target)
 
     @Slot(str)
     def setProfile(self, name):
-        self._power_cli("profile", name)
+        request = self._power_cli("profile", "profile", name, target=name)
+        self.profileRequested.emit(request)
+        return request
+
+    def cancelProfile(self, request):
+        self._commands.cancel_pending("profile", request)
 
     @Slot()
     def setGpuAuto(self):
-        self._power_cli("gpu-auto")
+        self._power_cli("gpu", "gpu-auto")
 
     @Slot(int)
     def setGpuManual(self, mhz):
-        self._power_cli("gpu-manual", str(int(mhz)))
+        self._power_cli("gpu", "gpu-manual", str(int(mhz)))

@@ -104,7 +104,7 @@ class Media(QObject):
         if self._s.get("active"):
             subprocess.Popen(["busctl", f"--address={BUS}", "call", self._s["name"], *PLAYER, method],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            QTimer.singleShot(400, self._poller.kick)
+            QTimer.singleShot(400, self._poller.refresh)
 
     @Slot()
     def playPause(self):

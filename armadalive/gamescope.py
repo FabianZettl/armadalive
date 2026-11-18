@@ -1,7 +1,9 @@
 """Gamescope frame rate from its stats pipe and focus and display settings from X properties."""
 import collections, math, os, select, subprocess, threading, time
+from functools import partial
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 from .poller import Poller
+from .commands import Commands, run
 
 PIPE = f"/run/user/{os.getuid()}/gamescope-stats/stats.pipe"
 ENV = dict(os.environ, DISPLAY=os.environ.get("ARMADALIVE_GAMESCOPE_DISPLAY", ":0"))
@@ -70,13 +72,22 @@ def _read_display():
     return None if props is None else tuple(props.get(name, 0) for name in DISPLAY_PROPERTIES)
 
 
+def _set_limit(fps):
+    for atom in ("GAMESCOPE_DYNAMIC_REFRESH", "GAMESCOPE_FPS_LIMIT"):
+        run("xprop", "-root", "-f", atom, "32c", "-set", atom, str(fps), env=ENV)
+
+
 class Gamescope(QObject):
     changed = Signal()
     focusChanged = Signal(str)
+    fpsLimitFinished = Signal(object, bool)
+    fpsLimitRequested = Signal(object)
 
     def __init__(self):
         super().__init__()
         self._focus, self._limit, self._refresh, self._hz = "", 0, 0, 0
+        self._commands = Commands(self, ("display",))
+        self._commands.completed.connect(self._command_completed)
         self._samples = collections.deque([(0.0, 0.0)], maxlen=1)
         self._published_fps = 0
         stopped = threading.Event()
@@ -97,7 +108,8 @@ class Gamescope(QObject):
         fps, seen = self._samples[-1]
         # The pipe publishes about every five seconds.
         fps = round(fps) if time.monotonic() - seen <= 12 else 0
-        return dict(fps=fps, focus=self._focus, limit=self._limit, refresh=self._refresh, hz=self._hz)
+        return dict(fps=fps, focus=self._focus, limit=self._limit, refresh=self._refresh, hz=self._hz,
+                    requestedLimit=self._commands.target("display", self._limit))
 
     @Slot()
     def _publish_fps(self):
@@ -116,14 +128,29 @@ class Gamescope(QObject):
             self._publish()
 
     def _apply_display(self, display):
+        self._commands.observed("display")
         self._limit, self._refresh, self._hz = display
         self._publish()
 
     @Slot(int)
     def setFpsLimit(self, fps):
-        # the screen mode: the display's refresh rate while a game runs (dynamic refresh) and the frame limit that goes with it
-        for atom in ("GAMESCOPE_DYNAMIC_REFRESH", "GAMESCOPE_FPS_LIMIT"):
-            subprocess.Popen(["xprop", "-root", "-f", atom, "32c", "-set", atom, str(int(fps))],
-                             env=ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self._limit = self._hz = int(fps)
-        self.changed.emit()
+        fps = int(fps)
+        request = self._commands.submit("display", partial(_set_limit, fps), fps)
+        self.fpsLimitRequested.emit(request)
+        self._publish()
+        return request
+
+    def cancelFpsLimit(self, request):
+        if self._commands.cancel_pending("display", request):
+            self._publish()
+
+    @Slot()
+    def toggleRefresh(self):
+        self.setFpsLimit(60 if self._commands.target("display", self._hz) == 120 else 120)
+
+    @Slot(str, object, object)
+    def _command_completed(self, _, request, result):
+        self._display_poller.refresh()
+        if result.current:
+            self.fpsLimitFinished.emit(request, result.succeeded)
+        self._publish()

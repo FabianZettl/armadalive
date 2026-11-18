@@ -26,7 +26,7 @@ from .controls import Controls
 from .gamescope import Gamescope
 from .health import Health
 from .nowplaying import NowPlaying
-from .settings import Settings
+from .settings import CONFIRM_S, Settings
 from .shell import Shell
 from .steamshortcuts import SteamShortcuts
 from .steamui import SteamUi
@@ -46,6 +46,20 @@ from .emulator_control import EmulatorControl
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def install_signal_handlers(app, ayn):
+    def request_exit(signum, _frame):
+        # A nonzero exit lets the launcher retry when the Plasma session appears.
+        QTimer.singleShot(0, lambda: app.exit(128 + signum))
+
+    signal.signal(signal.SIGTERM, request_exit)
+    signal.signal(signal.SIGINT, request_exit)
+    signal.signal(signal.SIGUSR1, lambda *_: ayn.pressed.emit())
+    signal.signal(signal.SIGUSR2, lambda *_: (ayn.pressed.emit(), ayn.released.emit()))
+    wake = QTimer(app)
+    wake.timeout.connect(lambda: None)  # Let Python handle signals while Qt is idle.
+    wake.start(250)
+
+
 def main():
     app = QGuiApplication(sys.argv)
     app.setApplicationName("ArmadaLive")
@@ -60,9 +74,12 @@ def main():
     emulator_ctrl = EmulatorControl()
     history = History(now, steam_titles=lambda: {g["id"]: g["name"] for g in steamlib.games(art=False)})
     now.history = history
-    backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=Apps(history), history=history, gameinfo=GameInfo(history), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
+    app_catalog = Apps(history)
+    backup = Backup((app_catalog,))
+    app.aboutToQuit.connect(backup.flushWriters)
+    backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=app_catalog, history=history, gameinfo=GameInfo(history), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
                     health=Health(steamui), rules=GameRules(now, gamescope, monitor), tileStore=Tiles(),
-                    battery=Battery(), media=Media(), backup=Backup(), artwork=Palette(), steamShortcuts=SteamShortcuts(now), tasks=Tasks(), onboarding=Onboarding(), activity=Activity(), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad(), cheats=Cheats(), layout=layout, emulatorControl=emulator_ctrl)
+                    battery=Battery(), media=Media(), backup=backup, artwork=Palette(), steamShortcuts=SteamShortcuts(now), tasks=Tasks(), onboarding=Onboarding(), activity=Activity(), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad(), cheats=Cheats(), layout=layout, emulatorControl=emulator_ctrl)
     pad = backends["pad"] = Pad()   # must stay referenced, like the rest
     backends["closer"] = Closer(pad, gamescope, now, backends["ui"])
     backends["thermal"] = Thermal(monitor, backends["ui"])
@@ -71,13 +88,7 @@ def main():
         engine.rootContext().setContextProperty(name, obj)
     # closing the window only hides it: the app keeps listening for the AYN button and can bring itself back
     app.setQuitOnLastWindowClosed(False)
-    # SIGUSR1 does what the AYN button does (used by the app-drawer launcher)
-    signal.signal(signal.SIGUSR1, lambda *_: backends["ayn"].pressed.emit())
-    # SIGUSR2 is a whole tap of it (press and release), which toggles; here so the toggle can be tried without the button
-    signal.signal(signal.SIGUSR2, lambda *_: (backends["ayn"].pressed.emit(), backends["ayn"].released.emit()))
-    wake = QTimer()
-    wake.timeout.connect(lambda: None)  # keeps the interpreter running so it notices the signal
-    wake.start(250)
+    install_signal_handlers(app, backends["ayn"])
     engine.load(QUrl.fromLocalFile(HERE + "/qml/Main.qml"))
     if not engine.rootObjects():
         return 1
@@ -123,9 +134,7 @@ def main():
             ms, later = sys.argv[sys.argv.index("--demo-later") + 1].split(":", 1)
             QTimer.singleShot(int(ms), lambda: backends["nowPlaying"].pin(json.loads(later).get("event"), json.loads(later).get("ui")))
         if "--keep-demo" in sys.argv:  # show the keep-or-undo bar with 11 s left (nothing is changed or reverted)
-            st = backends["settings"]
-            st._undo, st._left = {("profile", "demo", "demo"): "x"}, 11
-            st.changed.emit()
+            window.setProperty("tuningDemo", dict(active=True, seconds=11, total=CONFIRM_S, busy=False, recovery=False))
         if "--ask" in sys.argv:
             window.setProperty("askDemo", sys.argv[sys.argv.index("--ask") + 1])
         if "--notice" in sys.argv:  # code:title, show that popup message 600 ms in

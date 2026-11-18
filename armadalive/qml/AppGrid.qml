@@ -4,6 +4,7 @@ import QtQuick.Window
 // Idle screen: rounded square covers in three rows that scroll sideways. Tap launches, long-press (or the last, empty tile) picks the app.
 Item {
     id: grid
+    enabled: !apps.layoutEditingBlocked
     property int picking: -1
     property int pickingLayoutSlot: -1
     function pick(position, hasPin) {

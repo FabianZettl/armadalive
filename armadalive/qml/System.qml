@@ -79,7 +79,7 @@ Item {
                 font.letterSpacing: 0.6
                 text: (page.gs.hz > 0 ? page.gs.hz : "–") + " Hz " + Tr.t("MODE")
             }
-            MouseArea { anchors.fill: parent; onClicked: gamescope.setFpsLimit(page.gs.hz === 120 ? 60 : 120) }
+            MouseArea { anchors.fill: parent; onClicked: gamescope.toggleRefresh() }
         }
         Row {
             anchors.centerIn: parent
