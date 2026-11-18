@@ -7,6 +7,7 @@ QtObject {
     function t(s) { return lang === "de" && de[s] !== undefined ? de[s] : s }
 
     readonly property var de: ({
+        "Setting could not be changed": "Einstellung konnte nicht geändert werden",
         "Game": "Spiel", "Manual": "Handbuch", "Mode": "Modus", "Settings": "Einstellungen", "Tuning": "Tuning",
         "CURRENT FPS": "AKTUELLE FPS", "TEMP": "TEMP", "FAN": "LÜFTER",
         "Clear RAM": "RAM leeren", "Stick LEDs": "Stick-LEDs", "Wi-Fi": "WLAN", "Airplane": "Flugmodus", "Sound": "Ton",
@@ -31,6 +32,7 @@ QtObject {
         "Graphs": "Graphen", "Temperature": "Temperatur", "Power": "Leistung", "Battery": "Akku", "last 2 minutes": "letzte 2 Minuten",
         "Screen off": "Bildschirm aus", "Tap two tiles to swap": "Zwei Kacheln antippen zum Tauschen", "Done": "Fertig", "Reset": "Zurücksetzen", "Game rule": "Spielregel", "System rule": "Systemregel", "Idle rule": "Leerlauf-Regel", "Base rule": "Basisregel",
         "Rule saved": "Regel gespeichert", "Rule removed": "Regel entfernt", "Rule loaded": "Regel geladen", "Loaded last": "Zuletzt geladen",
+        "Rule failed": "Regel konnte nicht geladen werden",
         "Health check": "Einrichtungs-Check", "ES-DE hooks": "ES-DE-Hooks", "ES-DE event scripts": "ES-DE-Ereignisskripte", "ES-DE media": "ES-DE-Medien",
         "Steam Big Picture link": "Steam-Big-Picture-Verbindung", "FPS source": "FPS-Quelle",
         "Run install.sh again: the ES-DE hooks are missing": "install.sh erneut ausführen: die ES-DE-Hooks fehlen",
