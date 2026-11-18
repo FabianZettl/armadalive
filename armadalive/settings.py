@@ -1,8 +1,10 @@
 """Power profiles, fan curves and RGB: read as the user, written through the root helper."""
-import configparser, json, os, time
+import configparser, json, math, os, time
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 
-from . import device, privileged
+from . import device, persistence, privileged
 
 FACTORY, OVERRIDE = "/usr/share/armada/power-profiles.conf", "/etc/armada/power-profiles.conf"
 PROFILES = ("eco", "balanced", "performance")
@@ -12,6 +14,7 @@ UNDERCLOCK = ("none", "small", "medium", "large")
 PRESETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "presets.json")
 PENDING = os.path.expanduser("~/.config/armadalive/tuning_pending.json")
 CONFIRM_S, MAX_S = 15, 60     # seconds to confirm a change; the most a chain of changes may stay unconfirmed
+QUEUE_LIMIT = 16
 # helper option -> the field read_power() reports it under
 FIELDS = {"cpu_governor": "governor", "cpu_underclock": "underclock", "fan_curve": "fanCurve", "gpu_max_mhz": "gpuMax", "gpu_min_mhz": "gpuMin"}
 
@@ -81,26 +84,187 @@ def read_rgb():
         return {}
 
 
+def _read_state(spec, dev):
+    try:
+        power = read_power()
+    except (configparser.Error, OSError, ValueError, KeyError):
+        power = {}
+    try:
+        helper = privileged.available()
+    except OSError:
+        helper = False
+    return dict(power, helper=helper, rgb=read_rgb(), device=dev,
+                presets=resolve_presets(spec, dev, power.get("gpuSteps", []),
+                                        power.get("governors", []), power.get("curves", [])))
+
+
+def _journal(path):
+    try:
+        with open(path, encoding="utf-8") as file:
+            entries = json.load(file)
+    except FileNotFoundError:
+        return {}
+    if not isinstance(entries, list):
+        raise ValueError("Invalid tuning recovery file")
+    undo = {}
+    for entry in entries:
+        if not isinstance(entry, list) or len(entry) != 4:
+            raise ValueError("Invalid tuning recovery entry")
+        kind, name, key, value = entry
+        if (not all(isinstance(item, str) for item in (kind, name, key))
+                or not isinstance(value, (int, str))
+                or not ((kind == "profile" and name in PROFILES and key in FIELDS)
+                        or (kind == "curve" and name and not key))):
+            raise ValueError("Invalid tuning recovery entry")
+        undo[kind, name, key] = value
+    return undo
+
+
+def _write_journal(path, undo):
+    persistence.write_json(path, [[*key, value] for key, value in undo.items()])
+
+
+def _has_custom_cpu_caps(profile):
+    override = configparser.ConfigParser()
+    override.optionxform = str
+    try:
+        with open(OVERRIDE, encoding="utf-8") as file:
+            override.read_file(file)
+    except FileNotFoundError:
+        return False
+    section = f"profile.{profile}"
+    keys = override.options(section) if override.has_section(section) else []
+    # Removing a key from this local parser detects an explicit option, including one that shadows a default.
+    return any(override.remove_option(section, key) for key in keys if key.startswith("cpu_max_policy"))
+
+
+def _apply(path, undo, args):
+    """Record each original value before entering the helper."""
+    operation, name, *items = args
+    try:
+        power = read_power()
+        if operation == "profile":
+            previous = next((p for p in power.get("profiles", []) if p["id"] == name), {})
+            remembered, changes = {}, []
+            for item in items:
+                key, value = item.split("=", 1)
+                old = previous.get(FIELDS[key])
+                if str(old) == value:
+                    continue
+                if key in ("gpu_max_mhz", "gpu_min_mhz") and old not in power["gpuSteps"]:
+                    raise ValueError("ArmadaLive cannot restore the previous graphics clock limit on this device.")
+                if key == "cpu_governor" and old not in power["governors"]:
+                    raise ValueError("ArmadaLive cannot restore the previous processor governor on this device.")
+                remembered[operation, name, key] = old
+                changes.append(item)
+            if (operation, name, "cpu_underclock") in remembered and _has_custom_cpu_caps(name):
+                raise ValueError("Changing underclock would discard this profile’s custom processor caps.")
+            args = (operation, name, *changes)
+        else:
+            old = next((c["points"] for c in power.get("curves", []) if c["id"] == name), None)
+            value = ",".join(f"{t}:{p}" for t, p in sorted(old, reverse=True)) if old else None
+            remembered = {} if value == items[0] else {("curve", name, ""): value}
+        if any(value is None for value in remembered.values()):
+            raise ValueError("Could not read the previous tuning setting")
+        updated = {**remembered, **undo}
+        if updated != undo:
+            _write_journal(path, updated)
+    except (configparser.Error, OSError, ValueError, KeyError) as exc:
+        return undo, str(exc), None
+    if not remembered:
+        return undo, "", None
+    try:
+        status, error = privileged.run_with_status(*args)
+    except Exception as exc:
+        return updated, str(exc) or type(exc).__name__, "restore"
+
+    if status in (0, privileged.RELOAD_FAILED):
+        return updated, error, "confirm"
+    if status == 2:
+        # Profile and curve validation reject these requests before saving.
+        try:
+            if updated != undo:
+                if undo:
+                    _write_journal(path, undo)
+                else:
+                    failure = _clear_journal(path, updated)
+                    if failure:
+                        return updated, f"{error}\n{failure}", "restore"
+        except OSError as exc:
+            return updated, f"{error}\n{exc}", "restore"
+        return undo, error, None
+    # A timeout or interruption may have followed a successful write.
+    return updated, error, "restore"
+
+
+def _clear_journal(path, undo):
+    try:
+        persistence.remove(path)
+    except OSError as exc:
+        error = str(exc) or "Could not remove the tuning recovery journal."
+        # An unlink may have succeeded before the directory sync failed.
+        if not os.path.lexists(path):
+            try:
+                _write_journal(path, undo)
+            except (OSError, ValueError) as write_error:
+                return (f"{error}\nCould not save the tuning recovery journal ({write_error}). "
+                        "Retry restore before closing ArmadaLive.")
+        return error
+    return ""
+
+
+def _restore(path, undo):
+    """Keep the complete journal until every helper call succeeds."""
+    by_profile, commands = {}, []
+    for (kind, name, key), old in undo.items():
+        if kind == "profile":
+            by_profile.setdefault(name, []).append(f"{key}={old}")
+        else:
+            commands.append(("fan-curve", name, old))
+    commands.extend(("profile", name, *items) for name, items in by_profile.items())
+    errors = []
+    for args in commands:
+        try:
+            err = privileged.run(*args)
+        except Exception as exc:
+            err = str(exc) or type(exc).__name__
+        if err:
+            errors.append(err)
+    return errors[0] if errors else _clear_journal(path, undo)
+
+
 class Settings(QObject):
     changed = Signal()
+    pendingChanged = Signal()
     message = Signal(str)
 
-    def __init__(self):
+    def __init__(self, *, now=time.monotonic):
         super().__init__()
-        self._helper = privileged.available()
         self._data = {}
         self._dev = device.info()
         try:
-            self._spec = json.load(open(PRESETS))
+            with open(PRESETS, encoding="utf-8") as file:
+                self._spec = json.load(file)
         except (OSError, ValueError):
             self._spec = {}
-        # changes not yet confirmed: (kind, name, key) -> the value to go back to; kept on disk so a closed app cannot leave them behind
-        self._undo, self._left, self._since, self._boot_revert = {}, 0, 0.0, False
+        self._path = PENDING
+        self._now = now
+        self._undo, self._since, self._deadline = {}, None, None
+        self._journal_error = ""
         try:
-            self._undo = {(k, n, key): v for k, n, key, v in json.load(open(PENDING))}
-            self._boot_revert = bool(self._undo)
-        except (OSError, ValueError, TypeError):
-            pass
+            self._undo = _journal(self._path)
+        except (OSError, ValueError, RecursionError) as exc:
+            self._journal_error = str(exc)
+        self._recovery = bool(self._undo)
+        self._restore_requested = self._recovery
+        self._queue = deque()
+        self._refresh_requested = False
+        self._future = None
+        self._operation = ""
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tuning")
+        self._results = QTimer(self)
+        self._results.timeout.connect(self._poll_result)
+        self._results.setInterval(15)
         self.refresh()
         timer = QTimer(self)
         timer.timeout.connect(self.refresh)
@@ -113,113 +277,160 @@ class Settings(QObject):
     def data(self):
         return self._data
 
+    @Property("QVariant", notify=pendingChanged)
+    def pending(self):
+        seconds = max(0, math.ceil(self._deadline - self._now())) if self._deadline is not None else 0
+        return dict(active=bool(self._undo), seconds=seconds, total=CONFIRM_S,
+                    busy=(self._operation not in ("", "refresh") or bool(self._queue)
+                          or self._restore_requested and bool(self._data.get("helper"))),
+                    recovery=self._recovery)
+
     @Slot()
     def refresh(self):
-        self._helper = privileged.available()
+        if self._operation != "refresh":
+            self._refresh_requested = True
+            self._dispatch()
+
+    def _submit(self, name, fn, *args):
+        self._operation = name
+        self._future = self._executor.submit(fn, *args)
+        self._results.start()
+        self.pendingChanged.emit()
+
+    def _dispatch(self):
+        if self._future is not None:
+            return
+        if self._expired():
+            self._request_recovery()
+        if self._restore_requested and self._data.get("helper"):
+            self._restore_requested = False
+            self._submit("restore", _restore, self._path, dict(self._undo))
+            return
+        if self._queue:
+            kind, args = self._queue.popleft()
+            if kind == "apply":
+                self._submit(kind, _apply, self._path, dict(self._undo), args)
+            elif kind == "keep":
+                self._submit(kind, _clear_journal, self._path, dict(self._undo))
+            else:
+                self._submit(kind, privileged.run, *args)
+        elif self._refresh_requested:
+            self._refresh_requested = False
+            self._submit("refresh", _read_state, self._spec, self._dev)
+
+    @Slot()
+    def _poll_result(self):
+        if not self._future.done():
+            return
+        self._results.stop()
+        operation, future = self._operation, self._future
+        self._operation, self._future = "", None
+        error = ""
         try:
-            power = read_power()
-        except (configparser.Error, OSError, ValueError, KeyError):
-            power = {}
-        self._data = dict(power, helper=self._helper, rgb=read_rgb(), device=self._dev,
-                          presets=resolve_presets(self._spec, self._dev, power.get("gpuSteps", []), power.get("governors", []), power.get("curves", [])))
-        self.changed.emit()
+            result = future.result()
+        except Exception as exc:
+            error = str(exc) or type(exc).__name__
+        else:
+            if operation == "refresh":
+                self._data = result
+                self.changed.emit()
+            elif operation == "apply":
+                undo, error, next_step = result
+                now = self._now()
+                if undo and not self._undo:
+                    self._since = now
+                self._undo = undo
+                if next_step == "restore" or self._expired(now):
+                    self._request_recovery()
+                elif next_step == "confirm" and not self._recovery:
+                    self._deadline = min(now + CONFIRM_S, self._since + MAX_S)
+            elif operation in ("restore", "keep"):
+                error = result
+                if not error:
+                    self._undo, self._since, self._deadline = {}, None, None
+                    self._recovery = False
+            else:
+                error = result
+        if operation in ("restore", "keep") and error:
+            self._recovery = True
+            self._deadline = None
+        if operation in ("apply", "direct", "restore"):
+            self._refresh_requested = True
+        if error or operation != "refresh":
+            self.message.emit(error or "")
+        self._dispatch()
+        self.pendingChanged.emit()
 
-    def _do(self, *args):
-        err = privileged.run(*args)
-        self.message.emit(err)
-        self.refresh()
+    def _enqueue(self, kind, args=()):
+        if len(self._queue) >= QUEUE_LIMIT:
+            self.message.emit("Too many tuning requests. Try again when the current change finishes.")
+            return
+        self._queue.append((kind, args))
+        self._dispatch()
+        self.pendingChanged.emit()
 
-    # --- changes that can make the device hot or unstable are taken back unless confirmed, like a new screen resolution
-    @Property("QVariant", notify=changed)
-    def pending(self):
-        return dict(active=bool(self._undo) and self._left > 0, seconds=self._left, total=CONFIRM_S)
-
-    def _previous(self, profile, key):
-        prof = next((p for p in self._data.get("profiles", []) if p["id"] == profile), None)
-        return None if prof is None else prof.get(FIELDS[key])
-
-    def _arm(self, remembered):
-        """remembered: [((kind, name, key), old value)]; the oldest value of each setting is the one to go back to."""
-        now = time.monotonic()
-        if not self._undo:
-            self._since = now
-        for k, v in remembered:
-            self._undo.setdefault(k, v)
-        self._left = max(1, min(CONFIRM_S, int(self._since + MAX_S - now)))
-        os.makedirs(os.path.dirname(PENDING), exist_ok=True)
-        with open(PENDING, "w") as f:
-            json.dump([[*k, v] for k, v in self._undo.items()], f)
-        self.changed.emit()
-
-    def _apply_profile(self, profile, pairs):
-        before = [((("profile", profile, k)), self._previous(profile, k)) for k, v in pairs]
-        status, err = privileged.run_with_status("profile", profile, *[f"{k}={v}" for k, v in pairs])
-        self.message.emit(err)
-        if status in (0, privileged.RELOAD_FAILED):
-            self._arm([(k, old) for (k, old), (_, new) in zip(before, pairs) if old is not None and str(old) != str(new)])
-        self.refresh()
+    def _tune(self, *args):
+        self._tick()
+        if self._journal_error:
+            self.message.emit(self._journal_error)
+        elif not self._recovery:
+            self._enqueue("apply", args)
 
     @Slot(str, str, str)
     def setProfileOption(self, profile, key, value):
-        self._apply_profile(profile, [(key, value)])
+        if profile in PROFILES and key in FIELDS:
+            self._tune("profile", profile, f"{key}={value}")
 
     @Slot(str, str)
     def applyPreset(self, profile, preset):
         pre = next((p for p in self._data.get("presets", []) if p["id"] == preset), None)
-        if pre:
-            self._apply_profile(profile, [tuple(i.split("=", 1)) for i in pre["items"]])
+        if pre and profile in PROFILES:
+            self._tune("profile", profile, *pre["items"])
 
     @Slot(str, str)
     def saveFanCurve(self, name, points):
-        old = next((c for c in self._data.get("curves", []) if c["id"] == name), None)
-        status, err = privileged.run_with_status("fan-curve", name, points)
-        self.message.emit(err)
-        if status in (0, privileged.RELOAD_FAILED) and old:
-            self._arm([(("curve", name, ""), ",".join(f"{t}:{p}" for t, p in sorted(old["points"], reverse=True)))])
-        self.refresh()
+        self._tune("fan-curve", name, points)
 
     @Slot()
     def confirm(self):
-        self._forget()
+        if self._expired(self._now()):
+            self.revert()
+        elif self._undo and not self._recovery and not self.pending["busy"]:
+            # Accept Keep now even if an in-flight refresh delays journal removal.
+            self._deadline = None
+            self._enqueue("keep")
 
-    def _forget(self):
-        self._undo, self._left, self._boot_revert = {}, 0, False
-        try:
-            os.remove(PENDING)
-        except OSError:
-            pass
-        self.changed.emit()
+    def _request_recovery(self):
+        self._deadline = None
+        self._recovery = self._restore_requested = True
+        self._queue = deque(entry for entry in self._queue if entry[0] == "direct")
 
     @Slot()
     def revert(self):
-        undo = dict(self._undo)
-        self._forget()
-        by_profile, errors = {}, []
-        for (kind, name, key), old in undo.items():
-            if kind == "profile":
-                by_profile.setdefault(name, []).append(f"{key}={old}")
-            else:
-                errors.append(privileged.run("fan-curve", name, old))
-        for name, items in by_profile.items():
-            errors.append(privileged.run("profile", name, *items))
-        self.message.emit(next((e for e in errors if e), ""))
-        self.refresh()
+        if self._undo and self._operation not in ("restore", "keep"):
+            self._request_recovery()
+            self._refresh_requested = True
+            self._dispatch()
+            self.pendingChanged.emit()
+
+    def _expired(self, now=None):
+        if now is None:
+            now = self._now()
+        return self._deadline is not None and now >= self._deadline
 
     def _tick(self):
-        if self._boot_revert and privileged.available():
-            self.revert()          # the app was closed before the change was confirmed
-        elif self._left > 0:
-            self._left -= 1
-            self.changed.emit()
-            if self._left == 0:
+        if self._deadline is not None and self._operation != "keep":
+            if self._expired():
                 self.revert()
+            else:
+                self.pendingChanged.emit()
 
     @Slot()
     def dropCaches(self):
-        self._do("drop-caches")
+        self._enqueue("direct", ("drop-caches",))
 
     @Slot(bool, str, int)
     def setRgb(self, enabled, color, brightness):
-        rgb = read_rgb()
-        self._do("rgb", "true" if enabled else "false", color, brightness, rgb.get("saturation", 100),
-                 "true" if rgb.get("linkBrightness") else "false", rgb.get("maxBrightness", 50))
+        rgb = self._data.get("rgb", {})
+        self._enqueue("direct", ("rgb", "true" if enabled else "false", color, brightness, rgb.get("saturation", 100),
+                                 "true" if rgb.get("linkBrightness") else "false", rgb.get("maxBrightness", 50)))
