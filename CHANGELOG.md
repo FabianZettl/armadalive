@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2
+
+More fixes by Brendan Noble (thank you), the rest of the work that was split out of his first large pull requests. Reviewed, tested on a Thor (371 tests) and run live there for 40 seconds; not tried on the device with every control.
+
+- **The app grid is saved in the background** with a retry and a message if it fails, and a backup waits for edits that are still being saved. Restoring a backup blocks layout edits until the restart, and a failed restart can be retried (#23).
+- **Game details and manuals load in the background**, so changing games no longer waits for files and artwork. The game is known before its artwork has loaded, and Steam focus changes no longer count a background emulator as the new game (#24).
+- **Tuning changes can be recovered**: the previous values are saved before a change, an expired or unconfirmed change is restored at the next start, and a failed restore can be retried (#25). Uses the root helper from 1.0.1.
+- **Controls run in order**: one write at a time per control, the newest change wins, and a game rule reports success only after its writes finished (#26).
+- Known and harmless: the QML log shows "Cannot read property of null" lines when the app closes, and the app ends with exit code 143 when the service is stopped.
+
 ## 1.0.1
 
 The first release with changes from the community: a set of robustness and speed fixes by Brendan Noble (thank you), reviewed and tried on a Thor.
