@@ -1,5 +1,6 @@
 """Shared set-up: Qt without a display, and a small fake ES-DE folder so the tests do not depend on anybody's collection."""
 import os, sys, tempfile, time
+from contextlib import contextmanager
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ESDE = tempfile.mkdtemp(prefix="armadalive-esde-")
@@ -18,7 +19,8 @@ def delete_qobject(obj):
 
 def touch(path, text=""):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    open(path, "w").write(text)
+    with open(path, "w") as file:
+        file.write(text)
 
 
 # one game with a logo, a background and a gamelist entry
@@ -47,3 +49,20 @@ def wait_for(predicate):
             return
         time.sleep(0.005)
     raise AssertionError("Asynchronous update did not arrive")
+
+
+def dispose_qt(obj):
+    from PySide6.QtCore import QThreadPool
+
+    # Keep the parent alive through queued signal emission and delete its timers on their owner.
+    if not QThreadPool.globalInstance().waitForDone(5000):
+        raise AssertionError("Runtime workers did not finish before fixture teardown")
+    delete_qobject(obj)
+
+
+@contextmanager
+def runtime_object(obj):
+    try:
+        yield obj
+    finally:
+        dispose_qt(obj)
