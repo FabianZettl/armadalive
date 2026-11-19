@@ -33,7 +33,9 @@ class Precedence(unittest.TestCase):
     """What is in front decides: Steam UI, a Steam game, then ES-DE's world."""
 
     def setUp(self):
-        with mock.patch.object(n.NowPlaying, "_scan"):
+        # Precedence tests supply their own process snapshots and ES-DE events.
+        with (mock.patch.object(n.NowPlaying, "_scan"),
+              mock.patch.object(n.NowPlaying, "_poll")):
             self.np = n.NowPlaying(Fake(), Fake())
         self.addCleanup(dispose_qt, self.np)
         self.psx = dict(event="game-start", system="psx", name="Digimon", path=f"{ROMS}/psx/Digimon.chd")
@@ -212,7 +214,7 @@ class Precedence(unittest.TestCase):
                 def blocked(path, *args, **kwargs):
                     if path == manifest:
                         entered.set()
-                        release.wait(3)
+                        release.wait()
                         if outcome == "failed":
                             raise RuntimeError("Steam manifest reader failed")
                     return read(path, *args, **kwargs)
@@ -234,8 +236,9 @@ class Precedence(unittest.TestCase):
                             self.assertEqual(self.np.state["key"], background_key)
                     finally:
                         release.set()
+                        # Settle even a canceled lookup before checking the fallback.
                         wait_for(lambda: not self.np._focus_lookup._busy)
-                    self.assertEqual((self.np.state["key"], self.np.state["playing"]), (expected, True))
+                    wait_for(lambda: (self.np.state["key"], self.np.state["playing"]) == (expected, True))
 
     def test_known_steam_start_precedes_its_blocked_artwork(self):
         with tempfile.TemporaryDirectory() as directory:
