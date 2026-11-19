@@ -677,7 +677,9 @@ class EntryPoint(unittest.TestCase):
             constructors['Apps'].assert_called_once_with(constructors['History'].return_value, coordinator)
             catalog = constructors['Apps'].return_value
             backup = constructors['Backup'].return_value
-            constructors['Backup'].assert_called_once_with((catalog,))
+            constructors['Backup'].assert_called_once()
+            writers, = constructors['Backup'].call_args.args
+            self.assertIn(catalog, writers)
             constructors['QGuiApplication'].return_value.aboutToQuit.connect.assert_called_once_with(backup.flushWriters)
             context = constructors['QQmlApplicationEngine'].return_value.rootContext.return_value
             context.setContextProperty.assert_any_call('steamShortcuts', coordinator)
