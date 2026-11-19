@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.3
+
+Two more fixes by Brendan Noble (thank you). Tested on a Thor (403 tests) and run there; not tried with a real game session.
+
+- **No more error lines when the app closes** (#27): the interface is taken down before the objects it reads from, so stopping the service leaves the log clean. Closing the window still only hides it.
+- **The play history is safe**: it is saved atomically in the background and retried when a write fails, an interrupted first import (Steam, ES-DE) is picked up again, and a broken Steam or ES-DE record is skipped on its own. A backup includes history that is still being saved (#29).
+
 ## 1.0.2
 
 More fixes by Brendan Noble (thank you), the rest of the work that was split out of his first large pull requests. Reviewed, tested on a Thor (371 tests) and run live there for 40 seconds; not tried on the device with every control.
