@@ -181,3 +181,159 @@ class SettingsPersistence(unittest.TestCase):
                     edit(store)
                     self.assertNotEqual(target.read_bytes(), b"{}")
                     self.assertEqual(notifications, [True])
+
+
+class RestoreWriters(unittest.TestCase):
+    def setUp(self):
+        from armadalive import backup, gamerules
+        from tests.test_gamerules import FakeGs, FakeNow, FakeSys
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(mock.patch.object(backup, "CONFIG_DIR", str(self.root)))
+        self.archive = self.root / "backup.json"
+        self.enterContext(mock.patch.object(backup, "FILE", str(self.archive)))
+        for module, filename in ((ui, "ui.json"), (tiles, "tiles.json"), (battery, "battery.json"), (gamerules, "game_rules.json")):
+            self.enterContext(mock.patch.object(module, "CONFIG", self.root / filename))
+        self.enterContext(mock.patch.object(battery, "LIMIT_FILE", self.root / "no-limit"))
+        self.look, self.tiles, self.battery = ui.UiSettings(), tiles.Tiles(), battery.Battery()
+        self.now, self.gs, self.system = FakeNow(), FakeGs(), FakeSys()
+        self.rules = gamerules.GameRules(self.now, self.gs, self.system)
+        self.coordinator = backup.Backup((self.look, self.tiles, self.battery, self.rules))
+        self.look.setTheme("stock")
+        self.tiles.setOrder(["a", "b"])
+        self.battery.setWarn(20)
+        self.rules.toggle("game")
+        self.archive.write_text(json.dumps({"files": {
+            "ui.json": {"theme": "neon"}, "tiles.json": {"order": ["b", "a"]},
+            "battery.json": {"warn": 30, "limit": 100}, "game_rules.json": {"rules": {}}
+        }}))
+
+    def test_restore_drains_actual_battery_commands_and_freezes_every_synchronous_writer(self):
+        import threading
+        from armadalive import backup
+        from tests.test_runtime import wait_for
+        started, release = threading.Event(), threading.Event()
+        calls = []
+
+        def command(_, percent):
+            calls.append(percent)
+            if len(calls) == 1:
+                started.set()
+                if not release.wait(3):
+                    raise RuntimeError("test command was not released")
+            return ""
+
+        with mock.patch.object(battery.privileged, "available", return_value=True), \
+                mock.patch.object(battery.privileged, "run", side_effect=command), \
+                mock.patch.object(battery, "_read", return_value=""), \
+                mock.patch.object(backup.QTimer, "singleShot") as later:
+            try:
+                self.battery.setLimit(80)
+                self.assertTrue(started.wait(1))
+                self.battery.setLimit(75)
+                self.coordinator.restore()
+                self.assertTrue(self.coordinator.state["busy"])
+                self.assertTrue(self.battery.writesPending())
+                self.battery.setLimit(60)
+                self.battery.setWarn(45)
+                self.look.setTheme("forbidden")
+                self.tiles.reset()
+                self.rules.setEnabled(False)
+                self.rules.remove(self.rules.state["gameKey"])
+                self.assertTrue(self.rules.state["writesPaused"])
+                self.assertTrue(self.rules.state["enabled"])
+                self.assertEqual(self.battery.state["warn"], 20)
+                self.assertEqual(self.look.state["theme"], "stock")
+                self.assertEqual(self.tiles.order, ["a", "b"])
+            finally:
+                release.set()
+            self.assertTrue(wait_for(lambda: self.coordinator.state["message"] == "restored"))
+            self.assertEqual(calls, [80, 75])
+            self.assertFalse(self.battery.writesPending())
+            restored_bytes = {name: (self.root / name).read_bytes() for name in backup.VALIDATORS if (self.root / name).exists()}
+            self.battery.setWarn(40)
+            self.look.setDim(False)
+            self.tiles.setOrder(["bad"])
+            self.rules.toggle("idle")
+            self.now.state = dict(self.now.state, key="other", playing=True)
+            with mock.patch.object(self.rules, "_emulator") as emulator:
+                self.now.changed.emit()
+                emulator.assert_not_called()
+            self.coordinator.flushWriters()
+            self.assertEqual(restored_bytes, {name: (self.root / name).read_bytes() for name in restored_bytes})
+            with mock.patch.object(backup.os, "execv", side_effect=OSError("exec failed")):
+                later.call_args.args[1]()
+        self.assertFalse(self.rules.state["writesPaused"])
+        self.assertEqual(json.loads((self.root / "battery.json").read_text())["limit"], 75)
+        self.battery.setWarn(25)
+        self.assertEqual(json.loads((self.root / "battery.json").read_text())["warn"], 25)
+
+    def test_export_waits_for_battery_save_and_failed_completion_aborts_restore(self):
+        import threading
+        from armadalive import backup
+        from tests.test_runtime import wait_for
+        for operation, fail in (("save", False), ("restore", True)):
+            with self.subTest(operation=operation):
+                started, release = threading.Event(), threading.Event()
+                previous = (self.root / "ui.json").read_bytes()
+                write = persistence.write_json
+
+                def command(*_):
+                    started.set()
+                    if not release.wait(3):
+                        raise RuntimeError("test command was not released")
+                    return ""
+
+                def save(path, *args, **kwargs):
+                    if fail and Path(path).name == "battery.json":
+                        raise OSError("battery persistence failed")
+                    return write(path, *args, **kwargs)
+
+                with mock.patch.object(battery.privileged, "available", return_value=True), \
+                        mock.patch.object(battery.privileged, "run", side_effect=command), \
+                        mock.patch.object(battery, "_read", return_value=""), \
+                        mock.patch.object(persistence, "write_json", side_effect=save):
+                    try:
+                        self.battery.setLimit(80)
+                        self.assertTrue(started.wait(1))
+                        getattr(self.coordinator, operation)()
+                        self.assertTrue(self.coordinator.state["busy"])
+                    finally:
+                        release.set()
+                    self.assertTrue(wait_for(lambda: not self.coordinator.state["busy"]))
+                self.assertFalse(self.battery._writes_paused)
+                self.assertEqual((self.root / "ui.json").read_bytes(), previous)
+                if fail:
+                    self.assertIn("battery persistence failed", self.coordinator.state["message"])
+                    self.assertFalse(Path(backup._journal_path()).exists())
+                    self.battery.setWarn(20)  # A later successful save clears the error.
+                else:
+                    self.assertEqual(json.loads(self.archive.read_text())["files"]["battery.json"]["limit"], 80)
+
+    def test_battery_timeout_releases_freeze_without_touching_restore_targets(self):
+        import threading
+        from armadalive import backup
+        from tests.test_runtime import wait_for
+        started, release = threading.Event(), threading.Event()
+        previous = (self.root / "ui.json").read_bytes()
+
+        def command(*_):
+            started.set()
+            if not release.wait(3):
+                raise RuntimeError("test command was not released")
+            return ""
+
+        with mock.patch.object(battery.privileged, "available", return_value=True), \
+                mock.patch.object(battery.privileged, "run", side_effect=command), \
+                mock.patch.object(battery, "_read", return_value=""), \
+                mock.patch.object(backup, "WRITE_TIMEOUT", 0):
+            try:
+                self.battery.setLimit(80)
+                self.assertTrue(started.wait(1))
+                self.coordinator.restore()
+                self.assertIn("Timed out", self.coordinator.state["message"])
+                self.assertFalse(self.battery._writes_paused)
+                self.assertEqual((self.root / "ui.json").read_bytes(), previous)
+            finally:
+                release.set()
+            self.assertTrue(wait_for(lambda: not self.battery.writesPending()))
+        self.assertEqual(json.loads((self.root / "battery.json").read_text())["limit"], 80)

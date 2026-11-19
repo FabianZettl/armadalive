@@ -108,3 +108,22 @@ def remove(path):
     except FileNotFoundError:
         pass
     _sync_directory(os.path.dirname(os.path.abspath(path)))
+
+
+class OwnerWriter:
+    """Freeze synchronous owner-thread edits while a backup drains its writers."""
+    _writes_paused = False
+
+    def pauseWrites(self, *, restoring=False):
+        self._writes_paused = True
+        self.changed.emit()
+
+    def writesPending(self):
+        return False
+
+    def resumeWrites(self):
+        self._writes_paused = False
+        self.changed.emit()
+
+    def flush(self, timeout=3.0):
+        pass  # Accepted writes already completed on the owner thread.

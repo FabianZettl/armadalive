@@ -495,22 +495,21 @@ class LayoutSaving(unittest.TestCase):
         self.apps.flush()
         self.assertEqual(self.saved_name(), "After failed restore")
 
-    def test_failed_restart_holds_stale_layout_and_allows_a_restart_retry(self):
+    def test_failed_restart_rolls_back_layout_and_releases_writers(self):
+        previous = self.config.read_bytes()
         restored = {"slots": [], "folders": {}, "next": 1}
         self.export.write_text(json.dumps({"files": {"apps.json": restored}}))
         with mock.patch.object(backup.QTimer, "singleShot") as later, \
-                mock.patch.object(backup.os, "execv", side_effect=[OSError("Exec failed"), None]) as execv:
+                mock.patch.object(backup.os, "execv", side_effect=OSError("Exec failed")):
             self.backup.restore()
             later.call_args.args[1]()
-            self.assertIn("Exec failed", self.backup.state["message"])
-            self.assertTrue(self.backup.state["restartRequired"])
-            self.assertTrue(self.apps.layoutEditingBlocked)
-            self.apps.renameFolder("folder:1", "Stale layout")
-            self.backup.save()
-            self.backup.restore()
-            self.assertEqual(execv.call_count, 2)
+        self.assertIn("Exec failed", self.backup.state["message"])
+        self.assertFalse(self.backup.state["restartRequired"])
+        self.assertFalse(self.apps.layoutEditingBlocked)
+        self.assertEqual(self.config.read_bytes(), previous)
+        self.apps.renameFolder("folder:1", "After rollback")
         self.apps.flush()
-        self.assertEqual(json.loads(self.config.read_text()), restored)
+        self.assertEqual(self.saved_name(), "After rollback")
 
     def test_failed_restart_of_an_empty_restore_releases_the_freeze(self):
         self.export.write_text(json.dumps({"files": {}}))
@@ -550,14 +549,14 @@ class LayoutSaving(unittest.TestCase):
         self.apps.flush()
         self.assertEqual(self.saved_name(), "Unsaved")
 
-    def test_partial_restore_failure_keeps_the_old_layout_frozen(self):
+    def test_unusable_destination_fails_before_any_restore_and_releases_layout(self):
         restored = {"slots": [], "folders": {}, "next": 1}
         self.config.with_name("history.json").mkdir()
         self.export.write_text(json.dumps({"files": {"apps.json": restored, "history.json": {}}}))
         self.backup.restore()
         self.assertIn("history.json", self.backup.state["message"])
-        self.assertTrue(self.backup.state["restartRequired"])
-        self.assertTrue(self.apps.layoutEditingBlocked)
-        self.apps.renameFolder("folder:1", "Stale layout")
+        self.assertFalse(self.backup.state["restartRequired"])
+        self.assertFalse(self.apps.layoutEditingBlocked)
+        self.apps.renameFolder("folder:1", "After failed restore")
         self.backup.flushWriters()
-        self.assertEqual(json.loads(self.config.read_text()), restored)
+        self.assertEqual(self.saved_name(), "After failed restore")

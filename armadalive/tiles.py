@@ -14,12 +14,18 @@ def _ids(value):
     return [i for i in list(value or []) if isinstance(i, str)]
 
 
-class Tiles(QObject):
+def validate_settings(saved):
+    # The ordinary reader accepts object members and normalizes unusable values.
+    # Backup must preserve those compatible values, including optional fields.
+    return isinstance(saved, dict)
+
+
+class Tiles(persistence.OwnerWriter, QObject):
     changed = Signal()
 
     def __init__(self):
         super().__init__()
-        saved = persistence.read_json(CONFIG, lambda data: isinstance(data, dict), {}).get("order", [])
+        saved = persistence.read_json(CONFIG, validate_settings, {}).get("order", [])
         self._order = [i for i in saved if isinstance(i, str)] if isinstance(saved, list) else []
 
     @Property("QVariant", notify=changed)
@@ -40,6 +46,8 @@ class Tiles(QObject):
     @Slot(str, str, "QVariant")
     def swap(self, a, b, ids):
         """Swap two tiles; `ids` is the order on screen right now."""
+        if self._writes_paused:
+            return
         ids = self.arrange(ids)
         if a in ids and b in ids and a != b:
             i, j = ids.index(a), ids.index(b)
@@ -50,10 +58,14 @@ class Tiles(QObject):
     @Slot("QVariant")
     def setOrder(self, ids):
         """The tiles in `ids` come first, in that order; every other tile follows in its usual place."""
+        if self._writes_paused:
+            return
         self._order = _ids(ids)
         self._save()
 
     @Slot()
     def reset(self):
+        if self._writes_paused:
+            return
         self._order = []
         self._save()

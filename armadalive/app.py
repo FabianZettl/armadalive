@@ -14,7 +14,7 @@ from .gameinfo import GameInfo
 from .history import History
 from . import steamlib
 from .ayn import AynButton
-from .backup import Backup
+from .backup import Backup, recover_restore
 from .battery import Battery
 from .closer import Closer
 from .gamepad import Pad
@@ -62,6 +62,7 @@ def install_signal_handlers(app, ayn):
 
 
 def main():
+    recover_restore(startup=True)  # Finish recovery before any backend reads or writes configuration.
     app = QGuiApplication(sys.argv)
     app.setApplicationName("ArmadaLive")
     app.setApplicationVersion(__version__)
@@ -76,11 +77,13 @@ def main():
     history = History(now, steam_titles=lambda: {g["id"]: g["name"] for g in steamlib.games(art=False)})
     now.history = history
     app_catalog = Apps(history)
-    backup = Backup((app_catalog, history))
+    ui, tiles, battery = UiSettings(), Tiles(), Battery()
+    rules = GameRules(now, gamescope, monitor)
+    backup = Backup((app_catalog, history, ui, tiles, battery, rules))
     app.aboutToQuit.connect(backup.flushWriters)
-    backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=app_catalog, history=history, gameinfo=GameInfo(history), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
-                    health=Health(steamui), rules=GameRules(now, gamescope, monitor), tileStore=Tiles(),
-                    battery=Battery(), media=Media(), backup=backup, artwork=Palette(), steamShortcuts=SteamShortcuts(now), tasks=Tasks(), onboarding=Onboarding(), activity=Activity(), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad(), cheats=Cheats(), layout=layout, emulatorControl=emulator_ctrl)
+    backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=app_catalog, history=history, gameinfo=GameInfo(history), shell=Shell(), controls=Controls(), ui=ui, updater=Updater(), admin=Admin(),
+                    health=Health(steamui), rules=rules, tileStore=tiles,
+                    battery=battery, media=Media(), backup=backup, artwork=Palette(), steamShortcuts=SteamShortcuts(now), tasks=Tasks(), onboarding=Onboarding(), activity=Activity(), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad(), cheats=Cheats(), layout=layout, emulatorControl=emulator_ctrl)
     pad = backends["pad"] = Pad()   # must stay referenced, like the rest
     backends["closer"] = Closer(pad, gamescope, now, backends["ui"])
     backends["thermal"] = Thermal(monitor, backends["ui"])

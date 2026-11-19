@@ -391,3 +391,113 @@ class RuleAcknowledgments(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RulePersistence(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.path = self.root / "game_rules.json"
+        self.enterContext(mock.patch.object(gamerules, "CONFIG", self.path))
+
+    def make(self):
+        return gamerules.GameRules(FakeNow(), FakeGs(), FakeSys())
+
+    def test_malformed_rules_recover_valid_backup_and_optional_local_values(self):
+        import json
+        saved = {"rules": {"game:legacy/name": {"profile": "Eco", "fps": 45.5, "res": 7, "extra": True}},
+                 "base": {"psp": "2", "gc": None}, "future": {"value": 4}}
+        self.path.write_text('{"rules":{"game:bad":null}}')
+        self.path.with_suffix(".json.bak").write_text(json.dumps(saved))
+        rules = self.make()
+        self.assertEqual(rules.state["rules"][0]["key"], "game:legacy/name")
+        rules.setEnabled(False)
+        persisted = json.loads(self.path.read_text())
+        self.assertEqual(persisted["rules"], saved["rules"])
+        self.assertEqual(persisted["base"], saved["base"])
+        self.assertEqual(persisted["future"], saved["future"])
+
+    def test_invalid_nested_rules_default_safely_without_a_backup(self):
+        for content in ('{"rules":null}', '{"rules":{"game:a":[]}}', '{"rules":{"game:a":{"fps":"oops"}}}', '{"base":[]}'):
+            with self.subTest(content=content):
+                self.path.write_text(content)
+                self.assertEqual(self.make().state["rules"], [])
+
+    def test_atomic_save_preserves_symlink_mode_and_last_valid_configuration(self):
+        import json
+        from armadalive import persistence
+        target = self.root / "actual"
+        original = b'{ "rules":{}, "base":{"psp":"2"} }'
+        target.write_bytes(original)
+        target.chmod(0o640)
+        self.path.symlink_to(target.name)
+        rules = self.make()
+        notifications = []
+        rules.changed.connect(lambda: notifications.append(True))
+        replace = os.replace
+
+        def fail_primary(source, dest):
+            if Path(dest) == target:
+                raise OSError("primary replace failed")
+            return replace(source, dest)
+
+        with mock.patch.object(persistence.os, "replace", side_effect=fail_primary):
+            with self.assertRaisesRegex(OSError, "primary replace failed"):
+                rules.toggle("game")
+        self.assertTrue(self.path.is_symlink())
+        self.assertEqual(target.read_bytes(), original)
+        self.assertEqual(notifications, [])
+        self.assertEqual(target.stat().st_mode & 0o777, 0o640)
+        rules.setEnabled(False)
+        self.assertFalse(json.loads(target.read_text())["enabled"])
+        self.assertEqual(json.loads(target.read_text())["base"], {"psp": "2"})
+        self.assertEqual(Path(str(target) + ".bak").read_bytes(), original)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o640)
+
+    def test_freeze_blocks_all_edits_and_defers_rule_checks_until_resume(self):
+        rules = self.make()
+        rules.toggle("game")
+        previous = self.path.read_bytes()
+        rules.pauseWrites(restoring=True)
+        rules.toggle("idle")
+        rules.cycleRes()
+        rules.remove(rules.state["gameKey"])
+        rules.setEnabled(False)
+        with mock.patch.object(rules, "_emulator") as emulator:
+            rules._check()
+            self.assertEqual(self.path.read_bytes(), previous)
+            self.assertTrue(rules.state["writesPaused"])
+            self.assertTrue(rules.state["enabled"])
+            self.assertFalse(rules.writesPending())
+            emulator.assert_not_called()
+            rules.resumeWrites()
+            emulator.assert_called_once()
+        self.assertFalse(rules.state["writesPaused"])
+        rules.setEnabled(False)
+        self.assertNotEqual(self.path.read_bytes(), previous)
+
+    def test_pause_persists_live_device_originals_before_backup_cutoff(self):
+        import json
+        rules = self.make()
+        rules._base = {"psp": "device original"}
+        rules.pauseWrites(restoring=True)
+        self.assertEqual(json.loads(self.path.read_text())["base"], rules._base)
+        rules.resumeWrites()
+        # A second export can read an unchanged configuration without rewriting it.
+        with mock.patch.object(gamerules.persistence, "write_json", side_effect=AssertionError("unexpected rewrite")):
+            rules.pauseWrites()
+        rules.resumeWrites()
+
+    def test_export_uses_valid_recovered_rules(self):
+        import json
+        from armadalive import backup
+        self.path.write_text('{broken')
+        self.path.with_suffix(".json.bak").write_text('{"rules":{},"enabled":false,"base":{"psp":"2"}}')
+        rules = self.make()
+        archive = self.root / "archive.json"
+        with mock.patch.object(backup, "CONFIG_DIR", str(self.root)), mock.patch.object(backup, "FILE", str(archive)):
+            coordinator = backup.Backup((rules,))
+            coordinator.save()
+            self.assertEqual(coordinator.state["message"], "saved")
+        saved = json.loads(archive.read_text())["files"]["game_rules.json"]
+        self.assertEqual(saved, {"rules": {}, "enabled": False})
+        self.assertEqual(json.loads(self.path.read_text())["base"], {"psp": "2"})
