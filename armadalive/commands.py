@@ -45,6 +45,10 @@ class Commands(QObject):
         self._request = 0
         self._done.connect(self._advance, Qt.ConnectionType.QueuedConnection)
 
+    def pending(self, channel):
+        """True until queued commands and their owner-thread completion finish."""
+        return channel in self._running
+
     def target(self, channel, fallback):
         """Latest intent for relative toggles, distinct from a consumer's observed state."""
         request = self._pending.get(channel, self._running.get(channel))

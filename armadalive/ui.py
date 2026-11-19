@@ -9,12 +9,18 @@ CONFIG = os.path.expanduser("~/.config/armadalive/ui.json")
 DEFAULTS = dict(theme="stock", accent="", lang="en", animate=True, dim=True, close=True, heat=85, apps=True, ledFollow=True, onboarded=True)
 
 
-class UiSettings(QObject):
+def validate_settings(saved):
+    # The ordinary reader accepts object members and normalizes unusable values.
+    # Backup must preserve those compatible values, including optional fields.
+    return isinstance(saved, dict)
+
+
+class UiSettings(persistence.OwnerWriter, QObject):
     changed = Signal()
 
     def __init__(self):
         super().__init__()
-        saved = persistence.read_json(CONFIG, lambda data: isinstance(data, dict), {})
+        saved = persistence.read_json(CONFIG, validate_settings, {})
         # saved values win over the defaults; keys we do not know are dropped
         self._s = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}}
         if self._s["heat"] and not isinstance(self._s["heat"], (int, float)):
@@ -32,6 +38,8 @@ class UiSettings(QObject):
 
     @Slot(str)
     def setTheme(self, key):
+        if self._writes_paused:
+            return
         self._s["theme"] = key
         self._s["accent"] = ""  # a new theme starts with its own accent
         self._save()
@@ -55,48 +63,66 @@ class UiSettings(QObject):
     @Slot(bool)
     def setOnboarded(self, done):
         """Whether the first-run setup has been gone through (false shows it again)."""
+        if self._writes_paused:
+            return
         self._s["onboarded"] = bool(done)
         self._save()
 
     @Slot(bool)
     def setLedFollow(self, on):
         """The stick LEDs take the theme's accent colour (until the user picks a colour of their own)."""
+        if self._writes_paused:
+            return
         self._s["ledFollow"] = bool(on)
         self._save()
 
     @Slot(bool)
     def setDim(self, on):
+        if self._writes_paused:
+            return
         self._s["dim"] = bool(on)
         self._save()
 
     @Slot(bool)
     def setApps(self, on):
+        if self._writes_paused:
+            return
         self._s["apps"] = bool(on)
         self._save()
 
     @Slot(int)
     def setHeat(self, degrees):
+        if self._writes_paused:
+            return
         if degrees in (0, 80, 85, 90):    # 0 = no warning
             self._s["heat"] = degrees
             self._save()
 
     @Slot(bool)
     def setClose(self, on):
+        if self._writes_paused:
+            return
         self._s["close"] = bool(on)
         self._save()
 
     @Slot(bool)
     def setAnimate(self, on):
+        if self._writes_paused:
+            return
         self._s["animate"] = bool(on)
         self._save()
 
     @Slot(str)
     def setLang(self, lang):
+        if self._writes_paused:
+            return
         if lang in ("en", "de"):
             self._s["lang"] = lang
             self._save()
 
     @Slot(str)
     def setAccent(self, rgb):
+        if self._writes_paused:
+            return
         self._s["accent"] = rgb if len(rgb) == 6 else ""
         self._save()

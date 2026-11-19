@@ -1,6 +1,6 @@
 """Low-battery warnings and an optional charge limit (the kernel's charge_control_end_threshold, written by the root helper)."""
-import os
-from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
+import os, time
+from PySide6.QtCore import QCoreApplication, QEvent, Property, QObject, QTimer, Signal, Slot
 from . import persistence, privileged
 from .commands import Commands
 
@@ -22,13 +22,19 @@ def levels(warn):
     return [l for l in sorted({warn, 10}, reverse=True) if warn and l <= warn]
 
 
-class Battery(QObject):
+def validate_settings(saved):
+    # The ordinary reader accepts object members and normalizes unusable values.
+    # Backup must preserve those compatible values, including optional fields.
+    return isinstance(saved, dict)
+
+
+class Battery(persistence.OwnerWriter, QObject):
     changed = Signal()
     alert = Signal(str)
 
     def __init__(self):
         super().__init__()
-        saved = persistence.read_json(CONFIG, lambda data: isinstance(data, dict), {})
+        saved = persistence.read_json(CONFIG, validate_settings, {})
         self._s = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}}
         for key in ("warn", "limit"):
             if not isinstance(self._s[key], (int, float)):
@@ -36,6 +42,7 @@ class Battery(QObject):
         self._done, self.error = set(), ""   # _s["refused"]: the battery's firmware rejected a limit (the Thor's does)
         self.supported = os.path.exists(LIMIT_FILE)
         self._limit_verified = False
+        self._write_error = None
         self._commands = Commands(self, ("charge-limit",))
         self._commands.completed.connect(self._finish_limit)
         # The kernel forgets the limit on reboot. Probing and restoring it run off the owner.
@@ -51,7 +58,28 @@ class Battery(QObject):
 
     def _save(self):
         persistence.write_json(CONFIG, self._s, follow_symlinks=True, require_writable=True, allow_nan=True)
+        self._write_error = None
         self.changed.emit()
+
+    def pauseWrites(self, *, restoring=False):
+        super().pauseWrites(restoring=restoring)
+        if self._write_error is not None:
+            self._save()
+
+    def writesPending(self):
+        if self._write_error is not None:
+            raise self._write_error
+        return self._commands.pending("charge-limit")
+
+    def flush(self, timeout=3.0):
+        deadline = time.monotonic() + timeout
+        while self.writesPending():
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Timed out waiting for battery settings")
+            # Deliver the command acknowledgements without letting unrelated
+            # owner timers accept new edits after their writers have drained.
+            QCoreApplication.sendPostedEvents(self._commands, QEvent.Type.MetaCall)
+            time.sleep(0.001)
 
     def check(self, capacity, status):
         """Tells once per level; the levels re-arm when the device charges or the charge climbs well above the warning."""
@@ -67,12 +95,16 @@ class Battery(QObject):
 
     @Slot(int)
     def setWarn(self, percent):
+        if self._writes_paused:
+            return
         self._s["warn"] = max(0, min(50, int(percent)))
         self._done.clear()
         self._save()
 
     @Slot(int)
     def setLimit(self, percent):
+        if self._writes_paused:
+            return
         self._start_limit(max(50, min(100, int(percent))))
 
     def _start_limit(self, percent, startup=False):
@@ -106,6 +138,7 @@ class Battery(QObject):
         try:
             self._save()
         except OSError as exc:
+            self._write_error = exc
             if result.current:
                 self.error = f"Could not save battery settings: {exc}"
             self.changed.emit()
