@@ -442,6 +442,33 @@ class Backup(unittest.TestCase):
             self.assertNotIn(backup.RESTART_TOKEN, os.environ)
             self.assertTrue(Path(backup._journal_path()).exists())
 
+    def test_registered_rules_preserve_primary_originals_while_recovering_invalid_rules(self):
+        from armadalive import gamerules
+        from tests.test_gamerules import FakeGs, FakeNow, FakeSys
+        for recovered in (False, True):
+            with self.subTest(recovered=recovered), tempfile.TemporaryDirectory() as directory, \
+                    mock.patch.object(backup, "CONFIG_DIR", directory):
+                path = Path(directory, "game_rules.json")
+                path.write_text('{"rules":null,"base":{"psp":"device-original"}}')
+                if recovered:
+                    path.with_suffix(".json.bak").write_text('{"rules":{},"base":{"psp":"older-original"}}')
+                archive = Path(directory, "archive.json")
+                archive.write_text('{"files":{"game_rules.json":{"rules":{},"base":{"psp":"foreign-original"}}}}')
+                with mock.patch.object(gamerules, "CONFIG", path), \
+                        mock.patch.object(backup, "FILE", str(archive)), \
+                        mock.patch.object(backup.QTimer, "singleShot"):
+                    rules = gamerules.GameRules(FakeNow(), FakeGs(), FakeSys())
+                    coordinator = backup.Backup((rules,))
+                    coordinator.restore()
+                    self.assertEqual(coordinator.state["message"], "restored")
+                    self.assertEqual(json.loads(path.read_text())["base"], {"psp": "device-original"})
+                    journal = json.loads(Path(backup._journal_path()).read_text())
+                    import base64
+                    previous = json.loads(base64.b64decode(journal["records"]["game_rules.json"][1]))
+                    self.assertEqual(previous["base"], {"psp": "device-original"})
+                    backup.recover_restore()
+                    self.assertEqual(json.loads(path.read_text())["base"], {"psp": "device-original"})
+
 
 class EmuSettings(unittest.TestCase):
     def ini(self, text):

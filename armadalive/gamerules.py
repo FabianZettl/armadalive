@@ -10,13 +10,15 @@ CONFIG = os.path.expanduser("~/.config/armadalive/game_rules.json")
 IDLE, BASE = "default:idle", "default:base"   # rule keys that belong to no game
 
 
+def _valid_base(base):
+    return isinstance(base, dict) and all(value is None or isinstance(value, str) for value in base.values())
+
+
 def validate_settings(saved):
     if not isinstance(saved, dict):
         return False
     rules, base = saved.get("rules", {}), saved.get("base", {})
-    if not isinstance(rules, dict) or not isinstance(base, dict):
-        return False
-    if not all(value is None or isinstance(value, str) for value in base.values()):
+    if not isinstance(rules, dict) or not _valid_base(base):
         return False
     for key, rule in rules.items():
         if not isinstance(key, str) or ":" not in key or not isinstance(rule, dict):
@@ -49,6 +51,19 @@ class GameRules(persistence.OwnerWriter, QObject):
         self._saved = saved
         self._rules, self._on = saved.get("rules", {}), bool(saved.get("enabled", True))
         self._base = saved.get("base", {})
+        self._base_error = ""
+        # Rule recovery and device recovery stock have separate validity. A
+        # damaged rule must not discard newer originals from the primary file.
+        try:
+            with open(CONFIG) as stream:
+                primary = json.load(stream)
+            if isinstance(primary, dict) and "base" in primary:
+                if _valid_base(primary["base"]):
+                    self._base = primary["base"]
+                else:
+                    self._base_error = "Cannot save game rules: invalid device-local emulator originals"
+        except (OSError, ValueError, RecursionError):
+            pass  # Keep originals from the validated recovery copy, if available.
         self._check_deferred = False
         self._applied, self._loaded = "", ""
         self._pending_rule = None
@@ -100,6 +115,8 @@ class GameRules(persistence.OwnerWriter, QObject):
         self._save()
 
     def _save(self):
+        if self._base_error:
+            raise ValueError(self._base_error)
         saved = dict(self._saved, enabled=self._on, rules=self._rules, base=self._base)
         if not validate_settings(saved):
             raise ValueError("invalid game rules")
