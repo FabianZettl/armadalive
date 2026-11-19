@@ -47,7 +47,7 @@ class GameRules(persistence.OwnerWriter, QObject):
     def __init__(self, nowplaying, gamescope, system):
         super().__init__()
         self._np, self._gs, self._sys = nowplaying, gamescope, system
-        saved = persistence.read_json(CONFIG, validate_settings, {})
+        saved = persistence.read_json(os.path.realpath(CONFIG), validate_settings, {})
         self._saved = saved
         self._rules, self._on = saved.get("rules", {}), bool(saved.get("enabled", True))
         self._base = saved.get("base", {})

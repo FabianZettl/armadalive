@@ -754,6 +754,58 @@ class Sessions(unittest.TestCase):
         self.assertEqual(again.info("steam/99")["total"], 900)
         self.assertNotIn("steam/44", again.games)
 
+    def test_restore_drains_pending_baseline_but_recovers_imported_history_after_restart(self):
+        baseline_started, release_baseline, release_titles = (threading.Event() for _ in range(3))
+        directory = self.enterContext(tempfile.TemporaryDirectory(dir=self.dir))
+        path, archive = Path(directory, "history.json"), Path(self.dir, "restore.json")
+        restored = dict(imported=False, games={"steam/99": {"total": 30}}, sessions=[],
+                        steam_baseline={"99": [200, 600]})
+        write_fixture(archive, json.dumps({"files": {"history.json": restored}}))
+
+        def read_steam():
+            baseline_started.set()
+            release_baseline.wait(5)
+            return {"42": (100, 300)}
+
+        def load_titles():
+            release_titles.wait(5)
+            return {"steam:42": "Old game"}
+
+        with mock.patch.object(backup, "CONFIG_DIR", directory), mock.patch.object(backup, "FILE", archive), \
+                mock.patch.object(history, "_read_steam", side_effect=read_steam), \
+                mock.patch.object(backup.QTimer, "singleShot") as later:
+            h = history.History(FakeNow(), path, steam_titles=load_titles, gamelists=self.dir)
+            self.addCleanup(self.close_history, h)
+            coordinator = backup.Backup((h,))
+            self.addCleanup(coordinator._drain.stop)
+            try:
+                self.assertTrue(baseline_started.wait(1))
+                h.toggleFavorite("steam/42", "Old favorite", "steam", "")
+                coordinator.restore()
+                self.assertTrue(coordinator.state["busy"])
+                self.assertFalse(path.exists())
+                release_baseline.set()
+                wait_for(lambda: coordinator.state["message"] == "restored")
+                release_titles.set()
+                wait_for(lambda: h._imported)
+                coordinator.flushWriters()
+                self.assertEqual(json.loads(path.read_bytes()), restored)
+                with mock.patch.dict(os.environ), mock.patch.object(
+                        backup.os, "execv", side_effect=lambda *_: backup.recover_restore(startup=True)):
+                    later.call_args.args[1]()
+            finally:
+                release_baseline.set()
+                release_titles.set()
+
+        path.write_text("{damaged primary")
+        with mock.patch.object(history, "_read_steam", side_effect=AssertionError("baseline must be reused")) as steam:
+            again = history.History(FakeNow(), path, steam_titles=lambda: {"steam:99": "New game"}, gamelists=self.dir)
+            self.addCleanup(self.close_history, again)
+            self.wait_for_import(again)
+        steam.assert_not_called()
+        self.assertEqual(again.info("steam/99")["total"], 630)
+        self.assertNotIn("steam/42", again.games)
+
     def test_backup_write_failure_is_reported_and_history_can_retry(self):
         archive = self.dir + "/failed-backup.json"
         with mock.patch.object(history.persistence, "write_json", side_effect=OSError("disk unavailable")), \
