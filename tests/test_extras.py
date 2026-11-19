@@ -1,4 +1,4 @@
-import json, os, struct, tempfile, unittest
+import json, os, struct, subprocess, sys, tempfile, unittest
 from pathlib import Path
 from unittest import mock
 
@@ -209,6 +209,28 @@ class Backup(unittest.TestCase):
             self.assertEqual(fallback.read_bytes(), previous)
             self.assertEqual(fallback.stat().st_mode & 0o777, 0o640)
 
+    def test_restore_replaces_recovery_link_without_writing_its_target(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            primary = Path(directory, "history.json")
+            fallback = primary.with_suffix(".json.bak")
+            retained = Path(directory, "retained-history.json")
+            previous = b'{ "games": {"steam/42": {"total": 10}} }\n'
+            retained.write_bytes(previous)
+            fallback.symlink_to(retained.name)
+            archive = {"files": {"history.json": {"steam_baseline": {"99": [200, 600]}}}}
+
+            backup._restore(archive, await_restart=True)
+            self.assertFalse(fallback.is_symlink())
+            self.assertEqual(fallback.read_bytes(), primary.read_bytes())
+            self.assertEqual(retained.read_bytes(), previous)
+            backup.recover_restore()
+            self.assertFalse(primary.exists())
+            self.assertEqual(fallback.readlink(), Path(retained.name))
+
+            backup.apply(archive)
+            self.assertFalse(fallback.is_symlink())
+            self.assertEqual(retained.read_bytes(), previous)
+
     def test_restore_failure_after_replacement_retains_undo_until_retry(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
             ui_file = Path(directory, "ui.json")
@@ -306,6 +328,54 @@ class Backup(unittest.TestCase):
                 if fail:
                     writer.resumeWrites.assert_called_once()
                     self.assertFalse(coordinator.state["restartRequired"])
+
+    def test_restore_excludes_another_startup_and_commits_after_real_exec(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "ui.json").write_text('{"theme":"stock"}')
+            (root / "tiles.json").write_text('{"order":["old"]}')
+            (root / "archive.json").write_text('{"files":{"ui.json":{"theme":"neon"},"tiles.json":{"order":["new"]}}}')
+            child = """
+import os, subprocess, sys
+from PySide6.QtCore import QCoreApplication
+from armadalive import backup
+
+backup.CONFIG_DIR = sys.argv[1]
+backup.FILE = os.path.join(backup.CONFIG_DIR, "archive.json")
+if sys.argv[2] == "competing":
+    try:
+        backup.recover_restore(startup=True)
+    except backup.RestoreRecoveryError as error:
+        if "Another backup restore is in progress" not in str(error):
+            raise
+    else:
+        raise AssertionError("Concurrent startup recovered a live restore")
+elif sys.argv[2] == "restarted":
+    backup.recover_restore(startup=True)
+else:
+    app = QCoreApplication([])
+    coordinator = backup.Backup()
+    write_bytes = backup.persistence.write_bytes
+
+    def write_with_competing_startup(path, content, **kwargs):
+        write_bytes(path, content, **kwargs)
+        if os.path.basename(path) == "ui.json":
+            subprocess.run(sys.orig_argv[:-1] + ["competing"], check=True, timeout=5)
+
+    backup.persistence.write_bytes = write_with_competing_startup
+    coordinator.restore()
+    assert coordinator.state["message"] == "restored", coordinator.state
+    subprocess.run(sys.orig_argv[:-1] + ["competing"], check=True, timeout=5)
+    sys.orig_argv[-1] = "restarted"
+    coordinator._restart()
+    raise AssertionError("Restore did not restart")
+"""
+            result = subprocess.run([sys.executable, "-c", child, directory, "restore"],
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads((root / "ui.json").read_text()), {"theme": "neon"})
+            self.assertEqual(json.loads((root / "tiles.json").read_text()), {"order": ["new"]})
+            self.assertFalse((root / backup.JOURNAL).exists())
 
     def test_failed_rollback_sync_retains_evidence_and_writers_until_retry(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory), \
@@ -480,7 +550,8 @@ class Backup(unittest.TestCase):
                 archive.write_text('{"files":{"game_rules.json":{"rules":{},"base":{"psp":"foreign-original"}}}}')
                 with mock.patch.object(gamerules, "CONFIG", path), \
                         mock.patch.object(backup, "FILE", str(archive)), \
-                        mock.patch.object(backup.QTimer, "singleShot"):
+                        mock.patch.object(backup.QTimer, "singleShot"), \
+                        mock.patch.object(backup.os, "execv", side_effect=OSError("exec failed")):
                     rules = gamerules.GameRules(FakeNow(), FakeGs(), FakeSys())
                     coordinator = backup.Backup((rules,))
                     coordinator.restore()
@@ -490,7 +561,7 @@ class Backup(unittest.TestCase):
                     import base64
                     previous = json.loads(base64.b64decode(journal["records"]["game_rules.json"][1]))
                     self.assertEqual(previous["base"], {"psp": "device-original"})
-                    backup.recover_restore()
+                    coordinator._restart()
                     self.assertEqual(json.loads(path.read_text())["base"], {"psp": "device-original"})
 
 
