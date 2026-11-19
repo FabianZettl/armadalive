@@ -1,4 +1,5 @@
 import builtins, tempfile, threading, time, unittest
+from contextlib import ExitStack
 from unittest import mock
 
 from PySide6.QtCore import QTimer
@@ -71,8 +72,16 @@ class Precedence(unittest.TestCase):
         self.np._update()
         self.assertEqual(self.np._state["title"], "Super Game")
 
+    def close_history(self, tracker):
+        try:
+            tracker.pauseWrites()
+            tracker.flush()
+        finally:
+            tracker._np.history = None
+            dispose_qt(tracker)
+
     def test_busy_metadata_does_not_block_or_drop_an_intervening_game_start(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as resources:
             touch(f"{directory}/snes/gamelist.xml", """<gameList>
                 <game><path>./A.sfc</path><name>Scraped A</name></game>
                 <game><path>./B.sfc</path><name>Scraped B</name></game>
@@ -99,15 +108,15 @@ class Precedence(unittest.TestCase):
                 path = f"{directory}/history.json"
                 touch(path, '{"imported": true}')
                 tracker = history.History(backend, path)
-                self.addCleanup(dispose_qt, backend)
-                self.addCleanup(dispose_qt, tracker)
+                resources.callback(dispose_qt, backend)
+                resources.callback(self.close_history, tracker)
                 backend.history = tracker
                 rules_path = f"{directory}/rules.json"
                 touch(rules_path, '{"rules": {"game:snes/A": {"fps": 30}}}')
                 display = mock.Mock()
                 with mock.patch.object(gamerules, "CONFIG", rules_path):
                     rules = gamerules.GameRules(backend, display, mock.Mock())
-                self.addCleanup(dispose_qt, rules)
+                resources.callback(dispose_qt, rules)
                 backend.changed.connect(lambda: published.append(dict(backend.state)))
                 backend._esde = True
                 backend._event = dict(GAME, path="A.sfc", name="Event A")
@@ -136,11 +145,11 @@ class Precedence(unittest.TestCase):
                 self.assertEqual(tracker.info("snes/A")["plays"], 1)
 
     def test_matching_metadata_enriches_the_open_history_session(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as resources:
             path = f"{directory}/history.json"
             touch(path, '{"imported": true}')
             tracker = history.History(self.np, path)
-            self.addCleanup(dispose_qt, tracker)
+            resources.callback(self.close_history, tracker)
             self.np.history = tracker
             self.np._event, self.np._esde = dict(GAME, event="game-start"), True
             self.np._update()
