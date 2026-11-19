@@ -4,6 +4,7 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow
 from PySide6.QtTest import QTest
+import shiboken6
 
 from . import __version__
 from .admin import Admin
@@ -156,4 +157,8 @@ def main():
             QTimer.singleShot(int(sys.argv[sys.argv.index("--close-demo") + 1]), lambda: backends["pad"].feed("demo", press))
         delay = int(sys.argv[sys.argv.index("--delay") + 1]) if "--delay" in sys.argv else 3000
         QTimer.singleShot(delay, lambda: (print("dimmed:", window.property("dimmed")), QQuickWindow.grabWindow(window).save(out), app.quit()))
-    return app.exec()
+    try:
+        return app.exec()
+    finally:
+        # Destroy the window and its bindings while the context backends are still alive.
+        shiboken6.delete(engine)
