@@ -3,7 +3,7 @@ shortcuts (launched through Steam on the main screen) and ES-DE games (through a
 import configparser, json, logging, os, random, re, subprocess, threading, time
 from PySide6.QtCore import Property, QObject, Qt, QUrl, Signal, Slot
 
-from . import esdelib, persistence, steamlib, steamshortcuts, steamui
+from . import esdelib, persistence, steamlib, steamshortcuts
 from .nowplaying import ES
 
 CONFIG = os.path.expanduser("~/.config/armadalive/apps.json")
@@ -135,9 +135,10 @@ class Apps(QObject):
     _scanned = Signal(int, object)
     _artReady = Signal(int, object)
 
-    def __init__(self, history=None):
+    def __init__(self, history=None, shortcuts=None):
         super().__init__()
         self._history = history
+        self._shortcuts = shortcuts if shortcuts is not None else steamshortcuts.SteamShortcuts(parent=self)
         self._apps, self._rows, self._steam, self._esde, self._by_path = {}, {}, {}, {}, {}
         self._systems, self._system_items, self._system_art = {}, {}, {}
         self._catalog_rows = self._steam_items = ()
@@ -551,26 +552,31 @@ class Apps(QObject):
 
     @Slot(str)
     def randomIn(self, folder_id):
-        """Starts a random game out of one folder (a system, the favorites, ...)."""
-        items = self._items_of(folder_id)
+        """Starts a random launchable item in the folder."""
+        items = [app_id for app_id in self._items_of(folder_id) if self._plain(app_id)]
         if items:
             self.launchId(random.choice(items))
 
     @Slot(str)
     def launchId(self, app_id):
         if app_id == RANDOM:
+            if self._shortcuts.state["busy"]:
+                return
             pool = list(self._esde) + [i for i in self._steam]
             if pool:
                 self.launchId(random.choice(pool))
             return
         if app_id in self._steam:
-            steamui.eval_js(f'SteamClient.Apps.RunGame("{app_id[6:]}", "", -1, 100)', lambda _: None)
+            self._shortcuts.launch_steam(app_id[6:], self._steam[app_id]["name"], lambda: app_id in self._steam)
             return
         if app_id in self._esde:
-            g = self._esde[app_id]
-            words = esdelib.command(g["system"], g["rom"])
-            if words:
-                steamshortcuts.run_rom(g["name"], g["system"], g["rom"], words)
+            game = self._esde[app_id]
+
+            def current():
+                entry = self._esde.get(app_id)
+                return entry is not None and (entry["system"], entry["rom"]) == (game["system"], game["rom"])
+
+            self._shortcuts.launch(game["name"], game["system"], game["rom"], esdelib.command, current)
             return
         if app_id not in self._apps:  # only ids from the catalog ever reach gtk-launch
             return

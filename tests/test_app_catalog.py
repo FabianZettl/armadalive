@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import threading
@@ -8,8 +9,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
-from tests.common import wait_for
-from armadalive import apps, backup, persistence
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QImage
+
+from tests.common import delete_qobject, wait_for
+from armadalive import apps, backup, persistence, steamshortcuts
 
 
 class DesktopOverrides(unittest.TestCase):
@@ -50,8 +54,10 @@ class Catalog(unittest.TestCase):
             yield backend
         finally:
             if hasattr(backend, "catalogLoading"):
-                wait_for(lambda: not backend.catalogLoading and not backend._art_running)
+                wait_for(lambda: not backend.catalogLoading and not backend._art_running
+                         and backend._shortcuts._preparing is None)
             backend.flush()
+            delete_qobject(backend)
 
     def test_startup_and_picker_reads_do_not_wait_for_the_scan(self):
         owner = threading.get_ident()
@@ -90,7 +96,7 @@ class Catalog(unittest.TestCase):
             self.assertEqual(backend.folderItems("folder:1"), [])
             self.assertEqual(backend.layoutSlot(0), 1)
             self.assertEqual(backend.layoutSlot(1), 2)
-            with mock.patch.object(apps.steamui, "eval_js") as run:
+            with mock.patch.object(steamshortcuts, "eval_js") as run:
                 backend.launch(0)
                 backend.randomIn("folder:1")
                 run.assert_not_called()
@@ -271,6 +277,93 @@ class Catalog(unittest.TestCase):
             wait_for(lambda: not backend._art_running)
             self.assertEqual(backend.slots[0]["icon"], "file:///current.png")
             self.assertEqual(rounds, [rom["cover"], rom["cover"]])
+
+    def test_first_rom_launch_prepares_real_art_off_thread_and_drops_duplicate_taps(self):
+        name = "Big game"
+        rom = dict(id="esde:snes/Big game.sfc", name=name, cover="", rom="/roms/Big game.sfc")
+        media = self.config.parent / "snes" / "fanart"
+        media.mkdir(parents=True)
+        fanart = QImage(2560, 1440, QImage.Format.Format_RGB32)
+        fanart.fill(0xFF336699)
+        self.assertTrue(fanart.save(str(media / "Big game.jpg")))
+
+        owner = threading.get_ident()
+        started, release = threading.Event(), threading.Event()
+        artwork = steamshortcuts.artwork
+        prepared_on, steam_calls, heartbeats, notices = [], [], [], []
+
+        def gated_artwork(system, path):
+            prepared_on.append(threading.get_ident())
+            started.set()
+            release.wait(1.5)
+            return artwork(system, path)
+
+        def dispatch(expression, done, **_):
+            steam_calls.append((threading.get_ident(), expression, done))
+
+        with mock.patch.object(apps.esdelib, "games", return_value={"snes": [rom]}), \
+                mock.patch.object(apps.esdelib, "systems", return_value={"snes": {"fullname": "SNES"}}), \
+                mock.patch.object(apps.esdelib, "command", return_value=["/usr/bin/emu", rom["rom"]]), \
+                mock.patch.object(apps.steamlib, "games", return_value=[]), \
+                mock.patch.object(steamshortcuts, "SHORTCUTS", str(self.config.parent / "missing.vdf")), \
+                mock.patch.object(steamshortcuts, "MEDIA", str(self.config.parent)), \
+                mock.patch.object(steamshortcuts, "artwork", gated_artwork), \
+                mock.patch.object(steamshortcuts, "eval_js", dispatch), \
+                self.backend() as backend:
+            shortcuts = backend._shortcuts
+            shortcuts.notice.connect(lambda code, title: notices.append((code, title)))
+            wait_for(lambda: not backend.catalogLoading)
+            QTimer.singleShot(0, lambda: heartbeats.append(True))
+            try:
+                backend.launchId(rom["id"])
+                wait_for(started.is_set)
+                self.assertTrue(heartbeats)
+                self.assertFalse(steam_calls)
+                backend.launchId(rom["id"])
+            finally:
+                release.set()
+            wait_for(lambda: len(steam_calls) == 1)
+            thread, expression, added = steam_calls[0]
+            self.assertEqual(thread, owner)
+            self.assertEqual(len(prepared_on), 1)
+            self.assertNotEqual(prepared_on[0], owner)
+            payload = json.loads(expression[expression.rfind(")({") + 2:-1])
+            images = {kind: QImage.fromData(base64.b64decode(data)) for kind, data, _ in payload["art"]}
+            self.assertEqual(set(images), {1, 3})
+            self.assertEqual((images[1].width(), images[1].height()), (1920, 1080))
+            self.assertEqual((images[3].width(), images[3].height()), (764, 430))
+            added(123)
+            wait_for(lambda: len(steam_calls) == 2)
+            self.assertEqual(steam_calls[1][0], owner)
+            self.assertIn("SteamClient.Apps.RunGame", steam_calls[1][1])
+            steam_calls[1][2](True)
+            self.assertFalse(shortcuts.state["busy"])
+            self.assertEqual(notices, [("launchRequested", name)])
+
+    def test_duplicate_random_tap_cannot_dispatch_both_steam_and_emulated_games(self):
+        rom = dict(id="esde:snes/Book.sfc", name="Book", cover="", rom="/roms/Book.sfc")
+        native = dict(id="steam:10", name="Native", icon="")
+        for first in (rom, native):
+            with self.subTest(first=first["id"]):
+                dispatches = []
+                remaining = native if first is rom else rom
+                with mock.patch.object(apps.esdelib, "games", return_value={"snes": [rom]}), \
+                        mock.patch.object(apps.esdelib, "systems", return_value={"snes": {"fullname": "SNES"}}), \
+                        mock.patch.object(apps.esdelib, "command", return_value=["/usr/bin/emu", rom["rom"]]), \
+                        mock.patch.object(apps.steamlib, "games", return_value=[native]), \
+                        mock.patch.object(apps.random, "choice", side_effect=[first["id"], remaining["id"]]) as choose, \
+                        mock.patch.object(steamshortcuts, "known_appid", return_value=123), \
+                        mock.patch.object(steamshortcuts, "eval_js", side_effect=lambda js, done, **_: dispatches.append((js, done))), \
+                        mock.patch("armadalive.steamui.eval_js", side_effect=lambda js, done, **_: dispatches.append((js, done))), \
+                        self.backend() as backend:
+                    wait_for(lambda: not backend.catalogLoading)
+                    backend.launchId(apps.RANDOM)
+                    backend.launchId(apps.RANDOM)
+                    expected_gameid = (123 << 32) | 0x02000000 if first is rom else 10
+                    wait_for(lambda: any(f'"{expected_gameid}"' in js for js, _ in dispatches))
+                    self.assertEqual(len(dispatches), 1)
+                    self.assertEqual(choose.call_count, 1)
+                    dispatches[0][1](True)
 
 
 class LayoutSaving(unittest.TestCase):
@@ -561,3 +654,37 @@ class LayoutSaving(unittest.TestCase):
         self.apps.renameFolder("folder:1", "Stale layout")
         self.backup.flushWriters()
         self.assertEqual(json.loads(self.config.read_text()), restored)
+
+
+class EntryPoint(unittest.TestCase):
+    def test_normal_main_shares_the_coordinator_between_grid_and_add_action(self):
+        from armadalive import app as entry
+        from contextlib import ExitStack
+        # Stop before loading a window. Every service constructor is replaced so
+        # this exercises main's real wiring without devices, services or user files.
+        with ExitStack() as stack:
+            names = ('QGuiApplication QQmlApplicationEngine VectorArtwork Gamescope SteamUi NowPlaying '
+                     'SystemMonitor ControlsLayout EmulatorControl History SteamShortcuts Apps AynButton '
+                     'Settings GameInfo Shell Controls UiSettings Updater Admin Health GameRules Tiles '
+                     'Battery Media Backup Palette Tasks Onboarding Activity Manuals LudoSync Trackpad '
+                     'Cheats Pad Closer Thermal QTimer').split()
+            constructors = {name: stack.enter_context(mock.patch.object(entry, name)) for name in names}
+            stack.enter_context(mock.patch.object(entry.signal, 'signal'))
+            constructors['QQmlApplicationEngine'].return_value.rootObjects.return_value = []
+            self.assertEqual(entry.main(), 1)
+            coordinator = constructors['SteamShortcuts'].return_value
+            constructors['SteamShortcuts'].assert_called_once_with(constructors['NowPlaying'].return_value)
+            constructors['Apps'].assert_called_once_with(constructors['History'].return_value, coordinator)
+            catalog = constructors['Apps'].return_value
+            backup = constructors['Backup'].return_value
+            constructors['Backup'].assert_called_once()
+            writers, = constructors['Backup'].call_args.args
+            self.assertIn(catalog, writers)
+            constructors['QGuiApplication'].return_value.aboutToQuit.connect.assert_called_once_with(backup.flushWriters)
+            context = constructors['QQmlApplicationEngine'].return_value.rootContext.return_value
+            context.setContextProperty.assert_any_call('steamShortcuts', coordinator)
+            context.setContextProperty.assert_any_call('apps', catalog)
+            context.setContextProperty.assert_any_call('backup', backup)
+
+if __name__ == "__main__":
+    unittest.main()
