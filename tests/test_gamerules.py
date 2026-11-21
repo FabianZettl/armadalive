@@ -502,6 +502,30 @@ class RulePersistence(unittest.TestCase):
         self.assertEqual(saved, {"rules": {}, "enabled": False})
         self.assertEqual(json.loads(self.path.read_text())["base"], {"psp": "2"})
 
+    def test_slow_export_keeps_prelaunch_emulator_rules_active(self):
+        from armadalive import backup, emusettings
+        self.path.write_text('{"rules":{"game:psp/Game":{"res":4}}}')
+        ini = self.root / "ppsspp.ini"
+        ini.write_text("[Graphics]\nInternalResolution = 2\n")
+        now = FakeNow()
+        rules = gamerules.GameRules(now, FakeGs(), FakeSys())
+        stalled = mock.Mock(writesPending=mock.Mock(return_value=True))
+        with mock.patch.object(backup, "CONFIG_DIR", str(self.root)), \
+                mock.patch.object(backup, "FILE", str(self.root / "archive.json")), \
+                mock.patch.dict(emusettings.SPECS, {"psp": (ini, "Graphics", "InternalResolution", "{}")}):
+            coordinator = backup.Backup((rules, stalled))
+            self.addCleanup(lambda: coordinator._drain.stop())
+            coordinator.save()
+            self.assertTrue(coordinator.state["busy"])
+            now.state = dict(kind="game", key="psp/Game", system="psp", playing=False)
+            now.changed.emit()
+            self.assertEqual(emusettings.read("psp"), "4")
+            now.state["playing"] = True
+            now.changed.emit()
+            stalled.writesPending.return_value = False
+            coordinator._check_writers()
+        self.assertEqual(coordinator.state["message"], "saved")
+
     def test_invalid_rules_keep_independently_valid_primary_originals_on_ordinary_save(self):
         import json
         self.path.write_text('{"rules":null,"base":{"psp":"device-original"}}')

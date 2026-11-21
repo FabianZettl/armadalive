@@ -64,7 +64,7 @@ class GameRules(persistence.OwnerWriter, QObject):
                     self._base_error = "Cannot save game rules: invalid device-local emulator originals"
         except (OSError, ValueError, RecursionError):
             pass  # Keep originals from the validated recovery copy, if available.
-        self._check_deferred = False
+        self._restoring = self._check_deferred = False
         self._applied, self._loaded = "", ""
         self._pending_rule = None
         self.history = None      # set by the app: lets a rule show the name of its game, not only the key
@@ -99,6 +99,7 @@ class GameRules(persistence.OwnerWriter, QObject):
         return f"system:{state['system']}" if state.get("system") and state.get("kind") == "game" else ""
 
     def pauseWrites(self, *, restoring=False):
+        self._restoring = restoring
         super().pauseWrites(restoring=restoring)
         # Emulator originals can change on the owner thread between explicit
         # rule edits. Persist them before backup captures the local rollback state.
@@ -278,13 +279,14 @@ class GameRules(persistence.OwnerWriter, QObject):
                 self._show_loaded(detail)
 
     def resumeWrites(self):
+        self._restoring = False
         super().resumeWrites()
         if self._check_deferred:
             self._check_deferred = False
             self._check()
 
     def _check(self):
-        if self._writes_paused:
+        if self._restoring:
             self._check_deferred = True
             return
         cur = self._np.state

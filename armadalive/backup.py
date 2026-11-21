@@ -1,5 +1,6 @@
 """One file with ArmadaLive's settings, rules, tile order, app grid with folders and play history, to keep or to move to another device."""
-import base64, json, logging, os, secrets, stat, sys, time
+import base64, fcntl, json, logging, os, secrets, stat, sys, tempfile, time
+from contextlib import ExitStack, contextmanager
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 from . import __version__, battery, gamerules, persistence, tiles, ui
 from .history import _valid_history
@@ -8,6 +9,7 @@ CONFIG_DIR = os.path.expanduser("~/.config/armadalive")
 FILE = os.path.expanduser("~/ArmadaLive-backup.json")
 JOURNAL = ".restore-undo.json"
 RESTART_TOKEN = "ARMADALIVE_RESTORE_TOKEN"
+RESTART_LOCK = "ARMADALIVE_RESTORE_LOCK"
 WRITE_TIMEOUT = 3.0
 log = logging.getLogger(__name__)
 
@@ -68,7 +70,7 @@ def collect():
 
 def _targets():
     targets = {name: os.path.realpath(os.path.join(CONFIG_DIR, name)) for name in VALIDATORS}
-    targets.update({name + ".bak": os.path.realpath(targets[name] + ".bak") for name in RECOVERY_FILES})
+    targets.update({name + ".bak": targets[name] + ".bak" for name in RECOVERY_FILES})
     return targets
 
 
@@ -76,8 +78,10 @@ def _journal_path():
     return os.path.join(os.path.realpath(CONFIG_DIR), JOURNAL)
 
 
-def _read_target(path):
+def _read_target(path, *, keep_symlink=False):
     try:
+        if keep_symlink and os.path.islink(path):
+            return os.fsencode(os.readlink(path)), None
         info = os.stat(path)
         if not stat.S_ISREG(info.st_mode):
             raise OSError(f"{path} is not a regular file")
@@ -91,13 +95,22 @@ def _restore_target(path, original, mode):
     if original is None:
         if os.path.isdir(os.path.dirname(path)):
             persistence.remove(path)
-    elif _read_target(path) != (original, mode):
-        persistence.write_bytes(path, original, mode=mode)
+    elif _read_target(path, keep_symlink=True) != (original, mode):
+        if mode is None:
+            directory = os.path.dirname(path)
+            with tempfile.TemporaryDirectory(dir=directory, prefix=".armadalive-") as staging:
+                link = os.path.join(staging, "link")
+                os.symlink(os.fsdecode(original), link)
+                os.replace(link, path)
+            persistence._sync_directory(directory)
+        else:
+            persistence.write_bytes(path, original, mode=mode)
     else:
         # A previous recovery might have replaced the file before its directory
         # sync failed. Ensure the original is durable before clearing the journal.
-        with open(path, "rb") as stream:
-            os.fsync(stream.fileno())
+        if mode is not None:
+            with open(path, "rb") as stream:
+                os.fsync(stream.fileno())
         persistence._sync_directory(os.path.dirname(path))
 
 
@@ -116,20 +129,66 @@ def _journal_entries(records, path):
             entries.append((target, None, None))
         elif isinstance(data, str) and type(mode) is int and 0 <= mode <= 0o7777:
             entries.append((target, base64.b64decode(data, validate=True), mode))
+        elif isinstance(data, str) and mode is None and name.endswith(".bak"):
+            link = base64.b64decode(data, validate=True)
+            if not link or b"\0" in link:
+                raise ValueError(f"{name}: invalid original symbolic link in restore journal")
+            entries.append((target, link, None))
         else:
             raise ValueError(f"{name}: invalid original contents in restore journal")
     return entries
 
 
+@contextmanager
+def _restore_lock(*, create=False, inherited=None):
+    directory = os.path.realpath(CONFIG_DIR)
+    fd = None
+    try:
+        if inherited is not None:
+            inherited_fd = int(inherited)
+            if inherited_fd < 3:
+                raise ValueError("invalid restore lock descriptor")
+            fd = inherited_fd
+            if not os.path.samestat(os.fstat(fd), os.stat(directory)):
+                raise ValueError("restore lock directory has changed")
+        else:
+            if create:
+                os.makedirs(directory, exist_ok=True)
+            try:
+                fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+            except FileNotFoundError:
+                if create:
+                    raise
+                yield None
+                return
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise RestoreRecoveryError("Another backup restore is in progress") from error
+        yield fd
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
 def recover_restore(*, startup=False):
     """Restore pre-import bytes after an interrupted transaction, before any backend loads."""
-    path = _journal_path()
     token = os.environ.pop(RESTART_TOKEN, None) if startup else None
+    inherited = os.environ.pop(RESTART_LOCK, None) if startup else None
+    with _restore_lock(inherited=inherited) as fd:
+        if fd is not None:
+            _recover_restore(token, require_journal=inherited is not None)
+
+
+def _recover_restore(token=None, *, require_journal=False):
+    path = _journal_path()
     try:
         if os.path.islink(path):
             raise ValueError("restore journal is a symbolic link")
         payload, _ = _read_target(path)
         if payload is None:
+            if require_journal:
+                raise ValueError("missing restore journal at restart")
             return
         journal = json.loads(payload)
         if not isinstance(journal, dict) or not isinstance(journal.get("token"), str):
@@ -157,6 +216,12 @@ def apply(data):
 
 
 def _restore(data, *, await_restart=False):
+    prepared = _prepare_restore(data)
+    with _restore_lock(create=bool(prepared)) as fd:
+        return {} if fd is None else _restore_prepared(prepared, await_restart=await_restart)
+
+
+def _prepare_restore(data):
     files = data.get("files") if isinstance(data, dict) else None
     if not isinstance(files, dict):
         raise ValueError("not an ArmadaLive backup")
@@ -169,8 +234,11 @@ def _restore(data, *, await_restart=False):
                 prepared[name] = persistence.encode_json(_portable_data(name, files[name]), allow_nan=name in ("ui.json", "battery.json", "game_rules.json"))
             except (ValueError, TypeError, RecursionError) as error:
                 raise ValueError(f"{name}: {error}") from error
+    return prepared
 
-    recover_restore()
+
+def _restore_prepared(prepared, *, await_restart):
+    _recover_restore()
     if not prepared:
         return {}
     path = _journal_path()
@@ -185,8 +253,8 @@ def _restore(data, *, await_restart=False):
         target = targets[name]
         if target == path or list(targets.values()).count(target) != 1:
             raise ValueError(f"{name}: backup files cannot share a restore target")
-        previous, mode = _read_target(target)
-        if previous is not None:
+        previous, mode = _read_target(target, keep_symlink=name.endswith(".bak"))
+        if mode is not None:
             os.close(os.open(target, os.O_WRONLY | os.O_NONBLOCK))
         records[name] = [target, None if previous is None else base64.b64encode(previous).decode(), mode]
         if name == "game_rules.json":
@@ -204,7 +272,7 @@ def _restore(data, *, await_restart=False):
         # Keep the original contents durable until all replacements are durable.
         persistence.write_json(path, journal)
     except OSError:
-        recover_restore()
+        _recover_restore()
         raise
     try:
         for name, content in prepared.items():
@@ -226,7 +294,7 @@ def _rollback_restore(journal):
             persistence.write_json(_journal_path(), journal)
         except OSError as error:
             raise RestoreRecoveryError(f"Could not preserve restore journal: {error}") from error
-    recover_restore()
+    _recover_restore()
 
 
 def _local_legacy_base(content):
@@ -265,6 +333,9 @@ class Backup(QObject):
         self._message = self._operation = ""
         self._destination_touched = self._restart_required = False
         self._restart_undo = None
+        self._restore_pending = None
+        self._restore_locks = ExitStack()
+        self._restore_fd = None
         self._deadline = 0.0
         self._drain = QTimer(self)
         self._drain.setInterval(20)
@@ -307,10 +378,15 @@ class Backup(QObject):
         self._operation = operation
         self._deadline = time.monotonic() + WRITE_TIMEOUT
         try:
+            if operation == "restore":
+                with open(FILE) as stream:
+                    self._restore_pending = _prepare_restore(json.load(stream))
+                self._restore_fd = self._restore_locks.enter_context(
+                    _restore_lock(create=bool(self._restore_pending)))
             for writer in self._writers:
                 self._paused.append(writer)
                 writer.pauseWrites(restoring=operation == "restore")
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, RecursionError) as error:
             self._fail(error)
             return
         self._say("")
@@ -332,8 +408,9 @@ class Backup(QObject):
                 self._operation = ""
                 self._say("saved")
             else:
-                with open(FILE) as f:
-                    self._restart_undo = _restore(json.load(f), await_restart=True)
+                prepared, self._restore_pending = self._restore_pending, None
+                if self._restore_fd is not None:
+                    self._restart_undo = _restore_prepared(prepared, await_restart=True)
                 self._destination_touched = bool(self._restart_undo)
                 self._say("restored")
                 QTimer.singleShot(800, self._restart)  # Reload every backend from disk.
@@ -347,6 +424,9 @@ class Backup(QObject):
 
     def _fail(self, error):
         self._drain.stop()
+        self._restore_locks.close()
+        self._restore_fd = None
+        self._restore_pending = None
         if isinstance(error, RestoreRecoveryError) or os.path.lexists(_journal_path()):
             # Recovery evidence remains; old live writers must not touch it.
             self._restart_required = True
@@ -358,20 +438,30 @@ class Backup(QObject):
         self._say(str(error) or type(error).__name__)
 
     def _restart(self):
+        restart_fd = None
         try:
             if self._restart_undo:
-                # Exec inherits this token. A new unrelated process rolls back;
-                # only this successfully exec'd process commits the restore.
+                # Carry the lock through exec so another process cannot undo
+                # the staged settings before the new process sees its token.
+                restart_fd = os.dup(self._restore_fd)
+                os.environ[RESTART_LOCK] = str(restart_fd)
+                os.set_inheritable(restart_fd, True)
                 os.environ[RESTART_TOKEN] = self._restart_undo["token"]
             os.execv(sys.executable, sys.orig_argv)
         except OSError as error:
-            os.environ.pop(RESTART_TOKEN, None)
             try:
-                recover_restore()
+                if self._restore_fd is not None:
+                    _recover_restore()
             except RestoreRecoveryError as rollback_error:
                 self._fail(RestoreRecoveryError(f"{error}. {rollback_error}"))
                 return
             self._fail(error)
+        finally:
+            os.environ.pop(RESTART_TOKEN, None)
+            if os.environ.pop(RESTART_LOCK, None) is not None and restart_fd is not None:
+                os.close(restart_fd)
+            self._restore_locks.close()
+            self._restore_fd = None
 
     @Slot()
     def flushWriters(self):
