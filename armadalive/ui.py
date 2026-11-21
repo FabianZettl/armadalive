@@ -13,16 +13,23 @@ SCALES = (100, 125, 150, 175)   # shortcut: four fixed steps, a free slider is n
 
 def saved_scale():
     """The saved interface size, read before Qt starts (QT_SCALE_FACTOR only counts at start)."""
-    scale = persistence.read_json(CONFIG, lambda data: isinstance(data, dict), {}).get("scale", 100)
+    scale = persistence.read_json(CONFIG, validate_settings, {}).get("scale", 100)
     return scale if scale in SCALES else 100
 
 
-class UiSettings(QObject):
+def validate_settings(saved):
+    # The ordinary reader accepts object members and normalizes unusable values.
+    # Backup must preserve those compatible values, including optional fields.
+    return isinstance(saved, dict)
+
+
+class UiSettings(persistence.OwnerWriter, QObject):
     changed = Signal()
 
     def __init__(self):
         super().__init__()
-        saved = persistence.read_json(CONFIG, lambda data: isinstance(data, dict), {})
+        self._scale_restart_deferred = False
+        saved = persistence.read_json(CONFIG, validate_settings, {})
         # saved values win over the defaults; keys we do not know are dropped
         self._s = {**DEFAULTS, **{k: v for k, v in saved.items() if k in DEFAULTS}}
         if self._s["heat"] and not isinstance(self._s["heat"], (int, float)):
@@ -40,6 +47,8 @@ class UiSettings(QObject):
 
     @Slot(str)
     def setTheme(self, key):
+        if self._writes_paused:
+            return
         self._s["theme"] = key
         self._s["accent"] = ""  # a new theme starts with its own accent
         self._save()
@@ -63,56 +72,87 @@ class UiSettings(QObject):
     @Slot(bool)
     def setOnboarded(self, done):
         """Whether the first-run setup has been gone through (false shows it again)."""
+        if self._writes_paused:
+            return
         self._s["onboarded"] = bool(done)
         self._save()
 
     @Slot(bool)
     def setLedFollow(self, on):
         """The stick LEDs take the theme's accent colour (until the user picks a colour of their own)."""
+        if self._writes_paused:
+            return
         self._s["ledFollow"] = bool(on)
         self._save()
 
     @Slot(bool)
     def setDim(self, on):
+        if self._writes_paused:
+            return
         self._s["dim"] = bool(on)
         self._save()
 
     @Slot(bool)
     def setApps(self, on):
+        if self._writes_paused:
+            return
         self._s["apps"] = bool(on)
         self._save()
 
     @Slot(int)
     def setHeat(self, degrees):
+        if self._writes_paused:
+            return
         if degrees in (0, 80, 85, 90):    # 0 = no warning
             self._s["heat"] = degrees
             self._save()
 
     @Slot(bool)
     def setClose(self, on):
+        if self._writes_paused:
+            return
         self._s["close"] = bool(on)
         self._save()
 
     @Slot(bool)
     def setAnimate(self, on):
+        if self._writes_paused:
+            return
         self._s["animate"] = bool(on)
         self._save()
 
     @Slot(int)
     def setScale(self, percent):
         """Interface size in percent (Qt reads it at start, so the app starts over to apply it)."""
-        if percent in SCALES and percent != self._s["scale"]:
+        if not self._writes_paused and percent in SCALES and percent != self._s["scale"]:
             self._s["scale"] = percent
             self._save()
-            QTimer.singleShot(600, lambda: os.execv(sys.executable, sys.orig_argv))
+            QTimer.singleShot(600, self._restart_for_scale)
+
+    def _restart_for_scale(self):
+        if self._writes_paused:
+            # Let the backup finish, or restart the restored app itself.
+            self._scale_restart_deferred = True
+            return
+        os.execv(sys.executable, sys.orig_argv)
+
+    def resumeWrites(self):
+        super().resumeWrites()
+        if self._scale_restart_deferred:
+            self._scale_restart_deferred = False
+            QTimer.singleShot(600, self._restart_for_scale)
 
     @Slot(str)
     def setLang(self, lang):
+        if self._writes_paused:
+            return
         if lang in ("en", "de"):
             self._s["lang"] = lang
             self._save()
 
     @Slot(str)
     def setAccent(self, rgb):
+        if self._writes_paused:
+            return
         self._s["accent"] = rgb if len(rgb) == 6 else ""
         self._save()

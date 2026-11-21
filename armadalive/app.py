@@ -14,7 +14,7 @@ from .gameinfo import GameInfo
 from .history import History
 from . import steamlib
 from .ayn import AynButton
-from .backup import Backup
+from .backup import Backup, recover_restore
 from .battery import Battery
 from .closer import Closer
 from .gamepad import Pad
@@ -62,8 +62,16 @@ def install_signal_handlers(app, ayn):
 
 
 def main():
-    os.environ.setdefault("QT_SCALE_FACTOR", str(saved_scale() / 100))   # a QT_SCALE_FACTOR from the service file wins
-    app = QGuiApplication(sys.argv)
+    recover_restore(startup=True)  # Finish recovery before any backend reads or writes configuration.
+    scale_from_settings = "QT_SCALE_FACTOR" not in os.environ
+    if scale_from_settings:
+        os.environ["QT_SCALE_FACTOR"] = str(saved_scale() / 100)
+    try:
+        app = QGuiApplication(sys.argv)
+    finally:
+        # Only Qt startup needs this value. The restarted app must read the new settings.
+        if scale_from_settings:
+            os.environ.pop("QT_SCALE_FACTOR", None)
     app.setApplicationName("ArmadaLive")
     app.setApplicationVersion(__version__)
     app.setDesktopFileName("armadalive")
@@ -78,11 +86,13 @@ def main():
     now.history = history
     shortcuts = SteamShortcuts(now)
     app_catalog = Apps(history, shortcuts)
-    backup = Backup((app_catalog, history))
+    ui, tiles, battery = UiSettings(), Tiles(), Battery()
+    rules = GameRules(now, gamescope, monitor)
+    backup = Backup((app_catalog, history, ui, tiles, battery, rules))
     app.aboutToQuit.connect(backup.flushWriters)
-    backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=app_catalog, history=history, gameinfo=GameInfo(history), shell=Shell(), controls=Controls(), ui=UiSettings(), updater=Updater(), admin=Admin(),
-                    health=Health(steamui), rules=GameRules(now, gamescope, monitor), tileStore=Tiles(),
-                    battery=Battery(), media=Media(), backup=backup, artwork=Palette(), steamShortcuts=shortcuts, tasks=Tasks(), onboarding=Onboarding(), activity=Activity(), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad(), cheats=Cheats(), layout=layout, emulatorControl=emulator_ctrl)
+    backends = dict(steamui=steamui, gamescope=gamescope, nowPlaying=now, system=monitor, ayn=AynButton(), settings=Settings(), apps=app_catalog, history=history, gameinfo=GameInfo(history), shell=Shell(), controls=Controls(), ui=ui, updater=Updater(), admin=Admin(),
+                    health=Health(steamui), rules=rules, tileStore=tiles,
+                    battery=battery, media=Media(), backup=backup, artwork=Palette(), steamShortcuts=shortcuts, tasks=Tasks(), onboarding=Onboarding(), activity=Activity(), manuals=Manuals(), ludo=LudoSync(), trackpad=Trackpad(), cheats=Cheats(), layout=layout, emulatorControl=emulator_ctrl)
     pad = backends["pad"] = Pad()   # must stay referenced, like the rest
     backends["closer"] = Closer(pad, gamescope, now, backends["ui"])
     backends["thermal"] = Thermal(monitor, backends["ui"])

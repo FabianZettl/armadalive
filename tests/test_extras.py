@@ -1,4 +1,4 @@
-import json, os, struct, tempfile, unittest
+import json, os, struct, subprocess, sys, tempfile, unittest
 from pathlib import Path
 from unittest import mock
 
@@ -73,7 +73,7 @@ class Battery(unittest.TestCase):
 class Backup(unittest.TestCase):
     def test_only_known_files_are_written_and_a_foreign_file_is_refused(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.object(backup, "CONFIG_DIR", d):
-            n = backup.apply({"files": {"ui.json": {"theme": "neon"}, "evil.json": {"x": 1}, "tiles.json": "nope"}})
+            n = backup.apply({"files": {"ui.json": {"theme": "neon"}, "evil.json": {"x": 1}}})
             self.assertEqual(n, 1)
             self.assertEqual(sorted(os.listdir(d)), ["ui.json"])
             self.assertEqual(backup.collect()["files"], {"ui.json": {"theme": "neon"}})
@@ -85,6 +85,484 @@ class Backup(unittest.TestCase):
             data = {"files": {"apps.json": {"slots": [], "folders": {"1": {"name": "Tools", "items": []}}}, "history.json": {"games": {}, "sessions": [["x", 1, 2]]}}}
             self.assertEqual(backup.apply(data), 2)
             self.assertEqual(backup.collect()["files"], data["files"])
+
+
+    def test_legacy_emulator_originals_do_not_transfer_between_devices(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            file = Path(directory, "game_rules.json")
+            local = {"enabled": False, "base": {"psp": "2"}}
+            file.write_text(json.dumps(local))
+            portable = backup.collect()["files"]
+            self.assertEqual(portable["game_rules.json"], {"enabled": False})
+            portable["game_rules.json"]["base"] = {"psp": "5"}
+            backup.apply({"files": portable})
+            self.assertEqual(json.loads(file.read_text()), local)
+            file.unlink()
+            file.with_suffix(".json.bak").unlink()
+            backup.apply({"files": portable})
+            self.assertEqual(json.loads(file.read_text()), {"enabled": False})
+
+    def test_invalid_known_file_is_reported_before_any_file_is_written(self):
+        invalid = {
+            "game_rules.json": {"rules": None},
+            "battery.json": [],
+            "tiles.json": [],
+            "apps.json": {"slots": {}, "folders": []},
+            "history.json": {"sessions": [["game", "not a date", 2]]},
+            "ui.json": [],
+        }
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            existing = Path(directory, "ui.json")
+            previous = b'{ "theme": "stock" }\n'
+            existing.write_bytes(previous)
+            for name, data in invalid.items():
+                with self.subTest(name=name):
+                    files = {"ui.json": {"theme": "neon"}, name: data}
+                    with self.assertRaisesRegex(ValueError, name.replace(".", r"\.")):
+                        backup.apply({"files": files})
+                    self.assertEqual(existing.read_bytes(), previous)
+                    self.assertEqual(sorted(os.listdir(directory)), ["ui.json"])
+
+    def test_interrupted_backup_export_keeps_previous_archive(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            archive = Path(directory, "backup.json")
+            previous = b'{ "files": {"ui.json": {}} }\n'
+            archive.write_bytes(previous)
+            with mock.patch.object(backup, "FILE", str(archive)), \
+                    mock.patch("os.replace", side_effect=OSError("export replace failed")):
+                coordinator = backup.Backup()
+                coordinator.save()
+            self.assertIn("export replace failed", coordinator.state["message"])
+            self.assertEqual(archive.read_bytes(), previous)
+
+    def test_second_replace_failure_rolls_back_the_first_file(self):
+        self._verify_failed_restore(OSError("second replace failed"), b"prior bytes, even from a damaged file")
+
+    def test_interrupted_restore_rolls_back_on_restart(self):
+        self._verify_failed_restore(KeyboardInterrupt())
+
+    def _verify_failed_restore(self, failure, prior_ui=None):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            ui_file = Path(directory, "ui.json")
+            real_rules = Path(directory, "rules-target")
+            rules_file = Path(directory, "game_rules.json")
+            previous = b'{ "rules": {}, "enabled": true }\n'
+            if prior_ui is not None:
+                ui_file.write_bytes(prior_ui)
+            real_rules.write_bytes(previous)
+            rules_file.symlink_to(real_rules.name)
+            replace = os.replace
+
+            def fail_second(source, dest):
+                if Path(dest) == real_rules:
+                    raise failure
+                replace(source, dest)
+
+            files = {"ui.json": {"theme": "neon"}, "game_rules.json": {"enabled": False}}
+            with mock.patch("os.replace", side_effect=fail_second):
+                with self.assertRaises(type(failure)):
+                    backup.apply({"files": files})
+            if isinstance(failure, KeyboardInterrupt):
+                self.assertTrue(ui_file.exists())
+                backup.recover_restore()
+                backup.recover_restore()
+            expected = ["game_rules.json", "rules-target"]
+            if prior_ui is None:
+                self.assertFalse(ui_file.exists())
+            else:
+                self.assertEqual(ui_file.read_bytes(), prior_ui)
+                expected.append("ui.json")
+            self.assertEqual(sorted(os.listdir(directory)), expected)
+            self.assertTrue(rules_file.is_symlink())
+            self.assertEqual(real_rules.read_bytes(), previous)
+
+    def test_successful_restore_preserves_symlink_and_target_mode(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            actual = Path(directory, "target")
+            actual.write_text('{"theme":"stock"}')
+            actual.chmod(0o640)
+            link = Path(directory, "ui.json")
+            link.symlink_to(actual.name)
+            self.assertEqual(backup.apply({"files": {"ui.json": {"theme": "neon"}}}), 1)
+            backup.recover_restore()
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(json.loads(actual.read_text()), {"theme": "neon"})
+            self.assertEqual(actual.stat().st_mode & 0o777, 0o640)
+
+    def test_interrupted_restore_recovers_both_history_copies(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            primary = Path(directory, "history.json")
+            fallback = primary.with_suffix(".json.bak")
+            original = b'{ "steam_baseline": {"42":[100,300]} }\n'
+            previous = b'{ "games": {"steam/42": {"total": 10}} }\n'
+            primary.write_bytes(original)
+            fallback.write_bytes(previous)
+            fallback.chmod(0o640)
+
+            restored = {"steam_baseline": {"99": [200, 600]}}
+            backup._restore({"files": {"history.json": restored}}, await_restart=True)
+            self.assertEqual(json.loads(primary.read_bytes()), restored)
+            self.assertEqual(json.loads(fallback.read_bytes()), restored)
+            backup.recover_restore(startup=True)
+
+            self.assertEqual(primary.read_bytes(), original)
+            self.assertEqual(fallback.read_bytes(), previous)
+            self.assertEqual(fallback.stat().st_mode & 0o777, 0o640)
+
+    def test_restore_replaces_recovery_link_without_writing_its_target(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            primary = Path(directory, "history.json")
+            fallback = primary.with_suffix(".json.bak")
+            retained = Path(directory, "retained-history.json")
+            previous = b'{ "games": {"steam/42": {"total": 10}} }\n'
+            retained.write_bytes(previous)
+            fallback.symlink_to(retained.name)
+            archive = {"files": {"history.json": {"steam_baseline": {"99": [200, 600]}}}}
+
+            backup._restore(archive, await_restart=True)
+            self.assertFalse(fallback.is_symlink())
+            self.assertEqual(fallback.read_bytes(), primary.read_bytes())
+            self.assertEqual(retained.read_bytes(), previous)
+            backup.recover_restore()
+            self.assertFalse(primary.exists())
+            self.assertEqual(fallback.readlink(), Path(retained.name))
+
+            backup.apply(archive)
+            self.assertFalse(fallback.is_symlink())
+            self.assertEqual(retained.read_bytes(), previous)
+
+    def test_restore_failure_after_replacement_retains_undo_until_retry(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            ui_file = Path(directory, "ui.json")
+            rules_file = Path(directory, "game_rules.json")
+            rules_file.write_text('{"enabled":false}')
+            write = backup.persistence.write_bytes
+
+            def fail_second(path, data, **options):
+                if Path(path) != rules_file:
+                    return write(path, data, **options)
+                if data != b'{"enabled":false}':
+                    write(path, data, **options)
+                raise OSError("device stopped responding")
+
+            files = {"ui.json": {"theme": "neon"}, "game_rules.json": {"enabled": True}}
+            with mock.patch.object(backup.persistence, "write_bytes", side_effect=fail_second):
+                with self.assertRaisesRegex(backup.RestoreRecoveryError, "device stopped responding"):
+                    backup.apply({"files": files})
+                self.assertFalse(ui_file.exists())
+                self.assertEqual(json.loads(rules_file.read_text()), {"enabled": True})
+            backup.recover_restore()
+            self.assertEqual(rules_file.read_text(), '{"enabled":false}')
+            self.assertEqual(sorted(os.listdir(directory)), ["game_rules.json"])
+
+
+    def test_compatible_legacy_values_and_optional_fields_round_trip(self):
+        files = {
+            "ui.json": {"heat": float("inf"), "lang": "fr", "future": [1]},
+            "battery.json": {"warn": 55.5, "limit": float("inf"), "refused": 1},
+            "tiles.json": {"order": ["a", 1, None, "a"], "future": True},
+            "apps.json": {"slots": ["a", 3], "folders": {"1": {"name": 4, "items": [2, "b"]}}, "next": "7"},
+            "game_rules.json": {"enabled": 1, "rules": {"game:old/key": {"profile": None, "title": None, "fps": "45", "res": 6.5, "future": float("inf")}}, "future": True},
+        }
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            self.assertEqual(backup.apply({"files": files}), len(files))
+            self.assertEqual(backup.collect()["files"], files)
+
+    def test_local_originals_survive_invalid_rules_and_recovered_primary(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            path = Path(directory, "game_rules.json")
+            path.write_text('{"rules":null,"base":{"psp":"2"}}')
+            incoming = {"files": {"game_rules.json": {"rules": {}, "base": {"psp": "foreign"}}}}
+            backup.apply(incoming)
+            self.assertEqual(json.loads(path.read_text())["base"], {"psp": "2"})
+            path.with_suffix(".json.bak").write_text('{"rules":{},"base":{"psp":"3"}}')
+            path.write_text('{broken')
+            backup.apply(incoming)
+            self.assertEqual(json.loads(path.read_text())["base"], {"psp": "3"})
+            path.unlink()
+            backup.apply(incoming)
+            self.assertEqual(json.loads(path.read_text())["base"], {"psp": "3"})
+
+    def test_handoff_commits_only_the_successfully_execed_startup(self):
+        for match in (True, False):
+            with self.subTest(match=match), tempfile.TemporaryDirectory() as directory, \
+                    mock.patch.object(backup, "CONFIG_DIR", directory), mock.patch.dict(os.environ):
+                path = Path(directory, "ui.json")
+                original = b'{ "theme":"stock" }'
+                path.write_bytes(original)
+                transaction = backup._restore({"files": {"ui.json": {"theme": "neon"}}}, await_restart=True)
+                os.environ[backup.RESTART_TOKEN] = transaction["token"] if match else "stale"
+                backup.recover_restore(startup=True)
+                self.assertNotIn(backup.RESTART_TOKEN, os.environ)
+                self.assertEqual(json.loads(path.read_bytes())["theme"], "neon" if match else "stock")
+                self.assertFalse(Path(backup._journal_path()).exists())
+                backup.recover_restore(startup=True)
+
+    def test_exec_keeps_journal_until_replacement_startup_and_failed_exec_rolls_back(self):
+        for fail in (False, True):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as directory, \
+                    mock.patch.object(backup, "CONFIG_DIR", directory), mock.patch.dict(os.environ):
+                path = Path(directory, "ui.json")
+                path.write_bytes(b'{"theme":"stock"}')
+                archive = Path(directory, "archive.json")
+                archive.write_text('{"files":{"ui.json":{"theme":"neon"}}}')
+                writer = mock.Mock(writesPending=mock.Mock(return_value=False))
+                coordinator = backup.Backup((writer,))
+
+                def exec_replacement(*_):
+                    self.assertTrue(Path(backup._journal_path()).exists())
+                    self.assertEqual(os.environ[backup.RESTART_TOKEN], coordinator._restart_undo["token"])
+                    if fail:
+                        raise OSError("exec rejected")
+                    backup.recover_restore(startup=True)
+
+                with mock.patch.object(backup, "FILE", str(archive)), \
+                        mock.patch.object(backup.QTimer, "singleShot") as later, \
+                        mock.patch.object(backup.os, "execv", side_effect=exec_replacement):
+                    coordinator.restore()
+                    writer.resumeWrites.assert_not_called()
+                    later.call_args.args[1]()
+                self.assertNotIn(backup.RESTART_TOKEN, os.environ)
+                self.assertFalse(Path(backup._journal_path()).exists())
+                self.assertEqual(json.loads(path.read_text())["theme"], "stock" if fail else "neon")
+                if fail:
+                    writer.resumeWrites.assert_called_once()
+                    self.assertFalse(coordinator.state["restartRequired"])
+
+    def test_restore_excludes_another_startup_and_commits_after_real_exec(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "ui.json").write_text('{"theme":"stock"}')
+            (root / "tiles.json").write_text('{"order":["old"]}')
+            (root / "archive.json").write_text('{"files":{"ui.json":{"theme":"neon"},"tiles.json":{"order":["new"]}}}')
+            child = """
+import os, subprocess, sys
+from PySide6.QtCore import QCoreApplication
+from armadalive import backup
+
+backup.CONFIG_DIR = sys.argv[1]
+backup.FILE = os.path.join(backup.CONFIG_DIR, "archive.json")
+if sys.argv[2] == "competing":
+    try:
+        backup.recover_restore(startup=True)
+    except backup.RestoreRecoveryError as error:
+        if "Another backup restore is in progress" not in str(error):
+            raise
+    else:
+        raise AssertionError("Concurrent startup recovered a live restore")
+elif sys.argv[2] == "restarted":
+    backup.recover_restore(startup=True)
+else:
+    app = QCoreApplication([])
+    coordinator = backup.Backup()
+    write_bytes = backup.persistence.write_bytes
+
+    def write_with_competing_startup(path, content, **kwargs):
+        write_bytes(path, content, **kwargs)
+        if os.path.basename(path) == "ui.json":
+            subprocess.run(sys.orig_argv[:-1] + ["competing"], check=True, timeout=5)
+
+    backup.persistence.write_bytes = write_with_competing_startup
+    coordinator.restore()
+    assert coordinator.state["message"] == "restored", coordinator.state
+    subprocess.run(sys.orig_argv[:-1] + ["competing"], check=True, timeout=5)
+    sys.orig_argv[-1] = "restarted"
+    coordinator._restart()
+    raise AssertionError("Restore did not restart")
+"""
+            result = subprocess.run([sys.executable, "-c", child, directory, "restore"],
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads((root / "ui.json").read_text()), {"theme": "neon"})
+            self.assertEqual(json.loads((root / "tiles.json").read_text()), {"order": ["new"]})
+            self.assertFalse((root / backup.JOURNAL).exists())
+
+    def test_failed_rollback_sync_retains_evidence_and_writers_until_retry(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory), \
+                mock.patch.dict(os.environ):
+            path = Path(directory, "ui.json")
+            original = b'{ "theme":"stock" }'
+            path.write_bytes(original)
+            archive = Path(directory, "archive.json")
+            archive.write_text('{"files":{"ui.json":{"theme":"neon"}}}')
+            writer = mock.Mock(writesPending=mock.Mock(return_value=False))
+            coordinator = backup.Backup((writer,))
+            with mock.patch.object(backup, "FILE", str(archive)), \
+                    mock.patch.object(backup.QTimer, "singleShot") as later, \
+                    mock.patch.object(backup.os, "execv", side_effect=OSError("exec rejected")):
+                coordinator.restore()
+                with mock.patch.object(backup.persistence, "_sync_directory", side_effect=OSError("sync rejected")):
+                    later.call_args.args[1]()
+                self.assertTrue(coordinator.state["restartRequired"])
+                writer.resumeWrites.assert_not_called()
+                self.assertTrue(Path(backup._journal_path()).exists())
+                self.assertNotIn(backup.RESTART_TOKEN, os.environ)
+                coordinator.flushWriters()
+                writer.flush.assert_not_called()
+                coordinator.restore()
+                self.assertEqual(writer.resumeWrites.call_count, 1)
+                # A fresh restore is staged only after rollback succeeds.
+                later.call_args.args[1]()
+            self.assertEqual(path.read_bytes(), original)
+            self.assertFalse(Path(backup._journal_path()).exists())
+            self.assertFalse(coordinator.state["restartRequired"])
+
+    def test_journal_durability_failure_does_not_touch_destination(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            path = Path(directory, "ui.json")
+            original = b'{"theme":"stock"}'
+            path.write_bytes(original)
+            replace = os.replace
+
+            def fail_journal_sync(source, target):
+                replace(source, target)
+                if Path(target).name == backup.JOURNAL:
+                    raise OSError("journal sync failed")
+
+            with mock.patch.object(backup.persistence.os, "replace", side_effect=fail_journal_sync):
+                with self.assertRaisesRegex(OSError, "journal sync failed"):
+                    backup.apply({"files": {"ui.json": {"theme": "neon"}}})
+            self.assertEqual(path.read_bytes(), original)
+            self.assertFalse(Path(backup._journal_path()).exists())
+
+    def test_same_bytes_after_failed_directory_sync_are_resynced_before_clearing_evidence(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            path = Path(directory, "ui.json")
+            path.write_text('{"theme":"stock"}')
+            backup._restore({"files": {"ui.json": {"theme": "neon"}}}, await_restart=True)
+            write = backup.persistence.write_bytes
+
+            def replace_then_fail(*args, **kwargs):
+                write(*args, **kwargs)
+                raise OSError("post replacement sync failed")
+
+            with mock.patch.object(backup.persistence, "write_bytes", side_effect=replace_then_fail):
+                with self.assertRaises(backup.RestoreRecoveryError):
+                    backup.recover_restore()
+            self.assertEqual(json.loads(path.read_text())["theme"], "stock")
+            self.assertTrue(Path(backup._journal_path()).exists())
+            with mock.patch.object(backup.persistence, "_sync_directory", wraps=backup.persistence._sync_directory) as sync:
+                backup.recover_restore()
+            self.assertIn(mock.call(directory), sync.call_args_list)
+            self.assertFalse(Path(backup._journal_path()).exists())
+
+    def test_changed_symlink_target_blocks_recovery_without_erasing_evidence(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            path, actual, other = (Path(directory, name) for name in ("ui.json", "actual", "other"))
+            actual.write_text('{"theme":"stock"}')
+            other.write_text('untouched')
+            path.symlink_to(actual.name)
+            backup._restore({"files": {"ui.json": {"theme": "neon"}}}, await_restart=True)
+            path.unlink()
+            path.symlink_to(other.name)
+            with self.assertRaises(backup.RestoreRecoveryError):
+                backup.recover_restore()
+            self.assertEqual(other.read_text(), 'untouched')
+            self.assertTrue(Path(backup._journal_path()).exists())
+            path.unlink()
+            path.symlink_to(actual.name)
+            backup.recover_restore()
+            self.assertEqual(json.loads(actual.read_text())["theme"], "stock")
+
+    def test_startup_recovers_before_creating_any_backends(self):
+        from armadalive import app as application
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            path = Path(directory, "ui.json")
+            path.write_text('{"theme":"stock"}')
+            backup._restore({"files": {"ui.json": {"theme": "neon"}}}, await_restart=True)
+
+            def first_constructor(*_):
+                self.assertEqual(json.loads(path.read_text())["theme"], "stock")
+                self.assertFalse(Path(backup._journal_path()).exists())
+                raise RuntimeError("stop before backends")
+
+            with mock.patch.object(application, "QGuiApplication", side_effect=first_constructor):
+                with self.assertRaisesRegex(RuntimeError, "stop before backends"):
+                    application.main()
+            Path(backup._journal_path()).write_text('{broken')
+            with mock.patch.object(application, "QGuiApplication") as create:
+                with self.assertRaises(backup.RestoreRecoveryError):
+                    application.main()
+                create.assert_not_called()
+
+    def test_restore_respects_read_only_symlink_target(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            target = Path(directory, "target")
+            target.write_text('{"theme":"stock"}')
+            target.chmod(0o444)
+            if os.access(target, os.W_OK, effective_ids=True):
+                self.skipTest("test process can write mode 0444")
+            link = Path(directory, "ui.json")
+            link.symlink_to(target.name)
+            with self.assertRaises(PermissionError):
+                backup.apply({"files": {"ui.json": {"theme": "neon"}}})
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(json.loads(target.read_text())["theme"], "stock")
+            self.assertFalse(Path(backup._journal_path()).exists())
+
+    def test_destination_directory_sync_failure_rolls_back_bytes_and_mode(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            path = Path(directory, "ui.json")
+            original = b'{ "theme":"stock" }'
+            path.write_bytes(original)
+            path.chmod(0o640)
+            sync = backup.persistence._sync_directory
+            failed = []
+
+            def fail_after_replacement(parent):
+                if parent == directory and b"neon" in path.read_bytes() and not failed:
+                    failed.append(True)
+                    raise OSError("destination sync failed")
+                return sync(parent)
+
+            with mock.patch.object(backup.persistence, "_sync_directory", side_effect=fail_after_replacement):
+                with self.assertRaisesRegex(OSError, "destination sync failed"):
+                    backup.apply({"files": {"ui.json": {"theme": "neon"}}})
+            self.assertEqual(failed, [True])
+            self.assertEqual(path.read_bytes(), original)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o640)
+            self.assertFalse(Path(backup._journal_path()).exists())
+
+    def test_stale_startup_token_is_consumed_even_without_a_valid_journal(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory), \
+                mock.patch.dict(os.environ):
+            os.environ[backup.RESTART_TOKEN] = "stale"
+            backup.recover_restore(startup=True)
+            self.assertNotIn(backup.RESTART_TOKEN, os.environ)
+            Path(backup._journal_path()).write_text('{broken')
+            os.environ[backup.RESTART_TOKEN] = "stale"
+            with self.assertRaises(backup.RestoreRecoveryError):
+                backup.recover_restore(startup=True)
+            self.assertNotIn(backup.RESTART_TOKEN, os.environ)
+            self.assertTrue(Path(backup._journal_path()).exists())
+
+    def test_registered_rules_preserve_primary_originals_while_recovering_invalid_rules(self):
+        from armadalive import gamerules
+        from tests.test_gamerules import FakeGs, FakeNow, FakeSys
+        for recovered in (False, True):
+            with self.subTest(recovered=recovered), tempfile.TemporaryDirectory() as directory, \
+                    mock.patch.object(backup, "CONFIG_DIR", directory):
+                path = Path(directory, "game_rules.json")
+                path.write_text('{"rules":null,"base":{"psp":"device-original"}}')
+                if recovered:
+                    path.with_suffix(".json.bak").write_text('{"rules":{},"base":{"psp":"older-original"}}')
+                archive = Path(directory, "archive.json")
+                archive.write_text('{"files":{"game_rules.json":{"rules":{},"base":{"psp":"foreign-original"}}}}')
+                with mock.patch.object(gamerules, "CONFIG", path), \
+                        mock.patch.object(backup, "FILE", str(archive)), \
+                        mock.patch.object(backup.QTimer, "singleShot"), \
+                        mock.patch.object(backup.os, "execv", side_effect=OSError("exec failed")):
+                    rules = gamerules.GameRules(FakeNow(), FakeGs(), FakeSys())
+                    coordinator = backup.Backup((rules,))
+                    coordinator.restore()
+                    self.assertEqual(coordinator.state["message"], "restored")
+                    self.assertEqual(json.loads(path.read_text())["base"], {"psp": "device-original"})
+                    journal = json.loads(Path(backup._journal_path()).read_text())
+                    import base64
+                    previous = json.loads(base64.b64decode(journal["records"]["game_rules.json"][1]))
+                    self.assertEqual(previous["base"], {"psp": "device-original"})
+                    coordinator._restart()
+                    self.assertEqual(json.loads(path.read_text())["base"], {"psp": "device-original"})
 
 
 class EmuSettings(unittest.TestCase):

@@ -19,6 +19,7 @@ Flickable {
 
     Column {
         id: col
+        enabled: !page.rl.writesPaused
         x: page.m; y: page.m
         width: page.width - 2 * page.m
         spacing: 14
