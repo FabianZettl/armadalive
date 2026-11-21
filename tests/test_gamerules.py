@@ -501,3 +501,29 @@ class RulePersistence(unittest.TestCase):
         saved = json.loads(archive.read_text())["files"]["game_rules.json"]
         self.assertEqual(saved, {"rules": {}, "enabled": False})
         self.assertEqual(json.loads(self.path.read_text())["base"], {"psp": "2"})
+
+    def test_invalid_rules_keep_independently_valid_primary_originals_on_ordinary_save(self):
+        import json
+        self.path.write_text('{"rules":null,"base":{"psp":"device-original"}}')
+        self.path.with_suffix(".json.bak").write_text('{"rules":{},"base":{"psp":"older-original"}}')
+        rules = self.make()
+        self.assertEqual(rules.state["rules"], [])
+        rules.setEnabled(False)
+        self.assertEqual(json.loads(self.path.read_text())["base"], {"psp": "device-original"})
+
+    def test_unusable_originals_block_save_and_backup_without_erasing_evidence(self):
+        from armadalive import backup
+        original = b'{"rules":null,"base":{"psp":["damaged-original"]}}'
+        self.path.write_bytes(original)
+        rules = self.make()
+        with self.assertRaisesRegex(ValueError, "original"):
+            rules.setEnabled(False)
+        self.assertEqual(self.path.read_bytes(), original)
+        archive = self.root / "archive.json"
+        archive.write_text('{"files":{"game_rules.json":{"rules":{}}}}')
+        with mock.patch.object(backup, "CONFIG_DIR", str(self.root)), mock.patch.object(backup, "FILE", str(archive)):
+            coordinator = backup.Backup((rules,))
+            coordinator.restore()
+            self.assertIn("original", coordinator.state["message"])
+            self.assertFalse(coordinator.state["busy"])
+        self.assertEqual(self.path.read_bytes(), original)
