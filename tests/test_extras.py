@@ -98,6 +98,7 @@ class Backup(unittest.TestCase):
             backup.apply({"files": portable})
             self.assertEqual(json.loads(file.read_text()), local)
             file.unlink()
+            file.with_suffix(".json.bak").unlink()
             backup.apply({"files": portable})
             self.assertEqual(json.loads(file.read_text()), {"enabled": False})
 
@@ -188,6 +189,26 @@ class Backup(unittest.TestCase):
             self.assertEqual(json.loads(actual.read_text()), {"theme": "neon"})
             self.assertEqual(actual.stat().st_mode & 0o777, 0o640)
 
+    def test_interrupted_restore_recovers_both_history_copies(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
+            primary = Path(directory, "history.json")
+            fallback = primary.with_suffix(".json.bak")
+            original = b'{ "steam_baseline": {"42":[100,300]} }\n'
+            previous = b'{ "games": {"steam/42": {"total": 10}} }\n'
+            primary.write_bytes(original)
+            fallback.write_bytes(previous)
+            fallback.chmod(0o640)
+
+            restored = {"steam_baseline": {"99": [200, 600]}}
+            backup._restore({"files": {"history.json": restored}}, await_restart=True)
+            self.assertEqual(json.loads(primary.read_bytes()), restored)
+            self.assertEqual(json.loads(fallback.read_bytes()), restored)
+            backup.recover_restore(startup=True)
+
+            self.assertEqual(primary.read_bytes(), original)
+            self.assertEqual(fallback.read_bytes(), previous)
+            self.assertEqual(fallback.stat().st_mode & 0o777, 0o640)
+
     def test_restore_failure_after_replacement_retains_undo_until_retry(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(backup, "CONFIG_DIR", directory):
             ui_file = Path(directory, "ui.json")
@@ -234,6 +255,9 @@ class Backup(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text())["base"], {"psp": "2"})
             path.with_suffix(".json.bak").write_text('{"rules":{},"base":{"psp":"3"}}')
             path.write_text('{broken')
+            backup.apply(incoming)
+            self.assertEqual(json.loads(path.read_text())["base"], {"psp": "3"})
+            path.unlink()
             backup.apply(incoming)
             self.assertEqual(json.loads(path.read_text())["base"], {"psp": "3"})
 

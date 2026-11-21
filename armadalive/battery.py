@@ -1,6 +1,6 @@
 """Low-battery warnings and an optional charge limit (the kernel's charge_control_end_threshold, written by the root helper)."""
 import os, time
-from PySide6.QtCore import QCoreApplication, Property, QObject, QTimer, Signal, Slot
+from PySide6.QtCore import QCoreApplication, QEvent, Property, QObject, QTimer, Signal, Slot
 from . import persistence, privileged
 from .commands import Commands
 
@@ -76,7 +76,9 @@ class Battery(persistence.OwnerWriter, QObject):
         while self.writesPending():
             if time.monotonic() >= deadline:
                 raise TimeoutError("Timed out waiting for battery settings")
-            QCoreApplication.processEvents()
+            # Deliver the command acknowledgements without letting unrelated
+            # owner timers accept new edits after their writers have drained.
+            QCoreApplication.sendPostedEvents(self._commands, QEvent.Type.MetaCall)
             time.sleep(0.001)
 
     def check(self, capacity, status):

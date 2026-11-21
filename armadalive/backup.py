@@ -36,6 +36,7 @@ VALIDATORS = {
     "apps.json": _validate_apps,
     "history.json": _valid_history,
 }
+RECOVERY_FILES = ("game_rules.json", "history.json")
 
 
 class RestoreRecoveryError(OSError):
@@ -66,7 +67,9 @@ def collect():
 
 
 def _targets():
-    return {name: os.path.realpath(os.path.join(CONFIG_DIR, name)) for name in VALIDATORS}
+    targets = {name: os.path.realpath(os.path.join(CONFIG_DIR, name)) for name in VALIDATORS}
+    targets.update({name + ".bak": os.path.realpath(targets[name] + ".bak") for name in RECOVERY_FILES})
+    return targets
 
 
 def _journal_path():
@@ -150,7 +153,7 @@ def recover_restore(*, startup=False):
 
 def apply(data):
     """Validate all included files, then restore them as one recoverable operation."""
-    return len(_restore(data).get("records", {}))
+    return sum(name in VALIDATORS for name in _restore(data).get("records", {}))
 
 
 def _restore(data, *, await_restart=False):
@@ -172,6 +175,11 @@ def _restore(data, *, await_restart=False):
         return {}
     path = _journal_path()
     targets = _targets()
+    # The fallback must match the imported snapshot, including an unfinished
+    # Steam baseline. Give its pre-restore bytes the same rollback guarantees.
+    for name in RECOVERY_FILES:
+        if name in prepared:
+            prepared[name + ".bak"] = prepared[name]
     records = {}
     for name in prepared:
         target = targets[name]
@@ -181,14 +189,15 @@ def _restore(data, *, await_restart=False):
         if previous is not None:
             os.close(os.open(target, os.O_WRONLY | os.O_NONBLOCK))
         records[name] = [target, None if previous is None else base64.b64encode(previous).decode(), mode]
-        if name == "game_rules.json" and previous is not None:
+        if name == "game_rules.json":
             # A device that has yet to migrate its old recovery values must
             # retain them even when a backup supplies different rules.
-            legacy = _local_legacy_base(previous)
-            if not legacy:
+            legacy = _local_legacy_base(previous) if previous is not None else None
+            if legacy is None:
                 legacy = persistence.read_json(target, gamerules.validate_settings, {}).get("base", {})
             if legacy:
-                prepared[name] = persistence.encode_json({**json.loads(prepared[name]), "base": legacy}, allow_nan=True)
+                restored = {**json.loads(prepared[name]), "base": legacy}
+                prepared[name] = prepared[name + ".bak"] = persistence.encode_json(restored, allow_nan=True)
 
     journal = dict(token=secrets.token_hex(24), records=records)
     try:
@@ -223,12 +232,13 @@ def _rollback_restore(journal):
 def _local_legacy_base(content):
     try:
         saved = json.loads(content)
-        base = saved.get("base", {}) if isinstance(saved, dict) else {}
-        if isinstance(base, dict) and all(value is None or isinstance(value, str) for value in base.values()):
-            return base
     except (ValueError, RecursionError):
-        pass
-    return {}
+        return None
+    if isinstance(saved, dict) and "base" in saved:
+        if not gamerules._valid_base(saved["base"]):
+            raise ValueError("Cannot restore game rules: invalid device-local emulator originals")
+        return saved["base"]
+    return None
 
 
 def _export(path):

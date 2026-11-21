@@ -342,3 +342,21 @@ class RestoreWriters(unittest.TestCase):
                 release.set()
             self.assertTrue(wait_for(lambda: not self.battery.writesPending()))
         self.assertEqual(json.loads((self.root / "battery.json").read_text())["limit"], 80)
+
+    def test_shutdown_drains_queued_battery_commands_without_running_unrelated_timers(self):
+        from PySide6.QtCore import QTimer
+
+        callbacks = []
+        with mock.patch.object(battery.privileged, "available", return_value=True), \
+                mock.patch.object(battery.privileged, "run", return_value=""), \
+                mock.patch.object(battery, "_read", return_value=""):
+            self.battery.setLimit(80)
+            self.battery.setLimit(75)
+            QTimer.singleShot(0, lambda: callbacks.append(True))
+            self.coordinator.flushWriters()
+
+        self.assertEqual(callbacks, [])
+        self.assertFalse(self.battery.writesPending())
+        self.assertEqual(json.loads((self.root / "battery.json").read_text())["limit"], 75)
+        app.processEvents()
+        self.assertEqual(callbacks, [True])
