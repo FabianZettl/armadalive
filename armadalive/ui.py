@@ -1,12 +1,20 @@
 """Look of the app: theme and accent, remembered between runs."""
-import os
-from PySide6.QtCore import Property, QObject, Signal, Slot
+import os, sys
+from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 from . import persistence
 
 CONFIG = os.path.expanduser("~/.config/armadalive/ui.json")
 
 
-DEFAULTS = dict(theme="stock", accent="", lang="en", animate=True, dim=True, close=True, heat=85, apps=True, ledFollow=True, onboarded=True)
+DEFAULTS = dict(theme="stock", accent="", lang="en", animate=True, dim=True, close=True, heat=85, apps=True, ledFollow=True, onboarded=True, scale=100)
+
+SCALES = (100, 125, 150, 175)   # shortcut: four fixed steps, a free slider is not worth it until someone asks
+
+
+def saved_scale():
+    """The saved interface size, read before Qt starts (QT_SCALE_FACTOR only counts at start)."""
+    scale = persistence.read_json(CONFIG, lambda data: isinstance(data, dict), {}).get("scale", 100)
+    return scale if scale in SCALES else 100
 
 
 class UiSettings(QObject):
@@ -89,6 +97,14 @@ class UiSettings(QObject):
     def setAnimate(self, on):
         self._s["animate"] = bool(on)
         self._save()
+
+    @Slot(int)
+    def setScale(self, percent):
+        """Interface size in percent (Qt reads it at start, so the app starts over to apply it)."""
+        if percent in SCALES and percent != self._s["scale"]:
+            self._s["scale"] = percent
+            self._save()
+            QTimer.singleShot(600, lambda: os.execv(sys.executable, sys.orig_argv))
 
     @Slot(str)
     def setLang(self, lang):

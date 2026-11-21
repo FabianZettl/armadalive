@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Interface size** (Settings, General): 100, 125, 150 or 175 %, for larger text in Game mode (asked for by a user who wears glasses). Tapping the setting steps to the next size and the app restarts to apply it; a `QT_SCALE_FACTOR` in the service file still wins. Checked in screenshots only, not on the Thor's own screen.
+
 ## 1.0.3
 
 Two more fixes by Brendan Noble (thank you). Tested on a Thor (403 tests) and run there; not tried with a real game session.

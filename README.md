@@ -78,7 +78,7 @@ belongs to its owners; ArmadaLive does not ship any of it. The play time, folder
   warns about heat and a low battery. The AYN button brings it to the front or sends it away; holding it switches the screen off.
 - **55 themes** in four groups (general, consoles, operating systems and launchers, games), light and dark, from Dracula and Nord to
   Dreamcast, Switch, Windows XP, macOS, Zelda, Mario and Cyberpunk 2077. A theme sets the colours, the shape of buttons and tiles,
-  a faint backdrop, how animations feel, the font and the icon style, and the stick LEDs follow its accent. English and German.
+  a faint backdrop, how animations feel, the font and the icon style, and the stick LEDs follow its accent. English and German, and an interface size of 100 to 175 % in Settings for larger text.
 - A **first-run setup** that explains what ArmadaLive needs and why, lets you skip what you do not need, and lets you pick a theme and
   your first eight tiles. A health check, in-app updates (checked against a SHA-256) and a one-file **backup** of settings, rules,
   tile order, apps with folders and play history.

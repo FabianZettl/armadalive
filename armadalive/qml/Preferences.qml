@@ -157,6 +157,13 @@ Item {
                     onToggled: ui.setLang(page.look.lang === "de" ? "en" : "de")
                 }
                 Setting {
+                    title: Tr.t("Interface size")
+                    hint: Tr.t("Larger text; the app restarts")
+                    label: (page.look.scale || 100) + " %"
+                    on: (page.look.scale || 100) !== 100
+                    onToggled: ui.setScale({ 100: 125, 125: 150, 150: 175 }[page.look.scale || 100] || 100)
+                }
+                Setting {
                     title: Tr.t("Logo animation")
                     label: page.look.animate === false ? Tr.t("Off") : Tr.t("On")
                     on: page.look.animate !== false

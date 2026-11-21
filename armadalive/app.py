@@ -36,7 +36,7 @@ from .tasks import Tasks
 from .thermal import Thermal
 from .tiles import Tiles
 from .trackpad import Trackpad
-from .ui import UiSettings
+from .ui import UiSettings, saved_scale
 from .updater import Updater
 from .onboarding import Onboarding
 from .system import SystemMonitor
@@ -62,6 +62,7 @@ def install_signal_handlers(app, ayn):
 
 
 def main():
+    os.environ.setdefault("QT_SCALE_FACTOR", str(saved_scale() / 100))   # a QT_SCALE_FACTOR from the service file wins
     app = QGuiApplication(sys.argv)
     app.setApplicationName("ArmadaLive")
     app.setApplicationVersion(__version__)
