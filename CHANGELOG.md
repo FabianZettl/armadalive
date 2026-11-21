@@ -1,8 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.0.4
 
-- **Interface size** (Settings, General): 100, 125, 150 or 175 %, for larger text in Game mode (asked for by a user who wears glasses). Tapping the setting steps to the next size and the app restarts to apply it; a `QT_SCALE_FACTOR` in the service file still wins. Checked in screenshots only, not on the Thor's own screen.
+Fixes by Brendan Noble (thank you) and a new setting.
+
+- **Interface size** (Settings, General): 100, 125, 150 or 175 %, for larger text in Game mode (asked for by a user who wears glasses). Tapping the setting steps to the next size and the app restarts to apply it; a `QT_SCALE_FACTOR` in the service file still wins. Checked in screenshots only. At 150 % and more the Settings page gets tight.
+- **Steam launches** go through one coordinator: ES-DE and Steam games from the app grid and Add to Steam no longer create duplicate shortcuts, wait for Steam to save, and give up cleanly when the selection changes (#28).
+- **A flaky test is fixed** (#31): it was reading live game events from the device.
 
 ## 1.0.3
 
