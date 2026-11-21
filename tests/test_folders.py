@@ -1,4 +1,4 @@
-import json, os, tempfile, unittest
+import json, os, tempfile, threading, unittest
 from unittest import mock
 
 from tests.common import delete_qobject, wait_for
@@ -33,7 +33,8 @@ class Folders(unittest.TestCase):
         backend = apps.Apps(FakeHistory(list(rows)))
 
         def cleanup():
-            wait_for(lambda: not backend.catalogLoading and not backend._art_running)
+            wait_for(lambda: not backend.catalogLoading and not backend._art_running
+                     and backend._shortcuts._preparing is None)
             backend.flush()
             delete_qobject(backend)
 
@@ -83,14 +84,39 @@ class Folders(unittest.TestCase):
         a.assign(0, "smart:recent")
         self.assertEqual([i["name"] for i in a.folderItems("smart:recent")], ["B", "Counter-Strike"])
 
+    def test_random_folder_desktop_pick_can_launch_while_steam_is_busy(self):
+        backend = self.make()
+        backend.assign(0, "folder:new")
+        backend.addToFolder("folder:1", "firefox")
+        started, release = threading.Event(), threading.Event()
+
+        def command(*_):
+            started.set()
+            release.wait(3)
+            return None
+
+        with mock.patch.object(apps.esdelib, "command", side_effect=command), \
+                mock.patch.object(apps.subprocess, "Popen") as launch:
+            backend.launchId("esde:snes/A.sfc")
+            try:
+                self.assertTrue(started.wait(1))
+                backend.randomIn("folder:1")
+                backend.addToFolder("folder:1", "steam:10")
+                with mock.patch.object(apps.random, "choice", return_value="firefox"):
+                    backend.randomIn("folder:1")
+                self.assertEqual([call.args[0] for call in launch.call_args_list],
+                                 [["gtk-launch", "firefox"], ["gtk-launch", "firefox"]])
+            finally:
+                release.set()
+                wait_for(lambda: not backend._shortcuts.state["busy"])
+
     def test_the_random_tile_starts_one_of_the_games(self):
         a = self.make()
         a.assign(0, apps.RANDOM)
-        started = []
-        with mock.patch.object(apps.steamshortcuts, "run_rom") as run, mock.patch.object(apps.esdelib, "command", lambda s, r: ["emu", r]), mock.patch.object(apps.steamui, "eval_js") as js:
-            for _ in range(20):
-                a.launch(0)
-        self.assertTrue(run.called or js.called)
+        with mock.patch.object(a._shortcuts, "launch") as run, \
+                mock.patch.object(apps.random, "choice", return_value="esde:snes/A.sfc"):
+            a.launch(0)
+        self.assertEqual(run.call_args.args[:3], ("A", "snes", "/roms/snes/A.sfc"))
 
     def test_choices_for_the_picker_offer_new_smart_and_random(self):
         a = self.make()
