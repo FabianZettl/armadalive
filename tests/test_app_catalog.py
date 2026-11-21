@@ -588,22 +588,21 @@ class LayoutSaving(unittest.TestCase):
         self.apps.flush()
         self.assertEqual(self.saved_name(), "After failed restore")
 
-    def test_failed_restart_holds_stale_layout_and_allows_a_restart_retry(self):
+    def test_failed_restart_rolls_back_layout_and_releases_writers(self):
+        previous = self.config.read_bytes()
         restored = {"slots": [], "folders": {}, "next": 1}
         self.export.write_text(json.dumps({"files": {"apps.json": restored}}))
         with mock.patch.object(backup.QTimer, "singleShot") as later, \
-                mock.patch.object(backup.os, "execv", side_effect=[OSError("Exec failed"), None]) as execv:
+                mock.patch.object(backup.os, "execv", side_effect=OSError("Exec failed")):
             self.backup.restore()
             later.call_args.args[1]()
-            self.assertIn("Exec failed", self.backup.state["message"])
-            self.assertTrue(self.backup.state["restartRequired"])
-            self.assertTrue(self.apps.layoutEditingBlocked)
-            self.apps.renameFolder("folder:1", "Stale layout")
-            self.backup.save()
-            self.backup.restore()
-            self.assertEqual(execv.call_count, 2)
+        self.assertIn("Exec failed", self.backup.state["message"])
+        self.assertFalse(self.backup.state["restartRequired"])
+        self.assertFalse(self.apps.layoutEditingBlocked)
+        self.assertEqual(self.config.read_bytes(), previous)
+        self.apps.renameFolder("folder:1", "After rollback")
         self.apps.flush()
-        self.assertEqual(json.loads(self.config.read_text()), restored)
+        self.assertEqual(self.saved_name(), "After rollback")
 
     def test_failed_restart_of_an_empty_restore_releases_the_freeze(self):
         self.export.write_text(json.dumps({"files": {}}))
@@ -643,17 +642,17 @@ class LayoutSaving(unittest.TestCase):
         self.apps.flush()
         self.assertEqual(self.saved_name(), "Unsaved")
 
-    def test_partial_restore_failure_keeps_the_old_layout_frozen(self):
+    def test_unusable_destination_fails_before_any_restore_and_releases_layout(self):
         restored = {"slots": [], "folders": {}, "next": 1}
         self.config.with_name("history.json").mkdir()
         self.export.write_text(json.dumps({"files": {"apps.json": restored, "history.json": {}}}))
         self.backup.restore()
         self.assertIn("history.json", self.backup.state["message"])
-        self.assertTrue(self.backup.state["restartRequired"])
-        self.assertTrue(self.apps.layoutEditingBlocked)
-        self.apps.renameFolder("folder:1", "Stale layout")
+        self.assertFalse(self.backup.state["restartRequired"])
+        self.assertFalse(self.apps.layoutEditingBlocked)
+        self.apps.renameFolder("folder:1", "After failed restore")
         self.backup.flushWriters()
-        self.assertEqual(json.loads(self.config.read_text()), restored)
+        self.assertEqual(self.saved_name(), "After failed restore")
 
 
 class EntryPoint(unittest.TestCase):
@@ -667,11 +666,13 @@ class EntryPoint(unittest.TestCase):
                      'SystemMonitor ControlsLayout EmulatorControl History SteamShortcuts Apps AynButton '
                      'Settings GameInfo Shell Controls UiSettings Updater Admin Health GameRules Tiles '
                      'Battery Media Backup Palette Tasks Onboarding Activity Manuals LudoSync Trackpad '
-                     'Cheats Pad Closer Thermal QTimer').split()
+                     'Cheats Pad Closer Thermal QTimer recover_restore saved_scale').split()
             constructors = {name: stack.enter_context(mock.patch.object(entry, name)) for name in names}
+            constructors['saved_scale'].return_value = 100
             stack.enter_context(mock.patch.object(entry.signal, 'signal'))
             constructors['QQmlApplicationEngine'].return_value.rootObjects.return_value = []
             self.assertEqual(entry.main(), 1)
+            constructors['recover_restore'].assert_called_once_with(startup=True)
             coordinator = constructors['SteamShortcuts'].return_value
             constructors['SteamShortcuts'].assert_called_once_with(constructors['NowPlaying'].return_value)
             constructors['Apps'].assert_called_once_with(constructors['History'].return_value, coordinator)
@@ -679,7 +680,8 @@ class EntryPoint(unittest.TestCase):
             backup = constructors['Backup'].return_value
             constructors['Backup'].assert_called_once()
             writers, = constructors['Backup'].call_args.args
-            self.assertIn(catalog, writers)
+            self.assertEqual(writers, tuple(constructors[name].return_value for name in
+                                             ('Apps', 'History', 'UiSettings', 'Tiles', 'Battery', 'GameRules')))
             constructors['QGuiApplication'].return_value.aboutToQuit.connect.assert_called_once_with(backup.flushWriters)
             context = constructors['QQmlApplicationEngine'].return_value.rootContext.return_value
             context.setContextProperty.assert_any_call('steamShortcuts', coordinator)

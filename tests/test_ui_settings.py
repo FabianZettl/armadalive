@@ -50,6 +50,21 @@ class Persistence(unittest.TestCase):
         s = ui.UiSettings(); s.setLang("xx")
         self.assertEqual(s.state["lang"], "en")
 
+    def test_pending_scale_restart_waits_for_backup(self):
+        from unittest import mock
+        s = ui.UiSettings()
+        with mock.patch.object(ui.QTimer, "singleShot") as later, mock.patch.object(ui.os, "execv") as restart:
+            s.setScale(150)
+            _, callback = later.call_args.args
+            s.pauseWrites(restoring=True)
+            callback()
+            restart.assert_not_called()
+            s.resumeWrites()
+            self.assertEqual(later.call_count, 2)
+            _, callback = later.call_args.args
+            callback()
+            restart.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,8 +1,8 @@
 """Remembers a power profile and FPS limit for a game, a whole system, every other game (the base rule) or for when no game runs
 (the idle rule), and applies it when that game starts or the last game ends."""
-import json, os
+import json, math, os
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
-from . import emusettings
+from . import emusettings, persistence
 
 CONFIG = os.path.expanduser("~/.config/armadalive/game_rules.json")
 
@@ -10,20 +10,46 @@ CONFIG = os.path.expanduser("~/.config/armadalive/game_rules.json")
 IDLE, BASE = "default:idle", "default:base"   # rule keys that belong to no game
 
 
-class GameRules(QObject):
+def validate_settings(saved):
+    if not isinstance(saved, dict):
+        return False
+    rules, base = saved.get("rules", {}), saved.get("base", {})
+    if not isinstance(rules, dict) or not isinstance(base, dict):
+        return False
+    if not all(value is None or isinstance(value, str) for value in base.values()):
+        return False
+    for key, rule in rules.items():
+        if not isinstance(key, str) or ":" not in key or not isinstance(rule, dict):
+            return False
+        if not all(rule.get(field) is None or isinstance(rule.get(field), str) for field in ("profile", "title")):
+            return False
+        fps, res = rule.get("fps", 0), rule.get("res", 0)
+        # Existing rules accept numeric frame limits and numeric text. Resolution
+        # values cycle arithmetically; retain finite legacy values outside the UI list.
+        if fps is not None and not isinstance(fps, (int, float, str)):
+            return False
+        try:
+            if fps:
+                int(fps)
+        except (ValueError, OverflowError):
+            return False
+        if not isinstance(res, (int, float)) or (isinstance(res, float) and not math.isfinite(res)):
+            return False
+    return True
+
+
+class GameRules(persistence.OwnerWriter, QObject):
     changed = Signal()
     notice = Signal(str, str)   # saved | removed | loaded | failed, and what it was about
 
     def __init__(self, nowplaying, gamescope, system):
         super().__init__()
         self._np, self._gs, self._sys = nowplaying, gamescope, system
-        try:
-            with open(CONFIG) as f:
-                saved = json.load(f)
-            self._rules, self._on = dict(saved.get("rules", {})), bool(saved.get("enabled", True))
-            self._base = dict(saved.get("base", {}))
-        except (OSError, ValueError, AttributeError):
-            self._rules, self._on, self._base = {}, True, {}
+        saved = persistence.read_json(CONFIG, validate_settings, {})
+        self._saved = saved
+        self._rules, self._on = saved.get("rules", {}), bool(saved.get("enabled", True))
+        self._base = saved.get("base", {})
+        self._check_deferred = False
         self._applied, self._loaded = "", ""
         self._pending_rule = None
         self.history = None      # set by the app: lets a rule show the name of its game, not only the key
@@ -38,7 +64,7 @@ class GameRules(QObject):
         cur = self._np.state
         return dict(enabled=self._on, rules=sorted((dict(v, key=k, **self._describe(k, v)) for k, v in self._rules.items()), key=lambda r: (r["kind"], r["name"].lower())),
                     gameKey=self._game_key(cur), systemKey=self._system_key(cur), resOk=cur.get("system") in emusettings.SPECS,
-                    idleKey=IDLE, baseKey=BASE, loaded=self._loaded)
+                    idleKey=IDLE, baseKey=BASE, loaded=self._loaded, writesPaused=self._writes_paused)
 
     def _describe(self, key, rule):
         """What the rules list shows for a key: its kind and the name of the game or system, never only the Steam id."""
@@ -57,10 +83,28 @@ class GameRules(QObject):
     def _system_key(state):
         return f"system:{state['system']}" if state.get("system") and state.get("kind") == "game" else ""
 
+    def pauseWrites(self, *, restoring=False):
+        super().pauseWrites(restoring=restoring)
+        # Emulator originals can change on the owner thread between explicit
+        # rule edits. Persist them before backup captures the local rollback state.
+        snapshot = dict(self._saved, enabled=self._on, rules=self._rules, base=self._base)
+        try:
+            with open(CONFIG) as stream:
+                if json.load(stream) == snapshot:
+                    return
+        except FileNotFoundError:
+            if not self._saved and not self._rules and not self._base and self._on:
+                return
+        except (ValueError, RecursionError):
+            pass
+        self._save()
+
     def _save(self):
-        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
-        with open(CONFIG, "w") as f:
-            json.dump({"enabled": self._on, "rules": self._rules, "base": self._base}, f, indent=1)
+        saved = dict(self._saved, enabled=self._on, rules=self._rules, base=self._base)
+        if not validate_settings(saved):
+            raise ValueError("invalid game rules")
+        persistence.write_json(CONFIG, saved, validate=validate_settings, indent=1,
+                               follow_symlinks=True, require_writable=True, allow_nan=True)
         self.changed.emit()
 
     @staticmethod
@@ -74,6 +118,8 @@ class GameRules(QObject):
     @Slot(str)
     def toggle(self, scope):
         """Save the current profile and FPS limit for this game, system, as the idle or base rule, or forget the rule if there is one."""
+        if self._writes_paused:
+            return
         cur = self._np.state
         key = {"game": self._game_key(cur), "system": self._system_key(cur), "idle": IDLE, "base": BASE}.get(scope, "")
         if not key:
@@ -97,6 +143,8 @@ class GameRules(QObject):
     @Slot()
     def cycleRes(self):
         """Step this game's render resolution through off, 1x ... 5x; a game without a rule gets one that only holds the resolution."""
+        if self._writes_paused:
+            return
         key = self._game_key(self._np.state)
         if not key or self._np.state.get("system") not in emusettings.SPECS:
             return
@@ -108,6 +156,8 @@ class GameRules(QObject):
 
     @Slot(str)
     def remove(self, key):
+        if self._writes_paused:
+            return
         if self._rules.pop(key, None) is not None:
             self._cancel_pending_rule(key)
             self._save()
@@ -115,6 +165,8 @@ class GameRules(QObject):
 
     @Slot(bool)
     def setEnabled(self, on):
+        if self._writes_paused:
+            return
         self._on = bool(on)
         if not self._on:
             self._cancel_pending_rule()
@@ -208,7 +260,16 @@ class GameRules(QObject):
             elif not remaining:
                 self._show_loaded(detail)
 
+    def resumeWrites(self):
+        super().resumeWrites()
+        if self._check_deferred:
+            self._check_deferred = False
+            self._check()
+
     def _check(self):
+        if self._writes_paused:
+            self._check_deferred = True
+            return
         cur = self._np.state
         if self._on:
             self._emulator(cur)
