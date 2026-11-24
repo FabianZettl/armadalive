@@ -4,11 +4,20 @@ from functools import partial
 from . import privileged
 from .poller import Poller
 from .commands import Commands, run
+from .devices import get_profile
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
-# DSI-1 (1080x1240) is the bottom panel, DSI-2 (1080x1920) the top one; the backlight names follow the DSI order
-BACKLIGHTS = dict(bottom=os.environ.get("ARMADALIVE_BOTTOM_BACKLIGHT", "ae94000.dsi.0"),
-                  top=os.environ.get("ARMADALIVE_TOP_BACKLIGHT", "ae96000.dsi.0"))
+# DSI backlight paths: auto-detected per device, overridable via env-vars
+def _get_backlights():
+    try:
+        profile = get_profile()
+        return dict(bottom=os.environ.get("ARMADALIVE_BOTTOM_BACKLIGHT", profile.dsi_bottom),
+                   top=os.environ.get("ARMADALIVE_TOP_BACKLIGHT", profile.dsi_top or ""))
+    except ValueError:
+        # Fallback when device cannot be detected (e.g., in test environment): assume Thor
+        return dict(bottom=os.environ.get("ARMADALIVE_BOTTOM_BACKLIGHT", "/sys/class/backlight/ae94000.dsi.0/brightness"),
+                   top=os.environ.get("ARMADALIVE_TOP_BACKLIGHT", "/sys/class/backlight/ae96000.dsi.0/brightness"))
+BACKLIGHTS = _get_backlights()
 SINK = "@DEFAULT_AUDIO_SINK@"
 # Frame generation of Eglantine, Eden and TotK (MAKO): the launchers skip it while this file exists, see mako-thor/env.sh
 FRAMEGEN_OFF = os.environ.get("ARMADALIVE_FRAMEGEN_OFF", os.path.expanduser("~/.config/mako-thor/off"))
