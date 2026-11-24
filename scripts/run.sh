@@ -1,33 +1,45 @@
 #!/bin/sh
 # Starts ArmadaLive with whichever Python has PySide6 right now: the system's, else the private copy in the app folder.
 # A system update can drop PySide6 from the image (or bring it back); a fixed interpreter then fails on every start.
+# Supports AYN Thor (with Plasma bottom session) and Retroid Pocket Duo (direct Wayland, no Plasma).
 # The bottom screen is normally a Plasma session (socket armada-plasma-bottom). When that session cannot start, the bottom
 # gamescope under it still runs and shows a client fullscreen: use its X11 side (DISPLAY from armada-bottom-env). Its Wayland
 # socket shows the window too, but passes no touch to it; X11 does, and has no window frames.
 run="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 windowed=""
+device="thor"
+
+# Detect device and set device-specific env vars
+if [ ! -S "$run/armada-plasma-bottom" ] && [ ! -r "$run/armada-bottom-env" ]; then
+    # No Thor indicators: assume Duo
+    device="duo"
+    export ARMADALIVE_BOTTOM_BACKLIGHT="ae96000.dsi.0"
+fi
+
 # At boot this unit starts before the session it needs, in Game mode (the bottom session) as well as on the desktop (its display). Look until one is there
 # (ARMADALIVE_WAIT seconds, 60 by default) and fail after that, so the unit tries again: a quiet exit counts as success for systemd, which never retried (0.4.6 to 0.5.1).
 # The marker file means Game mode's bottom session has been started but is not up yet: the desktop is not looked for then.
 n=0
 while :; do
     if [ -S "$run/armada-plasma-bottom" ]; then
+        device="thor"
         break   # the normal case: the bottom Plasma session
     elif [ -r "$run/armada-bottom-env" ] && [ "$n" -ge "${ARMADALIVE_X11_AFTER:-30}" ]; then
         # the bottom gamescope is there but its Plasma session never came up: show the window on its X11 side. Not before the wait is over: at boot the
         # gamescope (and this file) come first, and an X11 window is invisible to Plasma's KWin: no activation through it, no on-screen keyboard.
+        device="thor"
         display=$(sed -n 's/^DISPLAY=//p' "$run/armada-bottom-env" | head -1)
         [ -n "$display" ] && export QT_QPA_PLATFORM=xcb DISPLAY="$display"
         break
     elif [ ! -r "$run/armada-bottom-env" ] && [ ! -e "$run/armada-bottom-screen-active" ]; then
-        # Desktop mode: there is no bottom session, only the one Plasma session of the desktop. Show a normal window in it
+        # Desktop mode (Duo or Thor desktop): there is no bottom session, only the one Plasma session of the desktop. Show a normal window in it
         for sock in "$run"/wayland-[0-9]*; do
             [ -S "$sock" ] && { export QT_QPA_PLATFORM=wayland WAYLAND_DISPLAY="${sock##*/}"; windowed=--windowed; break; }
         done
         if [ -z "$windowed" ] && [ -n "${DISPLAY:-}" ]; then export QT_QPA_PLATFORM=xcb; windowed=--windowed; fi
         [ -n "$windowed" ] && break
     fi
-    [ "$n" -ge "${ARMADALIVE_WAIT:-60}" ] && { echo "ArmadaLive: no bottom session and no desktop display found (yet); the unit tries again" >&2; exit 1; }
+    [ "$n" -ge "${ARMADALIVE_WAIT:-60}" ] && { echo "ArmadaLive: no session found (device=$device); the unit tries again" >&2; exit 1; }
     sleep 1; n=$((n + 1))
 done
 [ -n "${ARMADALIVE_DRY_RUN:-}" ] && { echo "platform=${QT_QPA_PLATFORM:-} wayland=${WAYLAND_DISPLAY:-} display=${DISPLAY:-} windowed=$windowed"; exit 0; }
